@@ -1,4 +1,4 @@
-package com.example.app.data.local.entities
+package com.example.myapplication.local.entities
 
 import androidx.room.Entity
 import androidx.room.Index
@@ -15,7 +15,7 @@ import androidx.room.PrimaryKey
 data class UserEntity(
     @PrimaryKey(autoGenerate = true)
     val idUser: Long = 0,
-    val extId: String? = null,
+    val ext_Id: String? = null,
     val first_name: String,
     val lastname: String? = null,
     val username: String,

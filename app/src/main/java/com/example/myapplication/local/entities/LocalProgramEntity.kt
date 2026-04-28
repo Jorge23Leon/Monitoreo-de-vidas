@@ -1,0 +1,50 @@
+package com.example.myapplication.local.entities
+
+import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
+import androidx.room.PrimaryKey
+
+@Entity(
+    tableName = "local_programs",
+    foreignKeys = [
+        ForeignKey(
+            entity = LocalPlotEntity::class,
+            parentColumns = ["idLocalPlot"],
+            childColumns = ["idLocalPlot"],
+            onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = UserEntity::class,
+            parentColumns = ["idUser"],
+            childColumns = ["idUserAssigned"],
+            onDelete = ForeignKey.RESTRICT
+        )
+    ],
+    indices = [
+        Index(value = ["idLocalPlot"]),
+        Index(value = ["idUserAssigned"]),
+        Index(value = ["status"])
+    ]
+)
+data class LocalProgramEntity(
+    @PrimaryKey(autoGenerate = true)
+    val idProgram: Long = 0,
+
+    val extId: String? = null,
+
+    val cycle: String,
+
+    val estStartDate: Long,
+    val estFinishDate: Long,
+    val actStartDate: Long? = null,
+    val actFinishDate: Long? = null,
+
+    val status: String,
+
+    val idLocalPlot: Long,
+    val extIdLocalPlot: String? = null,
+
+    val idUserAssigned: Long? = null,
+    val extIdUserAssigned: String? = null
+)

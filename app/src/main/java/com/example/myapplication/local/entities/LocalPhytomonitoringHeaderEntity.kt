@@ -1,0 +1,49 @@
+package com.example.myapplication.local.entities
+
+import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
+import androidx.room.PrimaryKey
+
+@Entity(
+    tableName = "local_phytomonitoring_headers",
+    foreignKeys = [
+        ForeignKey(
+            entity = LocalProgramEntity::class,
+            parentColumns = ["idProgram"],
+            childColumns = ["idProgram"],
+            onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = LocalPlotEntity::class,
+            parentColumns = ["idLocalPlot"],
+            childColumns = ["idLocalPlot"],
+            onDelete = ForeignKey.RESTRICT
+        ),
+        ForeignKey(
+            entity = LocalCropCatalogEntity::class,
+            parentColumns = ["idCrop"],
+            childColumns = ["idCrop"],
+            onDelete = ForeignKey.RESTRICT
+        )
+    ],
+    indices = [
+        Index(value = ["idProgram"]),
+        Index(value = ["idLocalPlot"]),
+        Index(value = ["idCrop"])
+    ]
+)
+data class LocalPhytomonitoringHeaderEntity(
+    @PrimaryKey(autoGenerate = true)
+    val idHeader: Long = 0,
+    val extId: String? = null,
+
+    val estStartDate: Long,
+    val estFinishDate: Long,
+    val startedAt: Long? = null,
+    val finishedAt: Long? = null,
+
+    val idProgram: Long,
+    val idLocalPlot: Long,
+    val idCrop: Long,
+)

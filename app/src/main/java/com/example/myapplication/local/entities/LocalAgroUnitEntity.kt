@@ -1,4 +1,4 @@
-package com.example.app.data.local.entities
+package com.example.myapplication.local.entities
 
 import androidx.room.Entity
 import androidx.room.ForeignKey
@@ -17,17 +17,15 @@ import androidx.room.PrimaryKey
     ],
     indices = [
         Index(value = ["idLocalCia"]),
-        Index(value = ["code"])
+        Index(value = ["slug"])
     ]
 )
 data class LocalAgroUnitEntity(
     @PrimaryKey(autoGenerate = true)
     val idLocalAgroUnit: Long = 0,
-
-    val extId: String? = null,
-    val name: String,
-    val code: String,
-    val description: String? = null,
-
-    val idLocalCia: Long
+    val ext_Id: String? = null,
+    val commercial_name: String,
+    val slug: String,
+    val idLocalCia: Long,
+    val ext_IdLocalCia: String? = null,
 )

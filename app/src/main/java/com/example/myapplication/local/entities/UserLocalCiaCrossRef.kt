@@ -1,8 +1,10 @@
-package com.example.app.data.local.entities
+package com.example.myapplication.local.entities
 
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
+import com.example.myapplication.local.entities.LocalCiaEntity
+import com.example.myapplication.local.entities.UserEntity
 
 @Entity(
     tableName = "user_local_cias",
@@ -11,6 +13,7 @@ import androidx.room.Index
         ForeignKey(
             entity = UserEntity::class,
             parentColumns = ["idUser"],
+
             childColumns = ["idUser"],
             onDelete = ForeignKey.CASCADE
         ),
