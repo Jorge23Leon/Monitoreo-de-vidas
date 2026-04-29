@@ -6,7 +6,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(
-    tableName = "local_plot_vertices",
+    tableName = "local_plot_vertexes",
     foreignKeys = [
         ForeignKey(
             entity = LocalPlotEntity::class,
@@ -17,7 +17,7 @@ import androidx.room.PrimaryKey
     ],
     indices = [
         Index(value = ["idLocalPlot"]),
-        Index(value = ["idLocalPlot", "vertexOrder"], unique = true)
+        Index(value = ["idLocalPlot", "level"], unique = true)
     ]
 )
 data class LocalPlotVertexEntity(
@@ -25,15 +25,13 @@ data class LocalPlotVertexEntity(
     val idLocalPlotVertex: Long = 0,
 
     val extId: String? = null,
-
     // Orden del vértice dentro del polígono
-    val vertexOrder: Int,
-
+    val level: Int,
     // Coordenadas del vértice
     val lat: Double,
     val lon: Double,
 
     // Parcela a la que pertenece este vértice
     val idLocalPlot: Long,
-    val extIdLocalPlot: String? = null
+    val ext_IdLocalPlot: String? = null
 )

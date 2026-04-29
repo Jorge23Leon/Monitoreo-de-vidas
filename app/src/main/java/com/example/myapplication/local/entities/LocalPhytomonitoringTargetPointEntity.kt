@@ -13,10 +13,18 @@ import androidx.room.PrimaryKey
             parentColumns = ["idHeader"],
             childColumns = ["idHeader"],
             onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = LocalPlotEntity::class,
+            parentColumns = ["idLocalPlot"],
+            childColumns = ["idLocalPlot"],
+            onDelete = ForeignKey.CASCADE
         )
     ],
     indices = [
-        Index(value = ["idHeader"])
+        Index(value = ["idHeader"]),
+        Index(value = ["idLocalPlot"]),
+        Index(value = ["status"])
     ]
 )
 data class LocalPhytomonitoringTargetPointEntity(
@@ -25,14 +33,11 @@ data class LocalPhytomonitoringTargetPointEntity(
 
     val ext_Id: String? = null,
 
-    val radius: Int,
+    val radius_m: Int,
     val lat: Double,
     val lon: Double,
     val status: String,
 
     val idHeader: Long,
+    val idLocalPlot: Long
 )
-
-
-
-

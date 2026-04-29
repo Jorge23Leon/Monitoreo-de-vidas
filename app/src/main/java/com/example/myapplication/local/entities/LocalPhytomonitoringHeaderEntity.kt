@@ -36,7 +36,7 @@ import androidx.room.PrimaryKey
 data class LocalPhytomonitoringHeaderEntity(
     @PrimaryKey(autoGenerate = true)
     val idHeader: Long = 0,
-    val ex_tId: String? = null,
+    val ext_Id: String? = null,
 
     val estStartDate: Long,
     val estFinishDate: Long,
