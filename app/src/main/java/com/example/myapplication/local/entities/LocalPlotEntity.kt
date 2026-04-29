@@ -29,13 +29,12 @@ import androidx.room.PrimaryKey
 data class LocalPlotEntity(
     @PrimaryKey(autoGenerate = true)
     val idLocalPlot: Long = 0,
-    val extId: String? = null,
+    val ext_Id: String? = null,
     val code: String,
     val lat: Double,
     val lon: Double,
     val idLocalRanch: Long,
-    val ext_IdLocalRanch: Long? = null,
     val idCrop: Long,
-    val ext_IdCrop: Long? = null
+
 
 )

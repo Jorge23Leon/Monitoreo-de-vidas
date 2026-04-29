@@ -30,6 +30,5 @@ data class LocalRanchEntity(
     val lat: Double? ,
     val lon: Double?,
     val idLocalAgroUnit: Long,
-    val ext_IdLocalAgroUnit: String? = null,
 
     )

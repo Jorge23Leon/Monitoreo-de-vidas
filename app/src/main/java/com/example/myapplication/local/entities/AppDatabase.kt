@@ -1,10 +1,10 @@
-package com.example.myapplication.local
+package com.example.myapplication.local.entities
 
 import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import com.example.myapplication.local.entities.*
+import com.example.myapplication.local.dao.UserDao
 
 @Database(
     entities = [
@@ -15,6 +15,7 @@ import com.example.myapplication.local.entities.*
         LocalRanchEntity::class,
         LocalCropCatalogEntity::class,
         LocalPlotEntity::class,
+        LocalPlotVertexEntity::class,
         LocalProgramEntity::class,
         LocalPhytomonitoringHeaderEntity::class,
         LocalPhytomonitoringTargetPointEntity::class,
@@ -22,12 +23,13 @@ import com.example.myapplication.local.entities.*
         LocalPhytostageEntity::class,
         LocalPhytomonitoringCheckpointEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
 
-   // abstract fun generalDao(): GeneralDao
+    abstract fun userDao(): UserDao
+
 
     companion object {
         @Volatile

@@ -29,5 +29,4 @@ data class LocalPhytostageEntity(
     val photo: String? = null,
 
     val idPhytosanitary: Long,
-    val ext_IdPhytosanitary: String? = null
 )

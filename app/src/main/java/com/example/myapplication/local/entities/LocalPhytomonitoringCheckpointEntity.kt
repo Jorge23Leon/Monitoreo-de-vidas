@@ -38,7 +38,7 @@ data class LocalPhytomonitoringCheckpointEntity(
     @PrimaryKey(autoGenerate = true)
     val idCheckpoint: Long = 0,
 
-    val extId: String? = null,
+    val ex_tId: String? = null,
 
     val lat: Double,
     val lon: Double,
@@ -49,12 +49,7 @@ data class LocalPhytomonitoringCheckpointEntity(
     val createdAt: Long = System.currentTimeMillis(),
 
     val idTargetPoint: Long,
-    val extIdTargetPoint: String? = null,
-
     val idPhytosanitary: Long,
-    val extIdPhytosanitary: String? = null,
-
-    val idLocalPhytostage: Long? = null,
-    val extIdLocalPhytostage: String? = null
+    val idLocalPhytostage: Long,
 )
 

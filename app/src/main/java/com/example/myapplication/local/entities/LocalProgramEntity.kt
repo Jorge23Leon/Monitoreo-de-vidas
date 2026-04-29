@@ -31,7 +31,7 @@ data class LocalProgramEntity(
     @PrimaryKey(autoGenerate = true)
     val idProgram: Long = 0,
 
-    val extId: String? = null,
+    val ext_Id: String? = null,
 
     val cycle: String,
 
@@ -43,8 +43,5 @@ data class LocalProgramEntity(
     val status: String,
 
     val idLocalPlot: Long,
-    val extIdLocalPlot: String? = null,
-
-    val idUserAssigned: Long? = null,
-    val extIdUserAssigned: String? = null
+    val idUserAssigned: Long?
 )

@@ -26,6 +26,5 @@ data class LocalAgroUnitEntity(
     val ext_Id: String? = null,
     val commercial_name: String,
     val slug: String,
-    val idLocalCia: Long,
-    val ext_IdLocalCia: String? = null,
+    val idLocalCia: Long
 )

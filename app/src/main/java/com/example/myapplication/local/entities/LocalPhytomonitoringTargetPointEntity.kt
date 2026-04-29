@@ -23,7 +23,7 @@ data class LocalPhytomonitoringTargetPointEntity(
     @PrimaryKey(autoGenerate = true)
     val idTargetPoint: Long = 0,
 
-    val extId: String? = null,
+    val ext_Id: String? = null,
 
     val radius: Int,
     val lat: Double,
@@ -31,7 +31,6 @@ data class LocalPhytomonitoringTargetPointEntity(
     val status: String,
 
     val idHeader: Long,
-    val extidHeader: String? = null
 )
 
 
