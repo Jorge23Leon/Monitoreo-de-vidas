@@ -1,14 +1,17 @@
 package com.example.myapplication.local
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -29,10 +32,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,7 +47,8 @@ fun LoginScreen(
     onLoginClick: (username: String, password: String, role: String) -> Unit,
     onRegisterClick: () -> Unit,
     onForgotPasswordClick: () -> Unit,
-    onMenuClick: () -> Unit
+    onInformationClick: () -> Unit,
+    onContactClick: () -> Unit
 ) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -50,61 +56,97 @@ fun LoginScreen(
 
     var roleSelected by remember { mutableStateOf("Técnico") }
     var expandedRole by remember { mutableStateOf(false) }
+    var expandedMenu by remember { mutableStateOf(false) }
 
     val roles = listOf("Admin", "Técnico")
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFEFEFEF)),
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0xFFF4F8F0),
+                        Color(0xFFE8EFE2)
+                    )
+                )
+            )
+            .padding(22.dp),
         contentAlignment = Alignment.Center
     ) {
         Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 28.dp),
-            shape = RoundedCornerShape(0.dp),
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(24.dp)
             ) {
-                IconButton(
-                    onClick = onMenuClick,
+                Box(
                     modifier = Modifier.align(Alignment.TopEnd)
                 ) {
-                    Text(
-                        text = "☰",
-                        fontSize = 30.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF333333)
-                    )
+                    IconButton(
+                        onClick = { expandedMenu = true },
+                        modifier = Modifier
+                            .background(Color(0xFFEFF6EA), CircleShape)
+                    ) {
+                        Text(
+                            text = "☰",
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF2F4F2F)
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = expandedMenu,
+                        onDismissRequest = { expandedMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Información de la app") },
+                            onClick = {
+                                expandedMenu = false
+                                onInformationClick()
+                            }
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Contacto y soporte") },
+                            onClick = {
+                                expandedMenu = false
+                                onContactClick()
+                            }
+                        )
+                    }
                 }
 
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 36.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .padding(top = 46.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = "Inicio de sesión, por favor",
-                        fontSize = 18.sp,
+                        text = "Bienvenido",
+                        fontSize = 28.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF666666)
+                        color = Color(0xFF1F331F)
                     )
+
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "ingresar tu contraseña.",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF666666)
+                        text = "Inicio de sesión, por favor ingresa tus datos.",
+                        fontSize = 15.sp,
+                        color = Color(0xFF6B6B6B),
+                        textAlign = TextAlign.Center
                     )
 
-                    Spacer(modifier = Modifier.height(42.dp))
+                    Spacer(modifier = Modifier.height(36.dp))
 
                     Text(
                         text = "Usuario",
@@ -114,37 +156,48 @@ fun LoginScreen(
                         color = Color.Black
                     )
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     OutlinedTextField(
                         value = username,
                         onValueChange = { username = it },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        shape = RoundedCornerShape(4.dp)
+                        shape = RoundedCornerShape(14.dp),
+                        placeholder = { Text("Ingresa tu usuario") }
                     )
 
-                    Spacer(modifier = Modifier.height(22.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
+
+                    Text(
+                        text = "Rol",
+                        modifier = Modifier.fillMaxWidth(),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     Box(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         OutlinedButton(
                             onClick = { expandedRole = true },
-                            shape = RoundedCornerShape(4.dp),
-                            modifier = Modifier.width(130.dp)
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.width(155.dp)
                         ) {
                             Text(
                                 text = roleSelected,
-                                fontSize = 13.sp,
+                                fontSize = 14.sp,
                                 color = Color.Black
                             )
 
                             Spacer(modifier = Modifier.width(8.dp))
 
                             Text(
-                                text = "›",
-                                fontSize = 24.sp,
+                                text = "⌄",
+                                fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.Black
                             )
@@ -176,14 +229,15 @@ fun LoginScreen(
                         color = Color.Black
                     )
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        shape = RoundedCornerShape(4.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        placeholder = { Text("Ingresa tu contraseña") },
                         visualTransformation = if (showPassword) {
                             VisualTransformation.None
                         } else {
@@ -201,7 +255,7 @@ fun LoginScreen(
                         }
                     )
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     TextButton(
                         onClick = onForgotPasswordClick
@@ -209,7 +263,7 @@ fun LoginScreen(
                         Text(
                             text = "Olvidé mi contraseña",
                             fontSize = 13.sp,
-                            color = Color(0xFFE57373)
+                            color = Color(0xFFD65A5A)
                         )
                     }
 
@@ -219,11 +273,11 @@ fun LoginScreen(
                         Text(
                             text = "¿No tienes cuenta? Regístrate",
                             fontSize = 13.sp,
-                            color = Color(0xFFE57373)
+                            color = Color(0xFFD65A5A)
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(32.dp))
+                    Spacer(modifier = Modifier.height(26.dp))
 
                     Button(
                         onClick = {
@@ -234,18 +288,18 @@ fun LoginScreen(
                             )
                         },
                         modifier = Modifier
-                            .fillMaxWidth(0.65f)
-                            .height(48.dp),
+                            .fillMaxWidth(0.75f)
+                            .height(50.dp),
                         shape = RoundedCornerShape(30.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFC5E1A5)
+                            containerColor = Color(0xFFB7D99A)
                         )
                     ) {
                         Text(
                             text = "Ingresar",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF5D6D4E)
+                            color = Color(0xFF36512D)
                         )
                     }
                 }
@@ -262,7 +316,8 @@ fun LoginScreenPreview() {
             onLoginClick = { _, _, _ -> },
             onRegisterClick = {},
             onForgotPasswordClick = {},
-            onMenuClick = {}
+            onInformationClick = {},
+            onContactClick = {}
         )
     }
 }

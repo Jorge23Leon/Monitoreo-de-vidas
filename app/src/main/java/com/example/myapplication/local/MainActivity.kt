@@ -5,11 +5,13 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.lifecycleScope
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.UserEntity
 import kotlinx.coroutines.Dispatchers
@@ -18,7 +20,9 @@ import kotlinx.coroutines.withContext
 
 enum class PantallaActual {
     LOGIN,
-    REGISTRO
+    REGISTRO,
+    INFORMACION,
+    CONTACTO
 }
 
 class MainActivity : ComponentActivity() {
@@ -28,84 +32,89 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        database = AppDatabase.getDatabase(this)
-
-        insertarUsuariosDePrueba()
+        database = AppDatabase.getDatabase(applicationContext)
 
         setContent {
             MaterialTheme {
 
-                var pantallaActual by remember {
+                val coroutineScope = rememberCoroutineScope()
+
+                var pantallaActual by rememberSaveable {
                     mutableStateOf(PantallaActual.LOGIN)
+                }
+
+                var cargando by remember {
+                    mutableStateOf(false)
+                }
+
+                LaunchedEffect(Unit) {
+                    insertarUsuariosDePruebaSeguro()
                 }
 
                 when (pantallaActual) {
 
                     PantallaActual.LOGIN -> {
                         LoginScreen(
-                            onLoginClick = { username, password, role ->
+                            onLoginClick = { usernameInput, passwordInput, roleInput ->
+
+                                val username = usernameInput.trim()
+                                val password = passwordInput.trim()
+                                val role = roleInput.trim()
 
                                 if (username.isBlank() || password.isBlank()) {
-                                    Toast.makeText(
-                                        this,
-                                        "Ingresa usuario y contraseña",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                    return@LoginScreen
-                                }
+                                    mostrarMensaje("Ingresa usuario y contraseña")
+                                } else if (!cargando) {
 
-                                lifecycleScope.launch {
-                                    val user = withContext(Dispatchers.IO) {
-                                        database.userDao().login(
-                                            username = username,
-                                            password = password,
-                                            role = role
-                                        )
-                                    }
+                                    cargando = true
 
-                                    if (user != null) {
-                                        Toast.makeText(
-                                            this@MainActivity,
-                                            "Bienvenido ${user.first_name}",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-
-                                        when (user.role) {
-                                            "Admin" -> {
-                                                Toast.makeText(
-                                                    this@MainActivity,
-                                                    "Entrando como administrador",
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
-
-                                                // Aquí después mandas a la pantalla Admin
+                                    coroutineScope.launch {
+                                        try {
+                                            val user = withContext(Dispatchers.IO) {
+                                                database.userDao().login(
+                                                    username = username,
+                                                    password = password,
+                                                    role = role
+                                                )
                                             }
 
-                                            "Técnico" -> {
-                                                Toast.makeText(
-                                                    this@MainActivity,
-                                                    "Entrando como técnico",
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
+                                            if (user != null) {
+                                                mostrarMensaje("Bienvenido ${user.first_name}")
 
-                                                // Aquí después mandas a la pantalla Técnico
+                                                when (user.role) {
+                                                    "Admin" -> {
+                                                        mostrarMensaje("Entrando como administrador")
+
+                                                        /*
+                                                         Aquí después puedes mandar a tu pantalla de administrador.
+                                                         Ejemplo:
+                                                         pantallaActual = PantallaActual.ADMIN
+                                                        */
+                                                    }
+
+                                                    "Técnico" -> {
+                                                        mostrarMensaje("Entrando como técnico")
+
+                                                        /*
+                                                         Aquí después puedes mandar a tu pantalla de técnico.
+                                                         Ejemplo:
+                                                         pantallaActual = PantallaActual.TECNICO
+                                                        */
+                                                    }
+
+                                                    else -> {
+                                                        mostrarMensaje("Rol no reconocido")
+                                                    }
+                                                }
+
+                                            } else {
+                                                mostrarMensaje("Usuario, contraseña o rol incorrecto")
                                             }
 
-                                            else -> {
-                                                Toast.makeText(
-                                                    this@MainActivity,
-                                                    "Rol no reconocido",
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
-                                            }
+                                        } catch (e: Exception) {
+                                            mostrarMensaje("Error al iniciar sesión: ${e.message}")
+                                        } finally {
+                                            cargando = false
                                         }
-
-                                    } else {
-                                        Toast.makeText(
-                                            this@MainActivity,
-                                            "Usuario, contraseña o rol incorrecto",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
                                     }
                                 }
                             },
@@ -115,26 +124,30 @@ class MainActivity : ComponentActivity() {
                             },
 
                             onForgotPasswordClick = {
-                                Toast.makeText(
-                                    this,
-                                    "Aquí irá la recuperación de contraseña",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                mostrarMensaje("Aquí irá la recuperación de contraseña")
                             },
 
-                            onMenuClick = {
-                                Toast.makeText(
-                                    this,
-                                    "Menú de opciones",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                            onInformationClick = {
+                                pantallaActual = PantallaActual.INFORMACION
+                            },
+
+                            onContactClick = {
+                                pantallaActual = PantallaActual.CONTACTO
                             }
                         )
                     }
 
                     PantallaActual.REGISTRO -> {
                         RegistroUsuarioScreen(
-                            onRegisterClick = { firstName, lastname, username, email, password, confirmPassword, role ->
+                            onRegisterClick = { firstNameInput, lastnameInput, usernameInput, emailInput, passwordInput, confirmPasswordInput, roleInput ->
+
+                                val firstName = firstNameInput.trim()
+                                val lastname = lastnameInput.trim()
+                                val username = usernameInput.trim()
+                                val email = emailInput.trim()
+                                val password = passwordInput.trim()
+                                val confirmPassword = confirmPasswordInput.trim()
+                                val role = roleInput.trim()
 
                                 if (
                                     firstName.isBlank() ||
@@ -143,52 +156,36 @@ class MainActivity : ComponentActivity() {
                                     password.isBlank() ||
                                     confirmPassword.isBlank()
                                 ) {
-                                    Toast.makeText(
-                                        this,
-                                        "Completa todos los campos obligatorios",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                    return@RegistroUsuarioScreen
-                                }
+                                    mostrarMensaje("Completa todos los campos obligatorios")
+                                } else if (password != confirmPassword) {
+                                    mostrarMensaje("Las contraseñas no coinciden")
+                                } else if (!cargando) {
 
-                                if (password != confirmPassword) {
-                                    Toast.makeText(
-                                        this,
-                                        "Las contraseñas no coinciden",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                    return@RegistroUsuarioScreen
-                                }
+                                    cargando = true
 
-                                lifecycleScope.launch {
-                                    try {
-                                        withContext(Dispatchers.IO) {
-                                            database.userDao().insertUser(
-                                                UserEntity(
-                                                    first_name = firstName,
-                                                    lastname = lastname.ifBlank { null },
-                                                    username = username,
-                                                    email = email,
-                                                    password = password,
-                                                    role = role
+                                    coroutineScope.launch {
+                                        try {
+                                            withContext(Dispatchers.IO) {
+                                                database.userDao().insertUser(
+                                                    UserEntity(
+                                                        first_name = firstName,
+                                                        lastname = lastname.ifBlank { null },
+                                                        username = username,
+                                                        email = email,
+                                                        password = password,
+                                                        role = role
+                                                    )
                                                 )
-                                            )
+                                            }
+
+                                            mostrarMensaje("Usuario registrado correctamente")
+                                            pantallaActual = PantallaActual.LOGIN
+
+                                        } catch (e: Exception) {
+                                            mostrarMensaje("No se pudo registrar. Revisa si el usuario o correo ya existen")
+                                        } finally {
+                                            cargando = false
                                         }
-
-                                        Toast.makeText(
-                                            this@MainActivity,
-                                            "Usuario registrado correctamente",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-
-                                        pantallaActual = PantallaActual.LOGIN
-
-                                    } catch (e: Exception) {
-                                        Toast.makeText(
-                                            this@MainActivity,
-                                            "No se pudo registrar. Revisa si el usuario o correo ya existen",
-                                            Toast.LENGTH_LONG
-                                        ).show()
                                     }
                                 }
                             },
@@ -198,38 +195,67 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                     }
+
+                    PantallaActual.INFORMACION -> {
+                        InformacionScreen(
+                            onCloseClick = {
+                                pantallaActual = PantallaActual.LOGIN
+                            }
+                        )
+                    }
+
+                    PantallaActual.CONTACTO -> {
+                        ContactoScreen(
+                            onCloseClick = {
+                                pantallaActual = PantallaActual.LOGIN
+                            }
+                        )
+                    }
                 }
             }
         }
     }
 
-    private fun insertarUsuariosDePrueba() {
-        lifecycleScope.launch(Dispatchers.IO) {
-            val totalUsuarios = database.userDao().countUsers()
+    private suspend fun insertarUsuariosDePruebaSeguro() {
+        withContext(Dispatchers.IO) {
+            try {
+                val totalUsuarios = database.userDao().countUsers()
 
-            if (totalUsuarios == 0) {
-                database.userDao().insertUser(
-                    UserEntity(
-                        first_name = "Jorge",
-                        lastname = "Sandoval",
-                        username = "jorge",
-                        email = "jorge@test.com",
-                        password = "1234",
-                        role = "Admin"
+                if (totalUsuarios == 0) {
+                    database.userDao().insertUser(
+                        UserEntity(
+                            first_name = "Jorge",
+                            lastname = "Sandoval",
+                            username = "jorge",
+                            email = "jorge@test.com",
+                            password = "1234",
+                            role = "Admin"
+                        )
                     )
-                )
 
-                database.userDao().insertUser(
-                    UserEntity(
-                        first_name = "Técnico",
-                        lastname = "Prueba",
-                        username = "tecnico",
-                        email = "tecnico@test.com",
-                        password = "1234",
-                        role = "Técnico"
+                    database.userDao().insertUser(
+                        UserEntity(
+                            first_name = "Técnico",
+                            lastname = "Prueba",
+                            username = "tecnico",
+                            email = "tecnico@test.com",
+                            password = "1234",
+                            role = "Técnico"
+                        )
                     )
-                )
+                }
+
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
+    }
+
+    private fun mostrarMensaje(mensaje: String) {
+        Toast.makeText(
+            this@MainActivity,
+            mensaje,
+            Toast.LENGTH_SHORT
+        ).show()
     }
 }
