@@ -15,12 +15,6 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.CASCADE
         ),
         ForeignKey(
-            entity = LocalRanchEntity::class,
-            parentColumns = ["idLocalRanch"],
-            childColumns = ["idLocalRanch"],
-            onDelete = ForeignKey.CASCADE
-        ),
-        ForeignKey(
             entity = LocalCropCatalogEntity::class,
             parentColumns = ["idCrop"],
             childColumns = ["idCrop"],
@@ -32,19 +26,11 @@ import androidx.room.PrimaryKey
             childColumns = ["idLocalPlot"],
             onDelete = ForeignKey.CASCADE
         ),
-        ForeignKey(
-            entity = UserEntity::class,
-            parentColumns = ["idUser"],
-            childColumns = ["idUserAssigned"],
-            onDelete = ForeignKey.RESTRICT
-        )
     ],
     indices = [
         Index(value = ["idLocalAgroUnit"]),
-        Index(value = ["idLocalRanch"]),
         Index(value = ["idCrop"]),
         Index(value = ["idLocalPlot"]),
-        Index(value = ["idUserAssigned"]),
         Index(value = ["status"])
     ]
 )
@@ -62,11 +48,8 @@ data class LocalProgramEntity(
     val actFinishDate: Long? = null,
 
     val status: String,
-
     val idLocalAgroUnit: Long,
-    val idLocalRanch: Long,
-    val idCrop: Long,
+    val idLocalRanch: Long,    val idCrop: Long,
     val idLocalPlot: Long,
 
-    val idUserAssigned: Long? = null
 )

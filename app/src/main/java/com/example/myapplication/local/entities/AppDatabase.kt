@@ -42,7 +42,8 @@ import com.example.myapplication.local.dao.LocalPhytomonitoringTargetPointDao
     version = 4,
     exportSchema = false
 )
-abstract class AppDatabase : RoomDatabase() {
+abstract class
+AppDatabase : RoomDatabase() {
 
     abstract fun userDao(): UserDao
     abstract fun localCiaDao(): LocalCiaDao

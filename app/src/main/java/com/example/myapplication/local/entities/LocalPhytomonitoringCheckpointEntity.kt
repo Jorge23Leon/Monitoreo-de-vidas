@@ -52,12 +52,11 @@ data class LocalPhytomonitoringCheckpointEntity(
 
     val qty: Int? = null,
     val presenceStatus: Int? = null,
-
+    val stage: String,
     val createdAt: Long = System.currentTimeMillis(),
 
     val idTargetPoint: Long,
     val idHeader: Long,
     val idPhytosanitary: Long,
 
-    val idLocalPhytostage: Long? = null
 )

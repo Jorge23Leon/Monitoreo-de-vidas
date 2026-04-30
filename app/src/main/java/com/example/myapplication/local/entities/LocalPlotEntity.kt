@@ -13,16 +13,9 @@ import androidx.room.PrimaryKey
             childColumns = ["idLocalRanch"],
             onDelete = ForeignKey.CASCADE
         ),
-        ForeignKey(
-            entity = LocalCropCatalogEntity::class,
-            parentColumns = ["idCrop"],
-            childColumns = ["idCrop"],
-            onDelete = ForeignKey.RESTRICT
-        )
     ],
     indices = [
         Index(value = ["idLocalRanch"]),
-        Index(value = ["idCrop"]),
         Index(value = ["code"])
     ]
 )
@@ -34,7 +27,4 @@ data class LocalPlotEntity(
     val lat: Double,
     val lon: Double,
     val idLocalRanch: Long,
-    val idCrop: Long,
-
-
 )
