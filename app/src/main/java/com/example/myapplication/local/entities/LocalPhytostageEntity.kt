@@ -13,6 +13,7 @@ import androidx.room.PrimaryKey
 data class LocalPhytostageEntity(
     @PrimaryKey(autoGenerate = true)
     val idLocalPhytostage: Long = 0,
+
     val ext_id: String? = null,
     val name: String,
     val photo: String? = null

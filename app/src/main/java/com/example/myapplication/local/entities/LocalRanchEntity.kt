@@ -4,7 +4,6 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
-import com.example.myapplication.local.entities.LocalAgroUnitEntity
 
 @Entity(
     tableName = "local_ranches",
@@ -14,21 +13,31 @@ import com.example.myapplication.local.entities.LocalAgroUnitEntity
             parentColumns = ["idLocalAgroUnit"],
             childColumns = ["idLocalAgroUnit"],
             onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = LocalPhytostageEntity::class,
+            parentColumns = ["idLocalPhytostage"],
+            childColumns = ["idLocalPhytostage"],
+            onDelete = ForeignKey.RESTRICT
         )
     ],
     indices = [
         Index(value = ["idLocalAgroUnit"]),
+        Index(value = ["idLocalPhytostage"]),
         Index(value = ["code"])
     ]
 )
 data class LocalRanchEntity(
     @PrimaryKey(autoGenerate = true)
     val idLocalRanch: Long = 0,
+
     val ext_Id: String? = null,
     val name: String,
     val code: String,
-    val lat: Double? ,
-    val lon: Double?,
-    val idLocalAgroUnit: Long,
 
-    )
+    val lat: Double? = null,
+    val lon: Double? = null,
+
+    val idLocalAgroUnit: Long,
+    val idLocalPhytostage: Long
+)
