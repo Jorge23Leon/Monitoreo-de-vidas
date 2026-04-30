@@ -18,12 +18,6 @@ interface LocalPhytostageDao {
     @Query("SELECT * FROM local_phytostages WHERE idLocalPhytostage = :idLocalPhytostage LIMIT 1")
     suspend fun getPhytostageById(idLocalPhytostage: Long): LocalPhytostageEntity?
 
-    @Query("""
-        SELECT * FROM local_phytostages
-        WHERE idPhytosanitary = :idPhytosanitary
-        ORDER BY stage ASC
-    """)
-    suspend fun getPhytostagesByPhytosanitary(
-        idPhytosanitary: Long
-    ): List<LocalPhytostageEntity>
+    @Query("SELECT * FROM local_phytostages WHERE name = :name LIMIT 1")
+    suspend fun getPhytostageByName(name: String): LocalPhytostageEntity?
 }

@@ -25,19 +25,12 @@ import androidx.room.PrimaryKey
             parentColumns = ["idPhytosanitary"],
             childColumns = ["idPhytosanitary"],
             onDelete = ForeignKey.RESTRICT
-        ),
-        ForeignKey(
-            entity = LocalPhytostageEntity::class,
-            parentColumns = ["idLocalPhytostage"],
-            childColumns = ["idLocalPhytostage"],
-            onDelete = ForeignKey.SET_NULL
         )
     ],
     indices = [
         Index(value = ["idTargetPoint"]),
         Index(value = ["idHeader"]),
         Index(value = ["idPhytosanitary"]),
-        Index(value = ["idLocalPhytostage"]),
         Index(value = ["createdAt"])
     ]
 )
@@ -52,11 +45,12 @@ data class LocalPhytomonitoringCheckpointEntity(
 
     val qty: Int? = null,
     val presenceStatus: Int? = null,
-    val stage: String,
+
+    val stage: String? = null,
+
     val createdAt: Long = System.currentTimeMillis(),
 
     val idTargetPoint: Long,
     val idHeader: Long,
-    val idPhytosanitary: Long,
-
+    val idPhytosanitary: Long
 )

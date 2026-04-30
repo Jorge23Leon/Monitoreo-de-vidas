@@ -32,9 +32,6 @@ interface LocalPlotDao {
     @Query("SELECT * FROM local_plots WHERE idLocalRanch = :idLocalRanch ORDER BY code ASC")
     suspend fun getPlotsByRanch(idLocalRanch: Long): List<LocalPlotEntity>
 
-    @Query("SELECT * FROM local_plots WHERE idCrop = :idCrop ORDER BY code ASC")
-    suspend fun getPlotsByCrop(idCrop: Long): List<LocalPlotEntity>
-
     @Query("SELECT * FROM local_plots WHERE code = :code LIMIT 1")
     suspend fun getPlotByCode(code: String): LocalPlotEntity?
 

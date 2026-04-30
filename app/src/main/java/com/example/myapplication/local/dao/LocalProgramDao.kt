@@ -18,8 +18,6 @@ interface LocalProgramDao {
     @Query("SELECT * FROM local_programs WHERE idProgram = :idProgram LIMIT 1")
     suspend fun getProgramById(idProgram: Long): LocalProgramEntity?
 
-    @Query("SELECT * FROM local_programs WHERE idUserAssigned = :idUserAssigned ORDER BY estStartDate ASC")
-    suspend fun getProgramsByUserAssigned(idUserAssigned: Long): List<LocalProgramEntity>
 
     @Query("SELECT * FROM local_programs WHERE status = :status ORDER BY estStartDate ASC")
     suspend fun getProgramsByStatus(status: String): List<LocalProgramEntity>

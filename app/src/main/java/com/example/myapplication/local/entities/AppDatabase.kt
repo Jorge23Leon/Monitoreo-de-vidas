@@ -39,7 +39,7 @@ import com.example.myapplication.local.dao.LocalPhytomonitoringTargetPointDao
         LocalPhytostageEntity::class,
         LocalPhytomonitoringCheckpointEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class
