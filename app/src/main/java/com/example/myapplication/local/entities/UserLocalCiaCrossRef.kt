@@ -30,6 +30,8 @@ import com.example.myapplication.local.entities.UserEntity
     ]
 )
 data class UserLocalCiaCrossRef(
+
     val idUser: Long,
-    val idLocalCia: Long
+    val idLocalCia: Long,
+    val ext_Id: String? = null
 )

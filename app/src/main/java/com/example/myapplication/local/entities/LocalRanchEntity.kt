@@ -13,17 +13,10 @@ import androidx.room.PrimaryKey
             parentColumns = ["idLocalAgroUnit"],
             childColumns = ["idLocalAgroUnit"],
             onDelete = ForeignKey.CASCADE
-        ),
-        ForeignKey(
-            entity = LocalPhytostageEntity::class,
-            parentColumns = ["idLocalPhytostage"],
-            childColumns = ["idLocalPhytostage"],
-            onDelete = ForeignKey.RESTRICT
         )
     ],
     indices = [
         Index(value = ["idLocalAgroUnit"]),
-        Index(value = ["idLocalPhytostage"]),
         Index(value = ["code"])
     ]
 )
@@ -38,6 +31,5 @@ data class LocalRanchEntity(
     val lat: Double? = null,
     val lon: Double? = null,
 
-    val idLocalAgroUnit: Long,
-    val idLocalPhytostage: Long
+    val idLocalAgroUnit: Long
 )

@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import com.example.myapplication.local.dao.UserDao
 import com.example.myapplication.local.dao.LocalCiaDao
 import com.example.myapplication.local.dao.LocalAgroUnitDao
+import com.example.myapplication.local.dao.LocalCiaAgroUnitDao
 import com.example.myapplication.local.dao.LocalRanchDao
 import com.example.myapplication.local.dao.LocalPlotDao
 import com.example.myapplication.local.dao.LocalCropCatalogDao
@@ -38,9 +39,10 @@ import com.example.myapplication.local.dao.LocalPhytomonitoringTargetPointDao
         LocalPhytosanitaryCatalogEntity::class,
         LocalPhytostageEntity::class,
         LocalPhytomonitoringCheckpointEntity::class,
+        LocalCiaAgroUnitCrossRef::class
 
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class
@@ -60,6 +62,7 @@ AppDatabase : RoomDatabase() {
     abstract fun localphytomonitoringcheckpointDao(): LocalPhytomonitoringCheckpointDao
     abstract fun UserLocalCiaDao(): UserLocalCiaDao
     abstract fun LocalPhytomonitoringTargetPointDao(): LocalPhytomonitoringTargetPointDao
+    abstract fun localCiaAgroUnitDao(): LocalCiaAgroUnitDao
 
 
 
