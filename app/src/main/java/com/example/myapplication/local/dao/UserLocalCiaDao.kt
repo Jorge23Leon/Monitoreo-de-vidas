@@ -13,6 +13,18 @@ interface UserLocalCiaDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertUserLocalCia(relation: UserLocalCiaCrossRef)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun asignarCiaAUsuario(asignacion: UserLocalCiaCrossRef)
+    @Query(
+        """
+        DELETE FROM user_local_cias
+        WHERE idUser = :idUser
+        AND idLocalCia = :idLocalCia
+        """
+    )
+    suspend fun eliminarAsignacion(idUser: Long, idLocalCia: Long)
+
+
     @Query("""
         SELECT * FROM user_local_cias
         WHERE idUser = :idUser

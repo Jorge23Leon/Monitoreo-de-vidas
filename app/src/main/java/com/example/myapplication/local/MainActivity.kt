@@ -13,6 +13,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import com.example.myapplication.local.entities.AppDatabase
+import com.example.myapplication.local.entities.LocalCiaEntity
 import com.example.myapplication.local.entities.UserEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -22,7 +23,8 @@ enum class PantallaActual {
     LOGIN,
     REGISTRO,
     INFORMACION,
-    CONTACTO
+    CONTACTO,
+    SELECCION_CIA
 }
 
 class MainActivity : ComponentActivity() {
@@ -47,8 +49,32 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf(false)
                 }
 
+                var idUsuarioActual by rememberSaveable {
+                    mutableStateOf(0L)
+                }
+
+                var nombreUsuarioActual by rememberSaveable {
+                    mutableStateOf("")
+                }
+
+                var rolUsuarioActual by rememberSaveable {
+                    mutableStateOf("")
+                }
+
+                var ciasUsuario by remember {
+                    mutableStateOf<List<LocalCiaEntity>>(emptyList())
+                }
+
+                var ciaSeleccionada by remember {
+                    mutableStateOf<LocalCiaEntity?>(null)
+                }
+
+                var seleccionarPreferente by rememberSaveable {
+                    mutableStateOf(false)
+                }
+
                 LaunchedEffect(Unit) {
-                    insertarUsuariosDePruebaSeguro()
+                    insertarUsuarioAdminSeguro()
                 }
 
                 when (pantallaActual) {
@@ -78,33 +104,29 @@ class MainActivity : ComponentActivity() {
                                             }
 
                                             if (user != null) {
-                                                mostrarMensaje("Bienvenido ${user.first_name}")
 
-                                                when (user.role) {
-                                                    "Admin" -> {
-                                                        mostrarMensaje("Entrando como administrador")
-
-                                                        /*
-                                                         Aquí después puedes mandar a tu pantalla de administrador.
-                                                         Ejemplo:
-                                                         pantallaActual = PantallaActual.ADMIN
-                                                        */
-                                                    }
-
-                                                    "Técnico" -> {
-                                                        mostrarMensaje("Entrando como técnico")
-
-                                                        /*
-                                                         Aquí después puedes mandar a tu pantalla de técnico.
-                                                         Ejemplo:
-                                                         pantallaActual = PantallaActual.TECNICO
-                                                        */
-                                                    }
-
-                                                    else -> {
-                                                        mostrarMensaje("Rol no reconocido")
-                                                    }
+                                                val listaCias = withContext(Dispatchers.IO) {
+                                                    database.localCiaDao()
+                                                        .obtenerCiasPorUsuario(user.idUser)
                                                 }
+
+                                                idUsuarioActual = user.idUser
+                                                nombreUsuarioActual = user.first_name
+                                                rolUsuarioActual = user.role
+                                                ciasUsuario = listaCias
+
+                                                val idCiaPreferente = obtenerCiaPreferente(user.idUser)
+
+                                                ciaSeleccionada = if (idCiaPreferente != 0L) {
+                                                    listaCias.firstOrNull { cia ->
+                                                        cia.idLocalCia == idCiaPreferente
+                                                    } ?: listaCias.firstOrNull()
+                                                } else {
+                                                    listaCias.firstOrNull()
+                                                }
+
+                                                mostrarMensaje("Bienvenido ${user.first_name}")
+                                                pantallaActual = PantallaActual.SELECCION_CIA
 
                                             } else {
                                                 mostrarMensaje("Usuario, contraseña o rol incorrecto")
@@ -182,7 +204,9 @@ class MainActivity : ComponentActivity() {
                                             pantallaActual = PantallaActual.LOGIN
 
                                         } catch (e: Exception) {
-                                            mostrarMensaje("No se pudo registrar. Revisa si el usuario o correo ya existen")
+                                            mostrarMensaje(
+                                                "No se pudo registrar. Revisa si el usuario o correo ya existen"
+                                            )
                                         } finally {
                                             cargando = false
                                         }
@@ -211,12 +235,87 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                     }
+
+                    PantallaActual.SELECCION_CIA -> {
+                        SeleccionCiaScreen(
+                            nombreUsuario = nombreUsuarioActual,
+                            cias = ciasUsuario,
+                            ciaSeleccionada = ciaSeleccionada,
+                            seleccionarPreferente = seleccionarPreferente,
+
+                            onPreferenteChange = { seleccionado ->
+                                seleccionarPreferente = seleccionado
+                            },
+
+                            onCiaChange = { cia ->
+                                ciaSeleccionada = cia
+                            },
+
+                            onSeleccionarClick = {
+                                val cia = ciaSeleccionada
+
+                                if (cia == null) {
+                                    mostrarMensaje("Este usuario no tiene CIAS asignadas")
+                                } else {
+
+                                    if (seleccionarPreferente) {
+                                        guardarCiaPreferente(
+                                            idUser = idUsuarioActual,
+                                            idLocalCia = cia.idLocalCia
+                                        )
+                                    }
+
+                                    mostrarMensaje("CIA seleccionada: ${cia.nombre}")
+
+                                    when (rolUsuarioActual) {
+                                        "Admin" -> {
+                                            mostrarMensaje("Entrando como administrador")
+
+                                            /*
+                                             Aquí después mandas a la pantalla principal del administrador.
+                                             Ejemplo:
+                                             pantallaActual = PantallaActual.ADMIN
+                                            */
+                                        }
+
+                                        "Técnico" -> {
+                                            mostrarMensaje("Entrando como técnico")
+
+                                            /*
+                                             Aquí después mandas a la pantalla principal del técnico.
+                                             Ejemplo:
+                                             pantallaActual = PantallaActual.TECNICO
+                                            */
+                                        }
+
+                                        else -> {
+                                            mostrarMensaje("Rol no reconocido")
+                                        }
+                                    }
+                                }
+                            },
+
+                            onCerrarSesionClick = {
+                                cerrarSesion(
+                                    onLimpiarEstados = {
+                                        idUsuarioActual = 0L
+                                        nombreUsuarioActual = ""
+                                        rolUsuarioActual = ""
+                                        ciasUsuario = emptyList()
+                                        ciaSeleccionada = null
+                                        seleccionarPreferente = false
+                                        pantallaActual = PantallaActual.LOGIN
+                                    }
+                                )
+                            }
+                        )
+                    }
                 }
             }
         }
     }
 
-    private suspend fun insertarUsuariosDePruebaSeguro() {
+    private suspend fun insertarUsuarioAdminSeguro() {
         withContext(Dispatchers.IO) {
             try {
                 val totalUsuarios = database.userDao().countUsers()
@@ -232,23 +331,31 @@ class MainActivity : ComponentActivity() {
                             role = "Admin"
                         )
                     )
-
-                    database.userDao().insertUser(
-                        UserEntity(
-                            first_name = "Técnico",
-                            lastname = "Prueba",
-                            username = "tecnico",
-                            email = "tecnico@test.com",
-                            password = "1234",
-                            role = "Técnico"
-                        )
-                    )
                 }
 
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
+    }
+
+    private fun guardarCiaPreferente(idUser: Long, idLocalCia: Long) {
+        val prefs = getSharedPreferences("preferencias_app", MODE_PRIVATE)
+
+        prefs.edit()
+            .putLong("cia_preferente_usuario_$idUser", idLocalCia)
+            .apply()
+    }
+
+    private fun obtenerCiaPreferente(idUser: Long): Long {
+        val prefs = getSharedPreferences("preferencias_app", MODE_PRIVATE)
+
+        return prefs.getLong("cia_preferente_usuario_$idUser", 0L)
+    }
+
+    private fun cerrarSesion(onLimpiarEstados: () -> Unit) {
+        onLimpiarEstados()
+        mostrarMensaje("Sesión cerrada")
     }
 
     private fun mostrarMensaje(mensaje: String) {

@@ -8,6 +8,17 @@ import com.example.myapplication.local.entities.LocalCiaEntity
 
 @Dao
 interface LocalCiaDao {
+    @Query(
+        """
+        SELECT c.*
+        FROM local_cias AS c
+        INNER JOIN user_local_cias AS uc
+        ON c.idLocalCia = uc.idLocalCia
+        WHERE uc.idUser = :idUser
+        ORDER BY c.nombre ASC
+        """
+    )
+    suspend fun obtenerCiasPorUsuario(idUser: Long): List<LocalCiaEntity>
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertCia(cia: LocalCiaEntity): Long

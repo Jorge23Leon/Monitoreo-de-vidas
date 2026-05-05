@@ -18,6 +18,5 @@ data class LocalCiaEntity(
     val nombre: String,
     val slug: String,
     val description: String? = null,
-    // se impremento para hacer la herencia de las CIA
-  //  val idParentCia: Long? = null
+
 )
