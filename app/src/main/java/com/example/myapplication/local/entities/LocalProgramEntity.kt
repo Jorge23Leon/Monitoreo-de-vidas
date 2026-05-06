@@ -41,12 +41,10 @@ data class LocalProgramEntity(
     val ext_Id: String? = null,
 
     val cycle: String,
-
     val est_start_date: Long,
     val est_finish_date: Long,
     val act_start_date: Long? = null,
     val act_finish_date: Long? = null,
-
     val status: String,
 
     val idLocalAgroUnit: Long,

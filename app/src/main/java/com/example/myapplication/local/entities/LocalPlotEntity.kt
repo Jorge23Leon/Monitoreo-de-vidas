@@ -27,8 +27,8 @@ data class LocalPlotEntity(
     val ext_Id: String? = null,
 
     val code: String,
-    val name: String,
-    val description: String? = null,
+    val lat: Double,
+    val lon: Double,
 
     val idLocalRanch: Long
 )

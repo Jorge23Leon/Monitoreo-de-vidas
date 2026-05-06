@@ -19,9 +19,7 @@ interface UserDao {
 
     @Delete
     suspend fun deleteUser(user: UserEntity)
-
-    @Query("SELECT * FROM users ORDER BY idUser ASC")
-    suspend fun getAllUsers(): List<UserEntity>
+    
 
     @Query("SELECT * FROM users WHERE idUser = :idUser LIMIT 1")
     suspend fun getUserById(idUser: Long): UserEntity?

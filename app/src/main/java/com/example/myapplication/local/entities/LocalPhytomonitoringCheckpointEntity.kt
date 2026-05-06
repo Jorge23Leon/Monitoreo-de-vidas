@@ -38,7 +38,7 @@ import androidx.room.PrimaryKey
         Index(value = ["idHeader"]),
         Index(value = ["idPhytosanitary"]),
         Index(value = ["idLocalPlot"]),
-        Index(value = ["createdAt"])
+        Index(value = ["captured_at"])
     ]
 )
 data class LocalPhytomonitoringCheckpointEntity(
@@ -47,18 +47,36 @@ data class LocalPhytomonitoringCheckpointEntity(
 
     val extId: String? = null,
 
-    val lat: Double,
-    val lon: Double,
 
+    // Cantidad encontrada
+    // Por ejemplo: cantidad de insectos, daños, plantas afectadas, etc.
     val qty: Int? = null,
+
+    // Estado de presencia
+    // Puede servir para indicar si hubo presencia o no
+    // Ejemplo:
+    // 0 = No presente
+    // 1 = Presente
     val presence_status: Int? = null,
 
+    // Etapa o fase encontrada
+    // Ejemplo:
+    // "Huevo", "Larva", "Adulto", "Inicial", "Avanzada"
     val stage: String? = null,
 
-    val createdAt: Long = System.currentTimeMillis(),
+    // Fecha y hora en que se capturó el checkpoint
+    val captured_at: Long? = null,
 
+
+    // Indica a qué punto objetivo pertenece este registro
     val idTargetPoint: Long,
+
+    // Indica a qué sesión o tarea de monitoreo pertenece
     val idHeader: Long,
+
+    // Indica qué plaga o enfermedad se registró
     val idPhytosanitary: Long,
+
+    // Indica en qué parcela se hizo el registro
     val idLocalPlot: Long
 )
