@@ -12,7 +12,7 @@ import androidx.room.PrimaryKey
             entity = LocalAgroUnitEntity::class,
             parentColumns = ["idLocalAgroUnit"],
             childColumns = ["idLocalAgroUnit"],
-            onDelete = ForeignKey.CASCADE
+            onDelete = ForeignKey.RESTRICT
         ),
         ForeignKey(
             entity = LocalCropCatalogEntity::class,
@@ -24,8 +24,8 @@ import androidx.room.PrimaryKey
             entity = LocalPlotEntity::class,
             parentColumns = ["idLocalPlot"],
             childColumns = ["idLocalPlot"],
-            onDelete = ForeignKey.CASCADE
-        ),
+            onDelete = ForeignKey.RESTRICT
+        )
     ],
     indices = [
         Index(value = ["idLocalAgroUnit"]),
@@ -42,14 +42,14 @@ data class LocalProgramEntity(
 
     val cycle: String,
 
-    val estStartDate: Long,
-    val estFinishDate: Long,
-    val actStartDate: Long? = null,
-    val actFinishDate: Long? = null,
+    val est_start_date: Long,
+    val est_finish_date: Long,
+    val act_start_date: Long? = null,
+    val act_finish_date: Long? = null,
 
     val status: String,
-    val idLocalAgroUnit: Long,
-    val idLocalRanch: Long,    val idCrop: Long,
-    val idLocalPlot: Long,
 
+    val idLocalAgroUnit: Long,
+    val idCrop: Long,
+    val idLocalPlot: Long
 )

@@ -38,10 +38,10 @@ data class LocalPhytomonitoringHeaderEntity(
     val idHeader: Long = 0,
     val ext_Id: String? = null,
 
-    val estStartDate: Long,
-    val estFinishDate: Long,
-    val startedAt: Long? = null,
-    val finishedAt: Long? = null,
+    val est_start_date: Long,
+    val est_finish_date: Long,
+    val started_at: Long? = null,
+    val finished_at: Long? = null,
 
     val idProgram: Long,
     val idLocalPlot: Long,

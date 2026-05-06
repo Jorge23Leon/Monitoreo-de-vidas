@@ -34,9 +34,9 @@ interface UserDao {
 
     @Query("""
         SELECT * FROM users
-        WHERE username = :username
-        AND password = :password
-        AND role = :role
+        WHERE TRIM(username) = TRIM(:username)
+        AND TRIM(password) = TRIM(:password)
+        AND LOWER(TRIM(role)) = LOWER(TRIM(:role))
         LIMIT 1
     """)
     suspend fun login(

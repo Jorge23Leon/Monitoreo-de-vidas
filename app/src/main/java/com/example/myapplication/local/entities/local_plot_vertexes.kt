@@ -31,7 +31,6 @@ data class LocalPlotVertexEntity(
     val lat: Double,
     val lon: Double,
 
-    // Parcela a la que pertenece este vértice
     val idLocalPlot: Long,
-    val ext_IdLocalPlot: String? = null
+
 )

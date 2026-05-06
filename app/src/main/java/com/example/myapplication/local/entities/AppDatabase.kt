@@ -42,7 +42,7 @@ import com.example.myapplication.local.dao.LocalPhytomonitoringTargetPointDao
         LocalCiaAgroUnitCrossRef::class
 
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class

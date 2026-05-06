@@ -12,12 +12,12 @@ import androidx.room.PrimaryKey
             entity = LocalAgroUnitEntity::class,
             parentColumns = ["idLocalAgroUnit"],
             childColumns = ["idLocalAgroUnit"],
-            onDelete = ForeignKey.CASCADE
+            onDelete = ForeignKey.RESTRICT
         )
     ],
     indices = [
         Index(value = ["idLocalAgroUnit"]),
-        Index(value = ["code"])
+        Index(value = ["idLocalAgroUnit", "code"], unique = true)
     ]
 )
 data class LocalRanchEntity(
@@ -25,6 +25,7 @@ data class LocalRanchEntity(
     val idLocalRanch: Long = 0,
 
     val ext_Id: String? = null,
+
     val name: String,
     val code: String,
 
