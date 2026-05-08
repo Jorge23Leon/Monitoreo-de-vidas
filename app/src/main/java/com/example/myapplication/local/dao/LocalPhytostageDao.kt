@@ -51,4 +51,19 @@ interface LocalPhytostageDao {
 
     @Query("DELETE FROM local_phytostages")
     suspend fun deleteAllPhytostages()
+
+    @Query("""
+    SELECT *
+    FROM local_phytostages
+    WHERE idPhytosanitary = :idPhytosanitary
+    ORDER BY idLocalPhytostage ASC
+""")
+    suspend fun getStagesByPhytosanitary(
+        idPhytosanitary: Long
+    ): List<LocalPhytostageEntity>
+
+
+
+
+
 }

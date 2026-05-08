@@ -2,6 +2,7 @@ package com.example.myapplication.local
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,7 +59,8 @@ fun MonitoreoListaScreen(
     parcelas: List<LocalPlotEntity>,
     programas: List<LocalProgramEntity>,
 
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    onAbrirMapaClick: (LocalPhytomonitoringHeaderEntity) -> Unit
 ) {
     val productoresMap = remember(productores) {
         productores.associateBy { it.idLocalAgroUnit }
@@ -76,7 +78,7 @@ fun MonitoreoListaScreen(
         programas.associateBy { it.idProgram }
     }
 
-    var monitoreoSeleccionado by remember {
+    var monitoreoInfoSeleccionado by remember {
         mutableStateOf<LocalPhytomonitoringHeaderEntity?>(null)
     }
 
@@ -189,8 +191,7 @@ fun MonitoreoListaScreen(
                     modifier = Modifier.padding(8.dp)
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         HeaderTabla("Monitoreo", Modifier.weight(1f))
                         HeaderTabla("Estado", Modifier.weight(1.2f))
@@ -219,8 +220,11 @@ fun MonitoreoListaScreen(
                                 nombreMonitoreo = nombreMonitoreo,
                                 status = header.status,
                                 fecha = header.est_start_date,
-                                onVerInfoClick = {
-                                    monitoreoSeleccionado = header
+                                onAbrirMapaClick = {
+                                    onAbrirMapaClick(header)
+                                },
+                                onInfoClick = {
+                                    monitoreoInfoSeleccionado = header
                                 }
                             )
 
@@ -231,7 +235,7 @@ fun MonitoreoListaScreen(
             }
         }
 
-        val headerDetalle = monitoreoSeleccionado
+        val headerDetalle = monitoreoInfoSeleccionado
 
         if (headerDetalle != null) {
             val programa = programasMap[headerDetalle.idProgram]
@@ -247,7 +251,7 @@ fun MonitoreoListaScreen(
                 parcela = parcela,
                 nombreCia = nombreCia,
                 onDismiss = {
-                    monitoreoSeleccionado = null
+                    monitoreoInfoSeleccionado = null
                 }
             )
         }
@@ -370,10 +374,15 @@ private fun FilaMonitoreo(
     nombreMonitoreo: String,
     status: String,
     fecha: Long,
-    onVerInfoClick: () -> Unit
+    onAbrirMapaClick: () -> Unit,
+    onInfoClick: () -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                onAbrirMapaClick()
+            },
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
@@ -399,7 +408,7 @@ private fun FilaMonitoreo(
         )
 
         Button(
-            onClick = onVerInfoClick,
+            onClick = onInfoClick,
             modifier = Modifier
                 .weight(1f)
                 .height(32.dp),
@@ -410,7 +419,7 @@ private fun FilaMonitoreo(
             contentPadding = PaddingValues(0.dp)
         ) {
             Text(
-                text = "Ver",
+                text = "Info",
                 color = Color.Black,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold
@@ -441,12 +450,10 @@ private fun DetalleMonitoreoDialog(
             Column {
                 DatoDetalle("Monitoreo:", programa?.cycle ?: "Sin ciclo")
                 DatoDetalle("Estado:", textoEstado(header.status))
-
                 DatoDetalle("CIA:", nombreCia)
                 DatoDetalle("Productor:", productor?.commercial_name ?: "-")
                 DatoDetalle("Rancho:", rancho?.name ?: "-")
                 DatoDetalle("Parcela:", parcela?.code ?: "-")
-
                 DatoDetalle("Fecha programada:", formatearFechaCompleta(header.est_start_date))
                 DatoDetalle("Fecha fin estimada:", formatearFechaCompleta(header.est_finish_date))
                 DatoDetalle("Iniciado:", formatearFechaOpcional(header.started_at))
@@ -462,6 +469,7 @@ private fun DetalleMonitoreoDialog(
         }
     )
 }
+
 @Composable
 private fun DatoDetalle(
     titulo: String,
@@ -491,12 +499,10 @@ private fun textoEstado(status: String): String {
         "in_progress" -> "En progreso"
         "completed" -> "Completado"
         "cancelled" -> "Cancelado"
-
         "pendiente" -> "Pendiente"
         "vigente" -> "En progreso"
         "finalizado" -> "Completado"
         "cancelado" -> "Cancelado"
-
         else -> status
     }
 }
@@ -507,12 +513,10 @@ private fun colorEstado(status: String): Color {
         "in_progress" -> Color(0xFF4CAF50)
         "completed" -> Color(0xFF1976D2)
         "cancelled" -> Color(0xFFE53935)
-
         "pendiente" -> Color(0xFFC9B800)
         "vigente" -> Color(0xFF4CAF50)
         "finalizado" -> Color(0xFF1976D2)
         "cancelado" -> Color(0xFFE53935)
-
         else -> Color.Black
     }
 }

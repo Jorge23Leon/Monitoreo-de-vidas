@@ -23,4 +23,14 @@ interface LocalPhytomonitoringTargetPointDao {
 
     @Query("SELECT * FROM local_phytomonitoring_target_points WHERE idLocalPlot = :idLocalPlot ORDER BY idTargetPoint ASC")
     suspend fun getTargetPointsByPlot(idLocalPlot: Long): List<LocalPhytomonitoringTargetPointEntity>
+
+    @Query("""
+    UPDATE local_phytomonitoring_target_points
+    SET status = :status
+    WHERE idTargetPoint = :idTargetPoint
+""")
+    suspend fun actualizarStatusPunto(
+        idTargetPoint: Long,
+        status: String
+    )
 }

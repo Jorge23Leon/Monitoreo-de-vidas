@@ -34,7 +34,8 @@ enum class PantallaActual {
     CONTACTO,
     SELECCION_CIA,
     FILTROS_MONITOREO,
-    LISTA_MONITOREOS
+    LISTA_MONITOREOS,
+    MAPA_MONITOREO
 }
 
 class MainActivity : ComponentActivity() {
@@ -159,6 +160,10 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf<List<LocalProgramEntity>>(emptyList())
                 }
 
+                var monitoreoSeleccionadoParaMapa by remember {
+                    mutableStateOf<LocalPhytomonitoringHeaderEntity?>(null)
+                }
+
                 fun limpiarFiltros() {
                     productores = emptyList()
                     ranchos = emptyList()
@@ -178,6 +183,7 @@ class MainActivity : ComponentActivity() {
                     canceladosChecked = false
 
                     busquedaFueConSaltoFiltros = false
+                    monitoreoSeleccionadoParaMapa = null
 
                     monitoreosEncontrados = emptyList()
                     productoresResultado = emptyList()
@@ -833,8 +839,39 @@ class MainActivity : ComponentActivity() {
 
                             onBackClick = {
                                 pantallaActual = PantallaActual.FILTROS_MONITOREO
+                            },
+
+                            onAbrirMapaClick = { header ->
+                                monitoreoSeleccionadoParaMapa = header
+                                pantallaActual = PantallaActual.MAPA_MONITOREO
                             }
                         )
+                    }
+
+                    PantallaActual.MAPA_MONITOREO -> {
+                        val header = monitoreoSeleccionadoParaMapa
+
+                        if (header == null) {
+                            LaunchedEffect(Unit) {
+                                mostrarMensaje("No se seleccionó ningún monitoreo")
+                                pantallaActual = PantallaActual.LISTA_MONITOREOS
+                            }
+                        } else {
+                            val nombreMonitoreo = programasResultado
+                                .firstOrNull { programa ->
+                                    programa.idProgram == header.idProgram
+                                }
+                                ?.cycle ?: "Monitoreo ${header.idHeader}"
+
+                            MonitoreoMapaScreen(
+                                database = database,
+                                header = header,
+                                nombreMonitoreo = nombreMonitoreo,
+                                onBackClick = {
+                                    pantallaActual = PantallaActual.LISTA_MONITOREOS
+                                }
+                            )
+                        }
                     }
                 }
             }

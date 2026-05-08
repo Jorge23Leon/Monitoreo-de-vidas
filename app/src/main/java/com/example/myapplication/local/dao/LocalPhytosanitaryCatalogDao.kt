@@ -23,4 +23,23 @@ interface LocalPhytosanitaryCatalogDao {
 
     @Query("SELECT * FROM local_phytosanitary_catalog WHERE name LIKE '%' || :name || '%' ORDER BY name ASC")
     suspend fun searchPhytosanitaryByName(name: String): List<LocalPhytosanitaryCatalogEntity>
+
+    @Query("""
+    SELECT *
+    FROM local_phytosanitary_catalog
+    WHERE idDefaultCrop = :idCrop
+       OR idDefaultCrop IS NULL
+    ORDER BY type ASC, name ASC
+""")
+    suspend fun getCatalogoByCropOrGeneral(
+        idCrop: Long
+    ): List<LocalPhytosanitaryCatalogEntity>
+
+    @Query("""
+    SELECT *
+    FROM local_phytosanitary_catalog
+    ORDER BY type ASC, name ASC
+""")
+    suspend fun getAllCatalogo(): List<LocalPhytosanitaryCatalogEntity>
+
 }
