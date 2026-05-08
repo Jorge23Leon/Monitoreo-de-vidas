@@ -25,15 +25,13 @@ interface LocalCiaAgroUnitDao {
     )
     suspend fun obtenerProductoresPorCia(idLocalCia: Long): List<LocalAgroUnitEntity>
 
-    @Query(
-        """
-        SELECT c.*
-        FROM local_cias AS c
-        INNER JOIN local_cia_agro_units AS cau
-        ON c.idLocalCia = cau.idLocalCia
-        WHERE cau.idLocalAgroUnit = :idLocalAgroUnit
-        ORDER BY c.nombre ASC
-        """
-    )
-    suspend fun obtenerCiasPorProductor(idLocalAgroUnit: Long): List<LocalCiaEntity>
+    @Query("""
+    SELECT au.*
+    FROM local_agro_units au
+    INNER JOIN local_cia_agro_units cau
+        ON au.idLocalAgroUnit = cau.idLocalAgroUnit
+    WHERE cau.idLocalCia = :idLocalCia
+    ORDER BY au.commercial_name ASC
+""")
+    suspend fun getProductoresByCia(idLocalCia: Long): List<LocalAgroUnitEntity>
 }

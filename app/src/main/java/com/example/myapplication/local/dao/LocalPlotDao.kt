@@ -40,4 +40,20 @@ interface LocalPlotDao {
 
     @Query("DELETE FROM local_plots")
     suspend fun deleteAllPlots()
+
+    @Query("""
+    SELECT *
+    FROM local_plots
+    WHERE idLocalRanch = :idRanch
+    ORDER BY code ASC
+""")
+    suspend fun getParcelasByRancho(idRanch: Long): List<LocalPlotEntity>
+
+
+    @Query("""
+    SELECT *
+    FROM local_plots
+    WHERE idLocalPlot IN (:ids)
+""")
+    suspend fun getParcelasByIds(ids: List<Long>): List<LocalPlotEntity>
 }

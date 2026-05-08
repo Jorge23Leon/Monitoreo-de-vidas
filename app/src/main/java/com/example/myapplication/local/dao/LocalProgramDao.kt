@@ -59,4 +59,35 @@ interface LocalProgramDao {
 
     @Query("DELETE FROM local_programs")
     suspend fun deleteAllPrograms()
+
+    @Query("""
+    SELECT p.*
+    FROM local_programs p
+    INNER JOIN local_cia_agro_units cau
+        ON p.idLocalAgroUnit = cau.idLocalAgroUnit
+    WHERE cau.idLocalCia = :idLocalCia
+    ORDER BY p.est_start_date DESC
+""")
+    suspend fun getProgramasByCia(idLocalCia: Long): List<LocalProgramEntity>
+
+
+    @Query("""
+    SELECT *
+    FROM local_programs
+    WHERE idLocalAgroUnit = :idProductor
+    AND idLocalPlot = :idPlot
+    ORDER BY est_start_date DESC
+""")
+    suspend fun getCiclosByProductorAndParcela(
+        idProductor: Long,
+        idPlot: Long
+    ): List<LocalProgramEntity>
+
+
+    @Query("""
+    SELECT *
+    FROM local_programs
+    WHERE idProgram IN (:ids)
+""")
+    suspend fun getProgramasByIds(ids: List<Long>): List<LocalProgramEntity>
 }

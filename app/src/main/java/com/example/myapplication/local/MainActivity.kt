@@ -13,18 +13,28 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import com.example.myapplication.local.entities.AppDatabase
+import com.example.myapplication.local.entities.LocalAgroUnitEntity
 import com.example.myapplication.local.entities.LocalCiaEntity
+import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
+import com.example.myapplication.local.entities.LocalPlotEntity
+import com.example.myapplication.local.entities.LocalProgramEntity
+import com.example.myapplication.local.entities.LocalRanchEntity
 import com.example.myapplication.local.entities.UserEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
 enum class PantallaActual {
     LOGIN,
     REGISTRO,
     INFORMACION,
     CONTACTO,
-    SELECCION_CIA
+    SELECCION_CIA,
+    FILTROS_MONITOREO,
+    LISTA_MONITOREOS
 }
 
 class MainActivity : ComponentActivity() {
@@ -61,6 +71,10 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf("")
                 }
 
+                var busquedaFueConSaltoFiltros by rememberSaveable {
+                    mutableStateOf(false)
+                }
+
                 var ciasUsuario by remember {
                     mutableStateOf<List<LocalCiaEntity>>(emptyList())
                 }
@@ -71,6 +85,389 @@ class MainActivity : ComponentActivity() {
 
                 var seleccionarPreferente by rememberSaveable {
                     mutableStateOf(false)
+                }
+
+                var productores by remember {
+                    mutableStateOf<List<LocalAgroUnitEntity>>(emptyList())
+                }
+
+                var ranchos by remember {
+                    mutableStateOf<List<LocalRanchEntity>>(emptyList())
+                }
+
+                var parcelas by remember {
+                    mutableStateOf<List<LocalPlotEntity>>(emptyList())
+                }
+
+                var ciclos by remember {
+                    mutableStateOf<List<LocalProgramEntity>>(emptyList())
+                }
+
+                var productorSeleccionado by remember {
+                    mutableStateOf<LocalAgroUnitEntity?>(null)
+                }
+
+                var ranchoSeleccionado by remember {
+                    mutableStateOf<LocalRanchEntity?>(null)
+                }
+
+                var parcelaSeleccionada by remember {
+                    mutableStateOf<LocalPlotEntity?>(null)
+                }
+
+                var cicloSeleccionado by remember {
+                    mutableStateOf<LocalProgramEntity?>(null)
+                }
+
+                var fechaInicioTexto by rememberSaveable {
+                    mutableStateOf("")
+                }
+
+                var fechaFinTexto by rememberSaveable {
+                    mutableStateOf("")
+                }
+
+                var finalizadosChecked by rememberSaveable {
+                    mutableStateOf(false)
+                }
+
+                var vigentesChecked by rememberSaveable {
+                    mutableStateOf(true)
+                }
+
+                var canceladosChecked by rememberSaveable {
+                    mutableStateOf(false)
+                }
+
+                var monitoreosEncontrados by remember {
+                    mutableStateOf<List<LocalPhytomonitoringHeaderEntity>>(emptyList())
+                }
+
+                var productoresResultado by remember {
+                    mutableStateOf<List<LocalAgroUnitEntity>>(emptyList())
+                }
+
+                var ranchosResultado by remember {
+                    mutableStateOf<List<LocalRanchEntity>>(emptyList())
+                }
+
+                var parcelasResultado by remember {
+                    mutableStateOf<List<LocalPlotEntity>>(emptyList())
+                }
+
+                var programasResultado by remember {
+                    mutableStateOf<List<LocalProgramEntity>>(emptyList())
+                }
+
+                fun limpiarFiltros() {
+                    productores = emptyList()
+                    ranchos = emptyList()
+                    parcelas = emptyList()
+                    ciclos = emptyList()
+
+                    productorSeleccionado = null
+                    ranchoSeleccionado = null
+                    parcelaSeleccionada = null
+                    cicloSeleccionado = null
+
+                    fechaInicioTexto = ""
+                    fechaFinTexto = ""
+
+                    finalizadosChecked = false
+                    vigentesChecked = true
+                    canceladosChecked = false
+
+                    busquedaFueConSaltoFiltros = false
+
+                    monitoreosEncontrados = emptyList()
+                    productoresResultado = emptyList()
+                    ranchosResultado = emptyList()
+                    parcelasResultado = emptyList()
+                    programasResultado = emptyList()
+                }
+
+                fun filtrosCompletos(): Boolean {
+                    if (productorSeleccionado == null) {
+                        mostrarMensaje("Selecciona un productor")
+                        return false
+                    }
+
+                    if (ranchoSeleccionado == null) {
+                        mostrarMensaje("Selecciona un rancho")
+                        return false
+                    }
+
+                    if (parcelaSeleccionada == null) {
+                        mostrarMensaje("Selecciona una parcela")
+                        return false
+                    }
+
+                    if (cicloSeleccionado == null) {
+                        mostrarMensaje("Selecciona un ciclo")
+                        return false
+                    }
+
+                    if (fechaInicioTexto.isBlank()) {
+                        mostrarMensaje("Ingresa la fecha de inicio")
+                        return false
+                    }
+
+                    if (fechaFinTexto.isBlank()) {
+                        mostrarMensaje("Ingresa la fecha de fin")
+                        return false
+                    }
+
+                    val fechaInicio = parseFechaInicio(fechaInicioTexto)
+                    val fechaFin = parseFechaFin(fechaFinTexto)
+
+                    if (fechaInicio == null || fechaFin == null) {
+                        mostrarMensaje("Usa el formato de fecha dd-MM-yyyy")
+                        return false
+                    }
+
+                    if (fechaInicio > fechaFin) {
+                        mostrarMensaje("La fecha de inicio no puede ser mayor que la fecha de fin")
+                        return false
+                    }
+
+                    if (!finalizadosChecked && !vigentesChecked && !canceladosChecked) {
+                        mostrarMensaje("Selecciona un estado del monitoreo")
+                        return false
+                    }
+
+                    return true
+                }
+
+                fun cargarProductores(idLocalCia: Long) {
+                    coroutineScope.launch {
+                        try {
+                            productores = withContext(Dispatchers.IO) {
+                                database.localCiaAgroUnitDao()
+                                    .getProductoresByCia(idLocalCia)
+                            }
+                        } catch (e: Exception) {
+                            mostrarMensaje("Error al cargar productores: ${e.message}")
+                        }
+                    }
+                }
+
+                fun cargarRanchos(idProductor: Long) {
+                    coroutineScope.launch {
+                        try {
+                            ranchos = withContext(Dispatchers.IO) {
+                                database.localRanchDao()
+                                    .getRanchosByProductor(idProductor)
+                            }
+                        } catch (e: Exception) {
+                            mostrarMensaje("Error al cargar ranchos: ${e.message}")
+                        }
+                    }
+                }
+
+                fun cargarParcelas(idRanch: Long) {
+                    coroutineScope.launch {
+                        try {
+                            parcelas = withContext(Dispatchers.IO) {
+                                database.localPlotDao()
+                                    .getParcelasByRancho(idRanch)
+                            }
+                        } catch (e: Exception) {
+                            mostrarMensaje("Error al cargar parcelas: ${e.message}")
+                        }
+                    }
+                }
+
+                fun cargarCiclos(idProductor: Long, idPlot: Long) {
+                    coroutineScope.launch {
+                        try {
+                            ciclos = withContext(Dispatchers.IO) {
+                                database.localprogramDao()
+                                    .getCiclosByProductorAndParcela(
+                                        idProductor = idProductor,
+                                        idPlot = idPlot
+                                    )
+                            }
+                        } catch (e: Exception) {
+                            mostrarMensaje("Error al cargar ciclos: ${e.message}")
+                        }
+                    }
+                }
+
+                fun obtenerEstadosSeleccionados(saltarFiltros: Boolean): List<String> {
+                    if (saltarFiltros) {
+                        return listOf("pending", "in_progress")
+                    }
+
+                    return when {
+                        finalizadosChecked -> listOf("completed")
+                        vigentesChecked -> listOf("pending", "in_progress")
+                        canceladosChecked -> listOf("cancelled")
+                        else -> emptyList()
+                    }
+                }
+
+                fun buscarMonitoreos(saltarFiltros: Boolean) {
+                    val cia = ciaSeleccionada
+
+                    if (cia == null) {
+                        mostrarMensaje("Selecciona una CIA primero")
+                        return
+                    }
+
+                    busquedaFueConSaltoFiltros = saltarFiltros
+
+                    if (!saltarFiltros && !filtrosCompletos()) {
+                        return
+                    }
+
+                    coroutineScope.launch {
+                        try {
+                            val fechaInicio = if (saltarFiltros) {
+                                null
+                            } else {
+                                parseFechaInicio(fechaInicioTexto)
+                            }
+
+                            val fechaFin = if (saltarFiltros) {
+                                null
+                            } else {
+                                parseFechaFin(fechaFinTexto)
+                            }
+
+                            val estados = obtenerEstadosSeleccionados(saltarFiltros)
+
+                            val resultado = withContext(Dispatchers.IO) {
+
+                                val programasCia = database.localprogramDao()
+                                    .getProgramasByCia(cia.idLocalCia)
+
+                                var programasFiltrados = programasCia
+
+                                if (!saltarFiltros) {
+
+                                    productorSeleccionado?.let { productor ->
+                                        programasFiltrados = programasFiltrados.filter { programa ->
+                                            programa.idLocalAgroUnit == productor.idLocalAgroUnit
+                                        }
+                                    }
+
+                                    ranchoSeleccionado?.let { rancho ->
+                                        val parcelasDelRancho = database.localPlotDao()
+                                            .getParcelasByRancho(rancho.idLocalRanch)
+
+                                        val idsParcelasRancho = parcelasDelRancho.map { parcela ->
+                                            parcela.idLocalPlot
+                                        }
+
+                                        programasFiltrados = programasFiltrados.filter { programa ->
+                                            programa.idLocalPlot in idsParcelasRancho
+                                        }
+                                    }
+
+                                    parcelaSeleccionada?.let { parcela ->
+                                        programasFiltrados = programasFiltrados.filter { programa ->
+                                            programa.idLocalPlot == parcela.idLocalPlot
+                                        }
+                                    }
+
+                                    cicloSeleccionado?.let { ciclo ->
+                                        programasFiltrados = programasFiltrados.filter { programa ->
+                                            programa.idProgram == ciclo.idProgram
+                                        }
+                                    }
+                                }
+
+                                val idsProgramas = programasFiltrados.map { programa ->
+                                    programa.idProgram
+                                }
+
+                                val headers = if (idsProgramas.isEmpty()) {
+                                    emptyList()
+                                } else {
+                                    database.localphytomonitoringheaderDao()
+                                        .filtrarHeadersMonitoreo(
+                                            programIds = idsProgramas,
+                                            idProgram = if (saltarFiltros) {
+                                                null
+                                            } else {
+                                                cicloSeleccionado?.idProgram
+                                            },
+                                            idPlot = if (saltarFiltros) {
+                                                null
+                                            } else {
+                                                parcelaSeleccionada?.idLocalPlot
+                                            },
+                                            startDate = fechaInicio,
+                                            endDate = fechaFin,
+                                            statuses = estados
+                                        )
+                                }
+
+                                val idsProgramasResultado = headers.map { header ->
+                                    header.idProgram
+                                }.distinct()
+
+                                val idsParcelasResultado = headers.map { header ->
+                                    header.idLocalPlot
+                                }.distinct()
+
+                                val programasRel = if (idsProgramasResultado.isEmpty()) {
+                                    emptyList()
+                                } else {
+                                    database.localprogramDao()
+                                        .getProgramasByIds(idsProgramasResultado)
+                                }
+
+                                val parcelasRel = if (idsParcelasResultado.isEmpty()) {
+                                    emptyList()
+                                } else {
+                                    database.localPlotDao()
+                                        .getParcelasByIds(idsParcelasResultado)
+                                }
+
+                                val idsRanchosResultado = parcelasRel.map { parcela ->
+                                    parcela.idLocalRanch
+                                }.distinct()
+
+                                val ranchosRel = if (idsRanchosResultado.isEmpty()) {
+                                    emptyList()
+                                } else {
+                                    database.localRanchDao()
+                                        .getRanchosByIds(idsRanchosResultado)
+                                }
+
+                                val idsProductoresResultado = programasRel.map { programa ->
+                                    programa.idLocalAgroUnit
+                                }.distinct()
+
+                                val productoresRel = if (idsProductoresResultado.isEmpty()) {
+                                    emptyList()
+                                } else {
+                                    database.localAgroUnitDao()
+                                        .getProductoresByIds(idsProductoresResultado)
+                                }
+
+                                ResultadoMonitoreoTemp(
+                                    headers = headers,
+                                    productores = productoresRel,
+                                    ranchos = ranchosRel,
+                                    parcelas = parcelasRel,
+                                    programas = programasRel
+                                )
+                            }
+
+                            monitoreosEncontrados = resultado.headers
+                            productoresResultado = resultado.productores
+                            ranchosResultado = resultado.ranchos
+                            parcelasResultado = resultado.parcelas
+                            programasResultado = resultado.programas
+
+                            pantallaActual = PantallaActual.LISTA_MONITOREOS
+
+                        } catch (e: Exception) {
+                            mostrarMensaje("Error al buscar monitoreos: ${e.message}")
+                        }
+                    }
                 }
 
                 LaunchedEffect(Unit) {
@@ -265,33 +662,11 @@ class MainActivity : ComponentActivity() {
                                         )
                                     }
 
+                                    limpiarFiltros()
+                                    cargarProductores(cia.idLocalCia)
+
                                     mostrarMensaje("CIA seleccionada: ${cia.nombre}")
-
-                                    when (rolUsuarioActual) {
-                                        "Admin" -> {
-                                            mostrarMensaje("Entrando como administrador")
-
-                                            /*
-                                             Aquí después mandas a la pantalla principal del administrador.
-                                             Ejemplo:
-                                             pantallaActual = PantallaActual.ADMIN
-                                            */
-                                        }
-
-                                        "Técnico" -> {
-                                            mostrarMensaje("Entrando como técnico")
-
-                                            /*
-                                             Aquí después mandas a la pantalla principal del técnico.
-                                             Ejemplo:
-                                             pantallaActual = PantallaActual.TECNICO
-                                            */
-                                        }
-
-                                        else -> {
-                                            mostrarMensaje("Rol no reconocido")
-                                        }
-                                    }
+                                    pantallaActual = PantallaActual.FILTROS_MONITOREO
                                 }
                             },
 
@@ -304,9 +679,160 @@ class MainActivity : ComponentActivity() {
                                         ciasUsuario = emptyList()
                                         ciaSeleccionada = null
                                         seleccionarPreferente = false
+                                        limpiarFiltros()
                                         pantallaActual = PantallaActual.LOGIN
                                     }
                                 )
+                            }
+                        )
+                    }
+
+                    PantallaActual.FILTROS_MONITOREO -> {
+                        MonitoreoFiltrosScreen(
+                            nombreUsuario = nombreUsuarioActual,
+                            nombreCia = ciaSeleccionada?.nombre ?: "Sin CIA",
+
+                            productores = productores,
+                            ranchos = ranchos,
+                            parcelas = parcelas,
+                            ciclos = ciclos,
+
+                            productorSeleccionado = productorSeleccionado,
+                            ranchoSeleccionado = ranchoSeleccionado,
+                            parcelaSeleccionada = parcelaSeleccionada,
+                            cicloSeleccionado = cicloSeleccionado,
+
+                            fechaInicioTexto = fechaInicioTexto,
+                            fechaFinTexto = fechaFinTexto,
+
+                            finalizadosChecked = finalizadosChecked,
+                            vigentesChecked = vigentesChecked,
+                            canceladosChecked = canceladosChecked,
+
+                            onProductorChange = { productor ->
+                                productorSeleccionado = productor
+
+                                ranchoSeleccionado = null
+                                parcelaSeleccionada = null
+                                cicloSeleccionado = null
+
+                                ranchos = emptyList()
+                                parcelas = emptyList()
+                                ciclos = emptyList()
+
+                                cargarRanchos(productor.idLocalAgroUnit)
+                            },
+
+                            onRanchoChange = { rancho ->
+                                ranchoSeleccionado = rancho
+
+                                parcelaSeleccionada = null
+                                cicloSeleccionado = null
+
+                                parcelas = emptyList()
+                                ciclos = emptyList()
+
+                                cargarParcelas(rancho.idLocalRanch)
+                            },
+
+                            onParcelaChange = { parcela ->
+                                parcelaSeleccionada = parcela
+
+                                cicloSeleccionado = null
+                                ciclos = emptyList()
+
+                                val productor = productorSeleccionado
+
+                                if (productor != null) {
+                                    cargarCiclos(
+                                        idProductor = productor.idLocalAgroUnit,
+                                        idPlot = parcela.idLocalPlot
+                                    )
+                                }
+                            },
+
+                            onCicloChange = { ciclo ->
+                                cicloSeleccionado = ciclo
+                            },
+
+                            onFechaInicioChange = { fecha ->
+                                fechaInicioTexto = fecha
+                            },
+
+                            onFechaFinChange = { fecha ->
+                                fechaFinTexto = fecha
+                            },
+
+                            onFinalizadosChange = { checked ->
+                                finalizadosChecked = checked
+
+                                if (checked) {
+                                    vigentesChecked = false
+                                    canceladosChecked = false
+                                }
+                            },
+
+                            onVigentesChange = { checked ->
+                                vigentesChecked = checked
+
+                                if (checked) {
+                                    finalizadosChecked = false
+                                    canceladosChecked = false
+                                }
+                            },
+
+                            onCanceladosChange = { checked ->
+                                canceladosChecked = checked
+
+                                if (checked) {
+                                    finalizadosChecked = false
+                                    vigentesChecked = false
+                                }
+                            },
+
+                            onBuscarClick = {
+                                buscarMonitoreos(saltarFiltros = false)
+                            },
+
+                            onSaltarFiltrosClick = {
+                                buscarMonitoreos(saltarFiltros = true)
+                            },
+
+                            onBackClick = {
+                                pantallaActual = PantallaActual.SELECCION_CIA
+                            },
+
+                            onCerrarSesionClick = {
+                                cerrarSesion(
+                                    onLimpiarEstados = {
+                                        idUsuarioActual = 0L
+                                        nombreUsuarioActual = ""
+                                        rolUsuarioActual = ""
+                                        ciasUsuario = emptyList()
+                                        ciaSeleccionada = null
+                                        seleccionarPreferente = false
+                                        limpiarFiltros()
+                                        pantallaActual = PantallaActual.LOGIN
+                                    }
+                                )
+                            }
+                        )
+                    }
+
+                    PantallaActual.LISTA_MONITOREOS -> {
+                        MonitoreoListaScreen(
+                            nombreUsuario = nombreUsuarioActual,
+                            nombreCia = ciaSeleccionada?.nombre ?: "Sin CIA",
+                            busquedaFueConSaltoFiltros = busquedaFueConSaltoFiltros,
+
+                            monitoreos = monitoreosEncontrados,
+                            productores = productoresResultado,
+                            ranchos = ranchosResultado,
+                            parcelas = parcelasResultado,
+                            programas = programasResultado,
+
+                            onBackClick = {
+                                pantallaActual = PantallaActual.FILTROS_MONITOREO
                             }
                         )
                     }
@@ -365,4 +891,47 @@ class MainActivity : ComponentActivity() {
             Toast.LENGTH_SHORT
         ).show()
     }
+
+    private fun parseFechaInicio(fechaTexto: String): Long? {
+        if (fechaTexto.isBlank()) return null
+
+        return try {
+            val sdf = SimpleDateFormat("dd-MM-yyyy", Locale.getDefault())
+            sdf.isLenient = false
+            sdf.parse(fechaTexto)?.time
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun parseFechaFin(fechaTexto: String): Long? {
+        if (fechaTexto.isBlank()) return null
+
+        return try {
+            val sdf = SimpleDateFormat("dd-MM-yyyy", Locale.getDefault())
+            sdf.isLenient = false
+
+            val fecha = sdf.parse(fechaTexto) ?: return null
+
+            val calendar = Calendar.getInstance()
+            calendar.time = fecha
+            calendar.set(Calendar.HOUR_OF_DAY, 23)
+            calendar.set(Calendar.MINUTE, 59)
+            calendar.set(Calendar.SECOND, 59)
+            calendar.set(Calendar.MILLISECOND, 999)
+
+            calendar.timeInMillis
+
+        } catch (e: Exception) {
+            null
+        }
+    }
 }
+
+private data class ResultadoMonitoreoTemp(
+    val headers: List<LocalPhytomonitoringHeaderEntity>,
+    val productores: List<LocalAgroUnitEntity>,
+    val ranchos: List<LocalRanchEntity>,
+    val parcelas: List<LocalPlotEntity>,
+    val programas: List<LocalProgramEntity>
+)

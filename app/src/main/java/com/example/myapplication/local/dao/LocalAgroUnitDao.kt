@@ -20,4 +20,11 @@ interface LocalAgroUnitDao {
 
     @Query("SELECT * FROM local_agro_units WHERE slug = :slug LIMIT 1")
     suspend fun getAgroUnitBySlug(slug: String): LocalAgroUnitEntity?
+
+    @Query("""
+    SELECT *
+    FROM local_agro_units
+    WHERE idLocalAgroUnit IN (:ids)
+""")
+    suspend fun getProductoresByIds(ids: List<Long>): List<LocalAgroUnitEntity>
 }

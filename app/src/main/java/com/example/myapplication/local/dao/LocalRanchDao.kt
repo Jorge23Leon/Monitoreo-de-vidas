@@ -40,4 +40,19 @@ interface LocalRanchDao {
 
     @Query("DELETE FROM local_ranches")
     suspend fun deleteAllRanches()
+
+    @Query("""
+    SELECT *
+    FROM local_ranches
+    WHERE idLocalAgroUnit = :idProductor
+    ORDER BY name ASC
+""")
+    suspend fun getRanchosByProductor(idProductor: Long): List<LocalRanchEntity>
+
+    @Query("""
+    SELECT *
+    FROM local_ranches
+    WHERE idLocalRanch IN (:ids)
+""")
+    suspend fun getRanchosByIds(ids: List<Long>): List<LocalRanchEntity>
 }

@@ -20,14 +20,14 @@ interface LocalPhytomonitoringCheckpointDao {
     @Query("""
         SELECT * FROM local_phytomonitoring_checkpoints
         WHERE idTargetPoint = :idTargetPoint
-        ORDER BY createdAt DESC
+        ORDER BY captured_at DESC
     """)
     suspend fun getCheckpointsByTargetPoint(idTargetPoint: Long): List<LocalPhytomonitoringCheckpointEntity>
 
     @Query("""
         SELECT * FROM local_phytomonitoring_checkpoints
         WHERE idHeader = :idHeader
-        ORDER BY createdAt DESC
+        ORDER BY captured_at DESC
     """)
     suspend fun getCheckpointsByHeader(idHeader: Long): List<LocalPhytomonitoringCheckpointEntity>
 

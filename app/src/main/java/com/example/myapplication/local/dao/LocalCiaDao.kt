@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import com.example.myapplication.local.entities.LocalAgroUnitEntity
 import com.example.myapplication.local.entities.LocalCiaEntity
 
 @Dao
@@ -31,4 +32,13 @@ interface LocalCiaDao {
 
     @Query("SELECT * FROM local_cias WHERE slug = :slug LIMIT 1")
     suspend fun getCiaBySlug(slug: String): LocalCiaEntity?
+    @Query("""
+    SELECT au.*
+    FROM local_agro_units au
+    INNER JOIN local_cia_agro_units cau
+        ON au.idLocalAgroUnit = cau.idLocalAgroUnit
+    WHERE cau.idLocalCia = :idLocalCia
+    ORDER BY au.commercial_name ASC
+""")
+    suspend fun getProductoresByCia(idLocalCia: Long): List<LocalAgroUnitEntity>
 }
