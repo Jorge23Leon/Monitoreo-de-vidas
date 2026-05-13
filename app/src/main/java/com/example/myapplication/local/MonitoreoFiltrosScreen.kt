@@ -11,10 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -58,9 +55,7 @@ fun MonitoreoFiltrosScreen(
     onRanchoChange: (LocalRanchEntity) -> Unit,
     onParcelaChange: (LocalPlotEntity) -> Unit,
 
-    onBuscarClick: () -> Unit,
-    onBackClick: () -> Unit,
-    onCerrarSesionClick: () -> Unit
+    onBuscarClick: () -> Unit
 ) {
     Box(
         modifier = Modifier
@@ -75,27 +70,29 @@ fun MonitoreoFiltrosScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
-            HeaderMonitoreo(
-                nombreUsuario = nombreUsuario,
-                onBackClick = onBackClick,
-
+            EncabezadoApp(
+                nombreUsuario = nombreUsuario
             )
+            
+            Spacer(modifier = Modifier.height(12.dp))
 
             Text(
                 text = "CIA seleccionada: $nombreCia",
-                fontSize = 12.sp,
-                color = Color.DarkGray,
-                textAlign = TextAlign.Center
+                fontSize = 18.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color.Black,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-            ) {
+            )  {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -103,7 +100,7 @@ fun MonitoreoFiltrosScreen(
                 ) {
 
                     Text(
-                        text = "Selecciona el contexto de monitoreo",
+                        text = "Selecciona de monitoreos",
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.Black
@@ -112,7 +109,7 @@ fun MonitoreoFiltrosScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "Primero selecciona productor, rancho y parcela. Los filtros de ciclo, fechas y estado aparecerán en la lista de monitoreos.",
+                        text = "Selecciona el productor, rancho y parcela para consultar los monitoreos disponibles de esa ubicación agrícola.",
                         fontSize = 11.sp,
                         color = Color.DarkGray,
                         lineHeight = 15.sp
@@ -178,87 +175,11 @@ fun MonitoreoFiltrosScreen(
 
             Spacer(modifier = Modifier.height(30.dp))
 
-            Button(
-                onClick = onCerrarSesionClick,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF5A3A3)),
-                shape = RoundedCornerShape(30.dp),
-                modifier = Modifier
-                    .width(170.dp)
-                    .height(44.dp)
-            ) {
-                Text(
-                    text = "Cerrar Sesión",
-                    color = Color.Black,
-                    fontWeight = FontWeight.Bold
-                )
-            }
+
         }
     }
 }
 
-@Composable
-private fun HeaderMonitoreo(
-    nombreUsuario: String,
-    onBackClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Button(
-            onClick = onBackClick,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .size(44.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF52AFC4)),
-            shape = CircleShape,
-            contentPadding = PaddingValues(0.dp)
-        ) {
-            Text("↩", color = Color.White, fontSize = 22.sp)
-        }
-
-        Column(
-            modifier = Modifier.align(Alignment.Center),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Spacer(modifier = Modifier.height(22.dp))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("🟩", fontSize = 34.sp)
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                Column {
-                    Text(
-                        text = "TIERRA",
-                        fontSize = 30.sp,
-                        fontWeight = FontWeight.Black,
-                        color = Color.Black
-                    )
-
-                    Text(
-                        text = "INTELIGENTE",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.Black
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Text(
-                text = "Bienvenido $nombreUsuario",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF666666)
-            )
-        }
-    }
-
-    Spacer(modifier = Modifier.height(125.dp))
-}
 @Composable
 private fun <T> SelectorFiltro(
     label: String,

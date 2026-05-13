@@ -39,10 +39,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.myapplication.local.entities.LocalCiaEntity
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import androidx.compose.foundation.layout.PaddingValues
 
 @Composable
 fun SeleccionCiaScreen(
@@ -57,12 +53,7 @@ fun SeleccionCiaScreen(
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    val fechaActual = remember {
-        SimpleDateFormat(
-            "dd 'de' MMMM 'de' yyyy",
-            Locale("es", "MX")
-        ).format(Date())
-    }
+
 
     Box(
         modifier = Modifier
@@ -73,11 +64,10 @@ fun SeleccionCiaScreen(
         Column(
             modifier = Modifier.fillMaxSize()
         ) {
-            EncabezadoCompacto(
-                nombreUsuario = nombreUsuario,
-                fechaActual = fechaActual
+            EncabezadoApp(
+                nombreUsuario = nombreUsuario
             )
-            Spacer(modifier = Modifier.height(80.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             Column(
                 modifier = Modifier
@@ -344,87 +334,5 @@ fun SeleccionCiaScreen(
                 Spacer(modifier = Modifier.height(18.dp))
             }
         }
-    }
-}
-@Composable
-fun EncabezadoCompacto(
-    nombreUsuario: String,
-    fechaActual: String
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(62.dp)
-            .background(Color.White)
-            .padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 2.dp)
-    ) {
-        // Logo + Tierra Inteligente un poquito más abajo
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(top = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(width = 26.dp, height = 26.dp)
-                    .background(
-                        color = Color(0xFF7CB342),
-                        shape = RoundedCornerShape(3.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "🌱",
-                    fontSize = 14.sp
-                )
-            }
-
-            Spacer(modifier = Modifier.width(7.dp))
-
-            Column(
-                horizontalAlignment = Alignment.Start
-            ) {
-                Text(
-                    text = "TIERRA",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Black,
-                    color = Color.Black,
-                    lineHeight = 17.sp
-                )
-
-                Text(
-                    text = "INTELIGENTE",
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.Black,
-                    lineHeight = 9.sp
-                )
-            }
-        }
-
-        // Bienvenido + fecha centrado y un poco más arriba
-        Text(
-            text = "Bienvenido $nombreUsuario - $fechaActual",
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 1.dp),
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF6D6D6D),
-            textAlign = TextAlign.Center,
-            maxLines = 1
-        )
-
-        // Menú hamburguesa un poco abajo
-        Text(
-            text = "☰",
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 13.dp),
-            fontSize = 25.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.Black
-        )
     }
 }

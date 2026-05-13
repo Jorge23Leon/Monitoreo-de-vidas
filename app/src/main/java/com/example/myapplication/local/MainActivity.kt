@@ -723,29 +723,9 @@ class MainActivity : ComponentActivity() {
 
                             onBuscarClick = {
                                 buscarMonitoreos(saltarFiltros = false)
-                            },
-
-                            onBackClick = {
-                                pantallaActual = PantallaActual.SELECCION_CIA
-                            },
-
-                            onCerrarSesionClick = {
-                                cerrarSesion(
-                                    onLimpiarEstados = {
-                                        idUsuarioActual = 0L
-                                        nombreUsuarioActual = ""
-                                        rolUsuarioActual = ""
-                                        ciasUsuario = emptyList()
-                                        ciaSeleccionada = null
-                                        seleccionarPreferente = false
-                                        limpiarFiltros()
-                                        pantallaActual = PantallaActual.LOGIN
-                                    }
-                                )
                             }
                         )
                     }
-
                     PantallaActual.LISTA_MONITOREOS -> {
                         MonitoreoListaScreen(
                             nombreUsuario = nombreUsuarioActual,
