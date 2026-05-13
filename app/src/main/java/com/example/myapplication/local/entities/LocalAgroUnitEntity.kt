@@ -7,8 +7,9 @@ import androidx.room.PrimaryKey
 @Entity(
     tableName = "local_agro_units",
     indices = [
-        Index(value = ["slug"]),
-        Index(value = ["ext_Id"], unique = true)
+        Index(value = ["ext_Id"], unique = true),
+        Index(value = ["commercial_name"], unique = true),
+        Index(value = ["slug"], unique = true)
     ]
 )
 data class LocalAgroUnitEntity(

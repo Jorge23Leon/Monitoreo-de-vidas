@@ -1,5 +1,6 @@
 package com.example.myapplication.local.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -16,6 +17,7 @@ import androidx.room.PrimaryKey
         )
     ],
     indices = [
+        Index(value = ["ext_id"], unique = true),
         Index(value = ["name"]),
         Index(value = ["type"]),
         Index(value = ["idDefaultCrop"]),
@@ -26,17 +28,22 @@ data class LocalPhytosanitaryCatalogEntity(
     @PrimaryKey(autoGenerate = true)
     val idPhytosanitary: Long = 0,
 
-    val ext_Id: String? = null,
+    @ColumnInfo(name = "ext_id")
+    val extId: String? = null,
 
     val name: String,
-    val description: String? = null,
 
-    // PLAGA o ENFERMEDAD
     val type: String,
 
-    val min_ref_value: Int? = null,
-    val max_ref_value: Int? = null,
+    @ColumnInfo(name = "min_ref_value")
+    val minRefValue: Int? = null,
 
-    // FK opcional hacia local_crop_catalog
+    @ColumnInfo(name = "max_ref_value")
+    val maxRefValue: Int? = null,
+
+    val description: String? = null,
+
+    val photo: String? = null,
+
     val idDefaultCrop: Long? = null
 )

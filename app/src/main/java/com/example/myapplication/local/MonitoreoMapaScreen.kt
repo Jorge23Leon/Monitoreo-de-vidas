@@ -715,7 +715,7 @@ private fun crearPuntosJson(
         obj.put("idTargetPoint", punto.idTargetPoint)
         obj.put("lat", punto.lat)
         obj.put("lon", punto.lon)
-        obj.put("radius", punto.radius_m)
+        obj.put("radius", punto.radiusM)
         obj.put("status", statusFinal)
 
         array.put(obj)

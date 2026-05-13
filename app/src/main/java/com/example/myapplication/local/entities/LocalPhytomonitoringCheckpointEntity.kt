@@ -1,5 +1,6 @@
 package com.example.myapplication.local.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -34,49 +35,48 @@ import androidx.room.PrimaryKey
         )
     ],
     indices = [
+        Index(value = ["ext_id"], unique = true),
         Index(value = ["idTargetPoint"]),
         Index(value = ["idHeader"]),
         Index(value = ["idPhytosanitary"]),
         Index(value = ["idLocalPlot"]),
         Index(value = ["captured_at"])
+
     ]
 )
 data class LocalPhytomonitoringCheckpointEntity(
     @PrimaryKey(autoGenerate = true)
     val idCheckpoint: Long = 0,
 
+    @ColumnInfo(name = "ext_id")
     val extId: String? = null,
 
-
-    // Cantidad encontrada
-    // Por ejemplo: cantidad de insectos, daños, plantas afectadas, etc.
+    // Cantidad encontrada:
+    // insectos, daños, plantas afectadas, etc.
     val qty: Int? = null,
 
-    // Estado de presencia
-    // Puede servir para indicar si hubo presencia o no
-    // Ejemplo:
     // 0 = No presente
     // 1 = Presente
-    val presence_status: Int? = null,
+    @ColumnInfo(name = "presence_status")
+    val presenceStatus: Int? = null,
 
-    // Etapa o fase encontrada
-    // Ejemplo:
-    // "Huevo", "Larva", "Adulto", "Inicial", "Avanzada"
+    // Etapa o fase encontrada:
+    // "Huevo", "Larva", "Adulto", "Inicial", "Avanzada", etc.
     val stage: String? = null,
 
-    // Fecha y hora en que se capturó el checkpoint
-    val captured_at: Long? = null,
+    // Fecha y hora de captura en milisegundos
+    @ColumnInfo(name = "captured_at")
+    val capturedAt: Long? = null,
 
-
-    // Indica a qué punto objetivo pertenece este registro
+    // Punto objetivo
     val idTargetPoint: Long,
 
-    // Indica a qué sesión o tarea de monitoreo pertenece
+    // Header / sesión de monitoreo
     val idHeader: Long,
 
-    // Indica qué plaga o enfermedad se registró
+    // Plaga o enfermedad registrada
     val idPhytosanitary: Long,
 
-    // Indica en qué parcela se hizo el registro
+    // Parcela donde se registró
     val idLocalPlot: Long
 )

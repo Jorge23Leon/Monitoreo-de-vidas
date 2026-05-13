@@ -1,5 +1,6 @@
 package com.example.myapplication.local.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -22,6 +23,7 @@ import androidx.room.PrimaryKey
         )
     ],
     indices = [
+        Index(value = ["ext_id"], unique = true),
         Index(value = ["idHeader"]),
         Index(value = ["idLocalPlot"]),
         Index(value = ["status"])
@@ -31,13 +33,23 @@ data class LocalPhytomonitoringTargetPointEntity(
     @PrimaryKey(autoGenerate = true)
     val idTargetPoint: Long = 0,
 
-    val ext_Id: String? = null,
+    @ColumnInfo(name = "ext_id")
+    val extId: String? = null,
 
-    val radius_m: Int,
+    @ColumnInfo(name = "radius_m")
+    val radiusM: Int,
+
     val lat: Double,
+
     val lon: Double,
-    val status: String,
+
+    /**
+     * Valores esperados:
+     * "Pendiente", "En proceso", "Cancelado", "Completado"
+     */
+    val status: String = "Pendiente",
 
     val idHeader: Long,
+
     val idLocalPlot: Long
 )

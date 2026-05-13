@@ -26,6 +26,7 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import androidx.activity.compose.BackHandler
 
 enum class PantallaActual {
     LOGIN,
@@ -208,42 +209,8 @@ class MainActivity : ComponentActivity() {
                         return false
                     }
 
-                    if (cicloSeleccionado == null) {
-                        mostrarMensaje("Selecciona un ciclo")
-                        return false
-                    }
-
-                    if (fechaInicioTexto.isBlank()) {
-                        mostrarMensaje("Ingresa la fecha de inicio")
-                        return false
-                    }
-
-                    if (fechaFinTexto.isBlank()) {
-                        mostrarMensaje("Ingresa la fecha de fin")
-                        return false
-                    }
-
-                    val fechaInicio = parseFechaInicio(fechaInicioTexto)
-                    val fechaFin = parseFechaFin(fechaFinTexto)
-
-                    if (fechaInicio == null || fechaFin == null) {
-                        mostrarMensaje("Usa el formato de fecha dd-MM-yyyy")
-                        return false
-                    }
-
-                    if (fechaInicio > fechaFin) {
-                        mostrarMensaje("La fecha de inicio no puede ser mayor que la fecha de fin")
-                        return false
-                    }
-
-                    if (!finalizadosChecked && !vigentesChecked && !canceladosChecked) {
-                        mostrarMensaje("Selecciona un estado del monitoreo")
-                        return false
-                    }
-
                     return true
                 }
-
                 fun cargarProductores(idLocalCia: Long) {
                     coroutineScope.launch {
                         try {
@@ -328,20 +295,6 @@ class MainActivity : ComponentActivity() {
 
                     coroutineScope.launch {
                         try {
-                            val fechaInicio = if (saltarFiltros) {
-                                null
-                            } else {
-                                parseFechaInicio(fechaInicioTexto)
-                            }
-
-                            val fechaFin = if (saltarFiltros) {
-                                null
-                            } else {
-                                parseFechaFin(fechaFinTexto)
-                            }
-
-                            val estados = obtenerEstadosSeleccionados(saltarFiltros)
-
                             val resultado = withContext(Dispatchers.IO) {
 
                                 val programasCia = database.localprogramDao()
@@ -350,7 +303,6 @@ class MainActivity : ComponentActivity() {
                                 var programasFiltrados = programasCia
 
                                 if (!saltarFiltros) {
-
                                     productorSeleccionado?.let { productor ->
                                         programasFiltrados = programasFiltrados.filter { programa ->
                                             programa.idLocalAgroUnit == productor.idLocalAgroUnit
@@ -375,12 +327,6 @@ class MainActivity : ComponentActivity() {
                                             programa.idLocalPlot == parcela.idLocalPlot
                                         }
                                     }
-
-                                    cicloSeleccionado?.let { ciclo ->
-                                        programasFiltrados = programasFiltrados.filter { programa ->
-                                            programa.idProgram == ciclo.idProgram
-                                        }
-                                    }
                                 }
 
                                 val idsProgramas = programasFiltrados.map { programa ->
@@ -393,19 +339,15 @@ class MainActivity : ComponentActivity() {
                                     database.localphytomonitoringheaderDao()
                                         .filtrarHeadersMonitoreo(
                                             programIds = idsProgramas,
-                                            idProgram = if (saltarFiltros) {
-                                                null
-                                            } else {
-                                                cicloSeleccionado?.idProgram
-                                            },
-                                            idPlot = if (saltarFiltros) {
-                                                null
-                                            } else {
-                                                parcelaSeleccionada?.idLocalPlot
-                                            },
-                                            startDate = fechaInicio,
-                                            endDate = fechaFin,
-                                            statuses = estados
+                                            idProgram = null,
+                                            idPlot = if (saltarFiltros) null else parcelaSeleccionada?.idLocalPlot,
+                                            startDate = null,
+                                            endDate = null,
+                                            statuses = listOf(
+                                                "pending",
+                                                "in_progress",
+                                                "completed"
+                                            )
                                         )
                                 }
 
@@ -475,9 +417,49 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-
                 LaunchedEffect(Unit) {
                     insertarUsuarioAdminSeguro()
+                }
+                BackHandler(
+                    enabled = pantallaActual != PantallaActual.LOGIN
+                ) {
+                    when (pantallaActual) {
+
+                        PantallaActual.REGISTRO,
+                        PantallaActual.INFORMACION,
+                        PantallaActual.CONTACTO -> {
+                            pantallaActual = PantallaActual.LOGIN
+                        }
+
+                        PantallaActual.SELECCION_CIA -> {
+                            cerrarSesion(
+                                onLimpiarEstados = {
+                                    idUsuarioActual = 0L
+                                    nombreUsuarioActual = ""
+                                    rolUsuarioActual = ""
+                                    ciasUsuario = emptyList()
+                                    ciaSeleccionada = null
+                                    seleccionarPreferente = false
+                                    limpiarFiltros()
+                                    pantallaActual = PantallaActual.LOGIN
+                                }
+                            )
+                        }
+
+                        PantallaActual.FILTROS_MONITOREO -> {
+                            pantallaActual = PantallaActual.SELECCION_CIA
+                        }
+
+                        PantallaActual.LISTA_MONITOREOS -> {
+                            pantallaActual = PantallaActual.FILTROS_MONITOREO
+                        }
+
+                        PantallaActual.MAPA_MONITOREO -> {
+                            pantallaActual = PantallaActual.LISTA_MONITOREOS
+                        }
+
+                        else -> Unit
+                    }
                 }
 
                 when (pantallaActual) {
@@ -514,7 +496,7 @@ class MainActivity : ComponentActivity() {
                                                 }
 
                                                 idUsuarioActual = user.idUser
-                                                nombreUsuarioActual = user.first_name
+                                                nombreUsuarioActual = user.firstName
                                                 rolUsuarioActual = user.role
                                                 ciasUsuario = listaCias
 
@@ -528,7 +510,7 @@ class MainActivity : ComponentActivity() {
                                                     listaCias.firstOrNull()
                                                 }
 
-                                                mostrarMensaje("Bienvenido ${user.first_name}")
+                                                mostrarMensaje("Bienvenido ${user.firstName}")
                                                 pantallaActual = PantallaActual.SELECCION_CIA
 
                                             } else {
@@ -593,8 +575,8 @@ class MainActivity : ComponentActivity() {
                                             withContext(Dispatchers.IO) {
                                                 database.userDao().insertUser(
                                                     UserEntity(
-                                                        first_name = firstName,
-                                                        lastname = lastname.ifBlank { null },
+                                                        firstName = firstName,
+                                                        lastName = lastname.ifBlank { null },
                                                         username = username,
                                                         email = email,
                                                         password = password,
@@ -701,19 +683,10 @@ class MainActivity : ComponentActivity() {
                             productores = productores,
                             ranchos = ranchos,
                             parcelas = parcelas,
-                            ciclos = ciclos,
 
                             productorSeleccionado = productorSeleccionado,
                             ranchoSeleccionado = ranchoSeleccionado,
                             parcelaSeleccionada = parcelaSeleccionada,
-                            cicloSeleccionado = cicloSeleccionado,
-
-                            fechaInicioTexto = fechaInicioTexto,
-                            fechaFinTexto = fechaFinTexto,
-
-                            finalizadosChecked = finalizadosChecked,
-                            vigentesChecked = vigentesChecked,
-                            canceladosChecked = canceladosChecked,
 
                             onProductorChange = { productor ->
                                 productorSeleccionado = productor
@@ -746,62 +719,10 @@ class MainActivity : ComponentActivity() {
 
                                 cicloSeleccionado = null
                                 ciclos = emptyList()
-
-                                val productor = productorSeleccionado
-
-                                if (productor != null) {
-                                    cargarCiclos(
-                                        idProductor = productor.idLocalAgroUnit,
-                                        idPlot = parcela.idLocalPlot
-                                    )
-                                }
-                            },
-
-                            onCicloChange = { ciclo ->
-                                cicloSeleccionado = ciclo
-                            },
-
-                            onFechaInicioChange = { fecha ->
-                                fechaInicioTexto = fecha
-                            },
-
-                            onFechaFinChange = { fecha ->
-                                fechaFinTexto = fecha
-                            },
-
-                            onFinalizadosChange = { checked ->
-                                finalizadosChecked = checked
-
-                                if (checked) {
-                                    vigentesChecked = false
-                                    canceladosChecked = false
-                                }
-                            },
-
-                            onVigentesChange = { checked ->
-                                vigentesChecked = checked
-
-                                if (checked) {
-                                    finalizadosChecked = false
-                                    canceladosChecked = false
-                                }
-                            },
-
-                            onCanceladosChange = { checked ->
-                                canceladosChecked = checked
-
-                                if (checked) {
-                                    finalizadosChecked = false
-                                    vigentesChecked = false
-                                }
                             },
 
                             onBuscarClick = {
                                 buscarMonitoreos(saltarFiltros = false)
-                            },
-
-                            onSaltarFiltrosClick = {
-                                buscarMonitoreos(saltarFiltros = true)
                             },
 
                             onBackClick = {
@@ -886,8 +807,8 @@ class MainActivity : ComponentActivity() {
                 if (totalUsuarios == 0) {
                     database.userDao().insertUser(
                         UserEntity(
-                            first_name = "Jorge",
-                            lastname = "Sandoval",
+                            firstName = "Jorge",
+                            lastName = "Sandoval",
                             username = "jorge",
                             email = "jorge@test.com",
                             password = "1234",

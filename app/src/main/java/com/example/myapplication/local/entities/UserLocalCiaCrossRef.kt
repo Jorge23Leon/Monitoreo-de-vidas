@@ -1,10 +1,9 @@
 package com.example.myapplication.local.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
-import com.example.myapplication.local.entities.LocalCiaEntity
-import com.example.myapplication.local.entities.UserEntity
 
 @Entity(
     tableName = "user_local_cias",
@@ -13,7 +12,6 @@ import com.example.myapplication.local.entities.UserEntity
         ForeignKey(
             entity = UserEntity::class,
             parentColumns = ["idUser"],
-
             childColumns = ["idUser"],
             onDelete = ForeignKey.CASCADE
         ),
@@ -30,8 +28,8 @@ import com.example.myapplication.local.entities.UserEntity
     ]
 )
 data class UserLocalCiaCrossRef(
-
     val idUser: Long,
     val idLocalCia: Long,
-    val ext_Id: String? = null
+    @ColumnInfo(name = "ext_id")
+    val extId: String? = null
 )

@@ -113,67 +113,48 @@ interface LocalPhytomonitoringHeaderDao {
         statuses: List<String>
     ): List<LocalPhytomonitoringHeaderEntity>
 
-
     @Query("""
-        UPDATE local_phytomonitoring_headers
-        SET 
-            started_at = :startedAt,
-            status = 'in_progress'
-        WHERE idHeader = :idHeader
-    """)
+    UPDATE local_phytomonitoring_headers
+    SET 
+        start_at = :startedAt,
+        status = 'En proceso'
+    WHERE idHeader = :idHeader
+""")
     suspend fun iniciarMonitoreo(
         idHeader: Long,
         startedAt: Long
     )
 
     @Query("""
-        UPDATE local_phytomonitoring_headers
-        SET 
-            finished_at = :finishedAt,
-            status = 'completed'
-        WHERE idHeader = :idHeader
-    """)
+    UPDATE local_phytomonitoring_headers
+    SET 
+        finished_at = :finishedAt,
+        status = 'Completado'
+    WHERE idHeader = :idHeader
+""")
     suspend fun finalizarMonitoreo(
         idHeader: Long,
         finishedAt: Long
     )
 
     @Query("""
-        UPDATE local_phytomonitoring_headers
-        SET 
-            status = 'cancelled'
-        WHERE idHeader = :idHeader
-    """)
+    UPDATE local_phytomonitoring_headers
+    SET 
+        status = 'Cancelado'
+    WHERE idHeader = :idHeader
+""")
     suspend fun cancelarMonitoreo(
         idHeader: Long
     )
 
     @Query("""
-        UPDATE local_phytomonitoring_headers
-        SET 
-            status = 'pending',
-            started_at = NULL,
-            finished_at = NULL
-        WHERE idHeader = :idHeader
-    """)
+    UPDATE local_phytomonitoring_headers
+    SET 
+        status = 'Pendiente',
+        start_at = NULL,
+        finished_at = NULL
+    WHERE idHeader = :idHeader
+""")
     suspend fun regresarAPendiente(
         idHeader: Long
-    )
-
-    // =========================
-    // LIMPIEZA / PRUEBAS
-    // =========================
-
-    @Query("""
-        DELETE FROM local_phytomonitoring_headers
-        WHERE idHeader = :idHeader
-    """)
-    suspend fun deleteHeaderById(
-        idHeader: Long
-    )
-
-    @Query("""
-        DELETE FROM local_phytomonitoring_headers
-    """)
-    suspend fun deleteAllHeaders()
-}
+    )}

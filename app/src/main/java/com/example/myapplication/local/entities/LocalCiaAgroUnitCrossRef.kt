@@ -1,5 +1,6 @@
 package com.example.myapplication.local.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -24,13 +25,14 @@ import androidx.room.Index
     indices = [
         Index(value = ["idLocalCia"]),
         Index(value = ["idLocalAgroUnit"]),
-        Index(value = ["ext_Id"], unique = true)
+        Index(value = ["ext_id"], unique = true)
     ]
 )
 data class LocalCiaAgroUnitCrossRef(
     val idLocalCia: Long,
+
     val idLocalAgroUnit: Long,
 
-    // ID del servidor
-    val ext_Id: String? = null
+    @ColumnInfo(name = "ext_id")
+    val extId: String? = null
 )
