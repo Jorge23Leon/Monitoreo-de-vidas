@@ -762,10 +762,8 @@ class MainActivity : ComponentActivity() {
                             MonitoreoMapaScreen(
                                 database = database,
                                 header = header,
-                                nombreMonitoreo = nombreMonitoreo,
-                                onBackClick = {
-                                    pantallaActual = PantallaActual.LISTA_MONITOREOS
-                                }
+                                nombreUsuario = nombreUsuarioActual,
+                                nombreMonitoreo = nombreMonitoreo
                             )
                         }
                     }

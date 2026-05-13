@@ -2,13 +2,17 @@ package com.example.myapplication.local
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.AlertDialog
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color as AndroidColor
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Looper
+import android.webkit.JsResult
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -19,17 +23,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Text
@@ -59,14 +56,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import android.app.AlertDialog
-import android.webkit.JsResult
+
 @Composable
 fun MonitoreoMapaScreen(
     database: AppDatabase,
     header: LocalPhytomonitoringHeaderEntity,
-    nombreMonitoreo: String,
-    onBackClick: () -> Unit
+    nombreUsuario: String,
+    nombreMonitoreo: String
 ) {
     val context = LocalContext.current
 
@@ -84,6 +80,10 @@ fun MonitoreoMapaScreen(
 
     var ubicacionUsuario by remember {
         mutableStateOf<Pair<Double, Double>?>(null)
+    }
+
+    var internetDisponible by remember {
+        mutableStateOf(hayInternet(context))
     }
 
     val ubicacionActualizada by rememberUpdatedState(ubicacionUsuario)
@@ -118,6 +118,7 @@ fun MonitoreoMapaScreen(
     LaunchedEffect(header.idHeader) {
         cargando = true
         error = null
+        internetDisponible = hayInternet(context)
 
         try {
             val resultado = withContext(Dispatchers.IO) {
@@ -201,13 +202,20 @@ fun MonitoreoMapaScreen(
         }
     }
 
-    val htmlMapa = remember(vertices, puntos, checkpoints, nombreMonitoreo) {
+    val htmlMapa = remember(
+        vertices,
+        puntos,
+        checkpoints,
+        nombreMonitoreo,
+        internetDisponible
+    ) {
         crearHtmlMapaMonitoreo(
             nombreMonitoreo = nombreMonitoreo,
             vertices = vertices,
             puntos = puntos,
             checkpoints = checkpoints,
-            ubicacionInicial = ubicacionActualizada
+            ubicacionInicial = ubicacionActualizada,
+            internetDisponible = internetDisponible
         )
     }
 
@@ -219,39 +227,13 @@ fun MonitoreoMapaScreen(
         Column(
             modifier = Modifier.fillMaxSize()
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Button(
-                    onClick = onBackClick,
-                    modifier = Modifier.size(44.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF52AFC4)),
-                    shape = CircleShape,
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Text("↩", color = Color.White, fontSize = 22.sp)
-                }
+            EncabezadoApp(
+                nombreUsuario = nombreUsuario
+            )
 
-                Spacer(modifier = Modifier.size(12.dp))
-
-                Column {
-                    Text(
-                        text = "Mapa del monitoreo",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Black
-                    )
-
-                    Text(
-                        text = nombreMonitoreo,
-                        fontSize = 12.sp,
-                        color = Color.DarkGray
-                    )
-                }
-            }
+            BarraMapaMonitoreo(
+                nombreMonitoreo = nombreMonitoreo
+            )
 
             if (cargando) {
                 Text(
@@ -270,36 +252,34 @@ fun MonitoreoMapaScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp)
-                        .height(100.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF6F6F6)),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        .height(72.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFFF6F6F6)
+                    ),
+                    elevation = CardDefaults.cardElevation(
+                        defaultElevation = 2.dp
+                    )
                 ) {
                     Column(
-                        modifier = Modifier.padding(10.dp),
-                        verticalArrangement = Arrangement.Center
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
                             text = "Resumen",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Black
                         )
 
                         Text(
-                            text = "Vértices: ${vertices.size} | Puntos: ${puntos.size} | Capturas: ${checkpoints.size}",
-                            fontSize = 12.sp,
-                            color = Color.DarkGray
-                        )
-
-                        Text(
-                            text = "Verde = capturado, Amarillo = pendiente, Azul = tu ubicación",
-                            fontSize = 11.sp,
-                            color = Color.DarkGray
-                        )
-
-                        Text(
-                            text = "Solo puedes ver datos del punto si estás dentro del radio permitido.",
-                            fontSize = 10.sp,
-                            color = Color.DarkGray
+                            text = "Vértices: ${vertices.size}  |  Puntos: ${puntos.size}  |  Capturas: ${checkpoints.size}",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF4A4A4A),
+                            maxLines = 1
                         )
                     }
                 }
@@ -312,6 +292,7 @@ fun MonitoreoMapaScreen(
                     factory = { ctx ->
                         WebView(ctx).apply {
                             webViewClient = WebViewClient()
+
                             webChromeClient = object : WebChromeClient() {
                                 override fun onJsAlert(
                                     view: WebView?,
@@ -345,15 +326,23 @@ fun MonitoreoMapaScreen(
                             settings.setSupportZoom(true)
                             settings.builtInZoomControls = true
                             settings.displayZoomControls = false
-                            settings.cacheMode = WebSettings.LOAD_NO_CACHE
-                            settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+
+                            settings.cacheMode = if (hayInternet(ctx)) {
+                                WebSettings.LOAD_DEFAULT
+                            } else {
+                                WebSettings.LOAD_CACHE_ELSE_NETWORK
+                            }
+
+                            settings.mixedContentMode =
+                                WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+
                             settings.userAgentString =
                                 settings.userAgentString + " AndroidWebViewMonitoreo"
 
                             tag = htmlMapa
 
                             loadDataWithBaseURL(
-                                "https://unpkg.com/",
+                                "file:///android_asset/",
                                 htmlMapa,
                                 "text/html",
                                 "UTF-8",
@@ -362,10 +351,22 @@ fun MonitoreoMapaScreen(
                         }
                     },
                     update = { webView ->
+                        val internetActual = hayInternet(context)
+
+                        webView.settings.cacheMode = if (internetActual) {
+                            WebSettings.LOAD_DEFAULT
+                        } else {
+                            WebSettings.LOAD_CACHE_ELSE_NETWORK
+                        }
+
+                        if (internetActual != internetDisponible) {
+                            internetDisponible = internetActual
+                        }
+
                         if (webView.tag != htmlMapa) {
                             webView.tag = htmlMapa
                             webView.loadDataWithBaseURL(
-                                "https://unpkg.com/",
+                                "file:///android_asset/",
                                 htmlMapa,
                                 "text/html",
                                 "UTF-8",
@@ -391,16 +392,50 @@ fun MonitoreoMapaScreen(
     }
 }
 
+@Composable
+private fun BarraMapaMonitoreo(
+    nombreMonitoreo: String
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFF6F6F6))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "Mapa del monitoreo",
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.Black,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Text(
+            text = nombreMonitoreo,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.DarkGray,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            maxLines = 1,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
 private fun crearHtmlMapaMonitoreo(
     nombreMonitoreo: String,
     vertices: List<LocalPlotVertexEntity>,
     puntos: List<LocalPhytomonitoringTargetPointEntity>,
     checkpoints: List<LocalPhytomonitoringCheckpointEntity>,
-    ubicacionInicial: Pair<Double, Double>?
+    ubicacionInicial: Pair<Double, Double>?,
+    internetDisponible: Boolean
 ): String {
     val verticesJson = crearVerticesJson(vertices)
     val puntosJson = crearPuntosJson(puntos, checkpoints)
     val nombreMonitoreoJson = JSONObject.quote(nombreMonitoreo)
+    val internetJson = if (internetDisponible) "true" else "false"
 
     val usuarioJson = if (ubicacionInicial != null) {
         """
@@ -423,10 +458,7 @@ private fun crearHtmlMapaMonitoreo(
                 content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes"
             />
 
-            <link
-                rel="stylesheet"
-                href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-            />
+            <link rel="stylesheet" href="leaflet/leaflet.css" />
 
             <style>
                 html, body {
@@ -442,18 +474,30 @@ private fun crearHtmlMapaMonitoreo(
                     width: 100vw;
                     height: 100vh;
                     min-height: 420px;
-                    border-radius: 14px;
+                    border-radius: 16px;
                     overflow: hidden;
-                    background: #e8e8e8;
+                    background:
+                        linear-gradient(135deg, rgba(96,125,70,0.22) 25%, transparent 25%) -18px 0,
+                        linear-gradient(225deg, rgba(96,125,70,0.22) 25%, transparent 25%) -18px 0,
+                        linear-gradient(315deg, rgba(96,125,70,0.22) 25%, transparent 25%),
+                        linear-gradient(45deg, rgba(96,125,70,0.22) 25%, transparent 25%);
+                    background-size: 36px 36px;
+                    background-color: #dfe8d1;
                 }
 
                 .legend {
-                    background: white;
-                    padding: 8px 10px;
-                    border-radius: 8px;
-                    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+                    background: rgba(255, 255, 255, 0.95);
+                    padding: 9px 11px;
+                    border-radius: 10px;
+                    box-shadow: 0 3px 12px rgba(0,0,0,0.28);
                     font-size: 12px;
-                    line-height: 18px;
+                    line-height: 19px;
+                    color: #222;
+                }
+
+                .legend-title {
+                    font-weight: bold;
+                    margin-bottom: 4px;
                 }
 
                 .dot {
@@ -464,10 +508,36 @@ private fun crearHtmlMapaMonitoreo(
                     margin-right: 6px;
                 }
 
+                .offline-box {
+                    background: rgba(255, 255, 255, 0.95);
+                    color: #333;
+                    padding: 7px 9px;
+                    border-radius: 9px;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+                    font-size: 11px;
+                    text-align: center;
+                    line-height: 15px;
+                }
+
+                .map-title-box {
+                    background: rgba(255, 255, 255, 0.95);
+                    color: #1B5E20;
+                    padding: 7px 10px;
+                    border-radius: 9px;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.22);
+                    font-size: 12px;
+                    font-weight: bold;
+                    max-width: 230px;
+                }
+
                 .error-box {
                     padding: 12px;
                     color: #b00020;
                     font-size: 14px;
+                }
+
+                .leaflet-control-attribution {
+                    font-size: 10px;
                 }
             </style>
         </head>
@@ -475,15 +545,14 @@ private fun crearHtmlMapaMonitoreo(
         <body>
             <div id="map"></div>
 
-            <script
-                src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
-            </script>
+            <script src="leaflet/leaflet.js"></script>
 
             <script>
                 const nombreMonitoreo = $nombreMonitoreoJson;
                 const vertices = $verticesJson;
                 const puntos = $puntosJson;
                 const usuarioInicial = $usuarioJson;
+                const internetDisponible = $internetJson;
 
                 let map = null;
                 let userMarker = null;
@@ -500,12 +569,14 @@ private fun crearHtmlMapaMonitoreo(
                 function textoEstado(status) {
                     if (status === 'completed') return 'Capturado';
                     if (status === 'cancelled') return 'Cancelado';
+                    if (status === 'in_progress') return 'En proceso';
                     return 'Pendiente';
                 }
 
                 function colorEstado(status) {
                     if (status === 'completed') return '#2E7D32';
                     if (status === 'cancelled') return '#D32F2F';
+                    if (status === 'in_progress') return '#0288D1';
                     return '#F9A825';
                 }
 
@@ -515,6 +586,7 @@ private fun crearHtmlMapaMonitoreo(
                         'Estado: ' + textoEstado(p.status) + '<br>' +
                         'Radio permitido: ' + p.radius + ' m<br>' +
                         'Distancia actual: ' + distancia.toFixed(1) + ' m<br>' +
+                        '<hr>' +
                         'Lat: ' + p.lat + '<br>' +
                         'Lon: ' + p.lon
                     );
@@ -555,7 +627,7 @@ private fun crearHtmlMapaMonitoreo(
                         userMarker = L.circleMarker([lat, lon], {
                             radius: 9,
                             color: '#0D47A1',
-                            weight: 2,
+                            weight: 3,
                             fillColor: '#1976D2',
                             fillOpacity: 0.95
                         })
@@ -567,7 +639,7 @@ private fun crearHtmlMapaMonitoreo(
                             color: '#1976D2',
                             weight: 1,
                             fillColor: '#1976D2',
-                            fillOpacity: 0.15
+                            fillOpacity: 0.18
                         }).addTo(map);
                     } else {
                         userMarker.setLatLng([lat, lon]);
@@ -575,31 +647,94 @@ private fun crearHtmlMapaMonitoreo(
                     }
                 };
 
+                function agregarCapaBase() {
+                    const capaSatelital = L.tileLayer(
+                        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                        {
+                            maxZoom: 20,
+                            attribution: 'Tiles © Esri'
+                        }
+                    );
+
+                    capaSatelital.addTo(map);
+
+                    if (!internetDisponible) {
+                        const avisoOffline = L.control({ position: 'topright' });
+
+                        avisoOffline.onAdd = function () {
+                            const div = L.DomUtil.create('div', 'offline-box');
+                            div.innerHTML = '<b>Sin internet</b><br>Usando caché si existe';
+                            return div;
+                        };
+
+                        avisoOffline.addTo(map);
+                    }
+                }
+
+                function agregarTituloMapa() {
+                    const titleControl = L.control({ position: 'topleft' });
+
+                    titleControl.onAdd = function () {
+                        const div = L.DomUtil.create('div', 'map-title-box');
+                        div.innerHTML = internetDisponible
+                            ? 'Vista satelital de parcela'
+                            : 'Satélite en caché / vista local';
+                        return div;
+                    };
+
+                    titleControl.addTo(map);
+                }
+
+                function agregarLeyenda() {
+                    const legend = L.control({ position: 'bottomleft' });
+
+                    legend.onAdd = function () {
+                        const div = L.DomUtil.create('div', 'legend');
+                        div.innerHTML =
+                            '<div class="legend-title">Estados</div>' +
+                            '<span class="dot" style="background:#F9A825"></span>Pendiente<br>' +
+                            '<span class="dot" style="background:#0288D1"></span>En proceso<br>' +
+                            '<span class="dot" style="background:#2E7D32"></span>Capturado<br>' +
+                            '<span class="dot" style="background:#1976D2"></span>Tu ubicación<br>' +
+                            '<span class="dot" style="background:#D32F2F"></span>Cancelado';
+                        return div;
+                    };
+
+                    legend.addTo(map);
+                }
+
                 try {
                     if (typeof L === 'undefined') {
-                        mostrarError('No se pudo cargar Leaflet. Revisa internet del dispositivo o WebView.');
+                        mostrarError('No se pudo cargar Leaflet local. Revisa que exista app/src/main/assets/leaflet/leaflet.js y leaflet.css');
                     } else {
                         map = L.map('map', {
-                            zoomControl: true
+                            zoomControl: true,
+                            preferCanvas: true
                         });
 
-                        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                            maxZoom: 22,
-                            attribution: '&copy; OpenStreetMap'
-                        }).addTo(map);
+                        agregarCapaBase();
 
                         const polygonLatLng = vertices.map(v => [v.lat, v.lon]);
 
                         if (polygonLatLng.length > 0) {
                             const polygon = L.polygon(polygonLatLng, {
-                                color: '#2E7D32',
-                                weight: 3,
-                                fillColor: '#A5D6A7',
-                                fillOpacity: 0.25
+                                color: '#1B5E20',
+                                weight: 4,
+                                opacity: 1,
+                                fillColor: internetDisponible ? '#7CB342' : '#8BC34A',
+                                fillOpacity: internetDisponible ? 0.30 : 0.48
                             }).addTo(map);
 
-                            polygon.bindPopup('Parcela del monitoreo<br><b>' + nombreMonitoreo + '</b>');
-                            map.fitBounds(polygon.getBounds(), { padding: [25, 25] });
+                            polygon.bindPopup(
+                                '<b>Parcela del monitoreo</b><br>' +
+                                nombreMonitoreo +
+                                '<br><br>Vértices: ' + polygonLatLng.length
+                            );
+
+                            map.fitBounds(polygon.getBounds(), {
+                                padding: [30, 30],
+                                maxZoom: 19
+                            });
                         } else if (puntos.length > 0) {
                             map.setView([puntos[0].lat, puntos[0].lon], 18);
                         } else if (usuarioInicial != null) {
@@ -614,18 +749,26 @@ private fun crearHtmlMapaMonitoreo(
                             L.circle([p.lat, p.lon], {
                                 radius: p.radius,
                                 color: color,
-                                weight: 1,
+                                weight: 2,
                                 fillColor: color,
-                                fillOpacity: 0.12
+                                fillOpacity: 0.16
                             }).addTo(map);
 
                             const marker = L.circleMarker([p.lat, p.lon], {
-                                radius: 8,
-                                color: '#222222',
-                                weight: 1,
+                                radius: 9,
+                                color: '#1A1A1A',
+                                weight: 2,
                                 fillColor: color,
                                 fillOpacity: 0.95
                             }).addTo(map);
+
+                            marker.bindTooltip(
+                                'Punto ' + (index + 1) + ' - ' + textoEstado(p.status),
+                                {
+                                    permanent: false,
+                                    direction: 'top'
+                                }
+                            );
 
                             marker.on('click', function () {
                                 const distancia = validarRangoDelPunto(p);
@@ -644,27 +787,18 @@ private fun crearHtmlMapaMonitoreo(
                             window.updateUserLocation(usuarioInicial.lat, usuarioInicial.lon);
                         }
 
-                        const legend = L.control({ position: 'bottomleft' });
-
-                        legend.onAdd = function () {
-                            const div = L.DomUtil.create('div', 'legend');
-                            div.innerHTML =
-                                '<b>Estados</b><br>' +
-                                '<span class="dot" style="background:#F9A825"></span>Pendiente<br>' +
-                                '<span class="dot" style="background:#2E7D32"></span>Capturado<br>' +
-                                '<span class="dot" style="background:#1976D2"></span>Tu ubicación<br>' +
-                                '<span class="dot" style="background:#D32F2F"></span>Cancelado';
-                            return div;
-                        };
-
-                        legend.addTo(map);
+                        agregarTituloMapa();
+                        agregarLeyenda();
 
                         setTimeout(function () {
                             map.invalidateSize();
 
                             if (polygonLatLng.length > 0) {
                                 const bounds = L.latLngBounds(polygonLatLng);
-                                map.fitBounds(bounds, { padding: [25, 25] });
+                                map.fitBounds(bounds, {
+                                    padding: [30, 30],
+                                    maxZoom: 19
+                                });
                             }
                         }, 500);
                     }
@@ -702,12 +836,21 @@ private fun crearPuntosJson(
     val array = JSONArray()
 
     puntos.forEach { punto ->
-        val statusBase = punto.status.lowercase()
+        val statusBase = punto.status.lowercase().trim()
 
         val statusFinal = when {
             punto.idTargetPoint in idsCapturados -> "completed"
-            statusBase == "completed" -> "completed"
-            statusBase == "cancelled" -> "cancelled"
+
+            statusBase == "completed" ||
+                    statusBase == "completado" ||
+                    statusBase == "capturado" -> "completed"
+
+            statusBase == "cancelled" ||
+                    statusBase == "cancelado" -> "cancelled"
+
+            statusBase == "in_progress" ||
+                    statusBase == "en proceso" -> "in_progress"
+
             else -> "pending"
         }
 
@@ -727,7 +870,8 @@ private fun crearPuntosJson(
 @SuppressLint("MissingPermission")
 private fun obtenerUltimaUbicacion(context: Context): Pair<Double, Double>? {
     return try {
-        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val locationManager =
+            context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
         val providers = listOf(
             LocationManager.GPS_PROVIDER,
@@ -749,5 +893,23 @@ private fun obtenerUltimaUbicacion(context: Context): Pair<Double, Double>? {
         }
     } catch (_: Exception) {
         null
+    }
+}
+
+private fun hayInternet(context: Context): Boolean {
+    return try {
+        val connectivityManager =
+            context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+        val network = connectivityManager.activeNetwork ?: return false
+
+        val capabilities =
+            connectivityManager.getNetworkCapabilities(network) ?: return false
+
+        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+
+    } catch (_: Exception) {
+        false
     }
 }
