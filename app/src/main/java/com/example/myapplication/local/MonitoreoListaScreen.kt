@@ -4,6 +4,7 @@ import android.app.DatePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,9 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -56,7 +55,6 @@ import java.util.Locale
 @Composable
 fun MonitoreoListaScreen(
     nombreUsuario: String,
-    nombreCia: String,
     busquedaFueConSaltoFiltros: Boolean,
 
     monitoreos: List<LocalPhytomonitoringHeaderEntity>,
@@ -65,7 +63,6 @@ fun MonitoreoListaScreen(
     parcelas: List<LocalPlotEntity>,
     programas: List<LocalProgramEntity>,
 
-    onBackClick: () -> Unit,
     onAbrirMapaClick: (LocalPhytomonitoringHeaderEntity) -> Unit
 ) {
     val productoresMap = remember(productores) {
@@ -110,8 +107,11 @@ fun MonitoreoListaScreen(
     val monitoreosFiltrados = monitoreos.filter { header ->
         val cumpleCiclo = cicloFiltro == null || header.idProgram == cicloFiltro?.idProgram
 
-        val cumpleFechaInicio = fechaInicioMillis == null || header.estStartDate >= fechaInicioMillis
-        val cumpleFechaFin = fechaFinMillis == null || header.estStartDate <= fechaFinMillis
+        val cumpleFechaInicio = fechaInicioMillis == null ||
+                header.estStartDate >= fechaInicioMillis
+
+        val cumpleFechaFin = fechaFinMillis == null ||
+                header.estStartDate <= fechaFinMillis
 
         val cumpleEstado = when (estadoFiltro) {
             "Pendiente" -> header.status.lowercase() == "pending" ||
@@ -150,195 +150,84 @@ fun MonitoreoListaScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
-            HeaderLista(
-                nombreUsuario = nombreUsuario,
-                onBackClick = onBackClick
+            EncabezadoApp(
+                nombreUsuario = nombreUsuario
             )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(14.dp)
-                ) {
-                    Text(
-                        text = "Información general",
-                        fontSize = 13.sp,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFFF0E7E7))
-                            .padding(10.dp),
-                        textAlign = TextAlign.Center
-                    )
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    TextoInfo(
-                        titulo = "CIA:",
-                        valor = nombreCia
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    if (!busquedaFueConSaltoFiltros) {
-                        TextoInfo(
-                            titulo = "Productor:",
-                            valor = primerProductor?.commercial_name ?: "-"
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        TextoInfo(
-                            titulo = "Rancho:",
-                            valor = primerRancho?.name ?: "-"
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        TextoInfo(
-                            titulo = "Parcela:",
-                            valor = primeraParcela?.code ?: "-"
-                        )
-                    } else {
-                        Text(
-                            text = "Se muestran monitoreos disponibles sin aplicar productor, rancho o parcela.",
-                            fontSize = 11.sp,
-                            color = Color.DarkGray
-                        )
-                    }
-                }
-            }
 
             Spacer(modifier = Modifier.height(18.dp))
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color(0xFFF8FAF7)
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(12.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp)
                 ) {
-                    Text(
-                        text = "Filtros de la lista",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Black
-                    )
+                    if (!busquedaFueConSaltoFiltros) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            DatoUbicacionMini(
+                                titulo = "Productor",
+                                valor = primerProductor?.commercial_name ?: "-",
+                                modifier = Modifier.weight(1f)
+                            )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                            DatoUbicacionMini(
+                                titulo = "Rancho",
+                                valor = primerRancho?.name ?: "-",
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
 
-                    SelectorFiltroLista(
-                        label = "Ciclo",
-                        selected = cicloFiltro,
-                        items = programas,
-                        itemText = { it.cycle },
-                        enabled = programas.isNotEmpty(),
-                        modifier = Modifier.fillMaxWidth(),
-                        onSelected = { cicloFiltro = it }
-                    )
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        CampoFechaLista(
-                            label = "Fecha inicio",
-                            value = fechaInicioTexto,
-                            onValueChange = { fechaInicioTexto = it },
-                            modifier = Modifier.weight(1f)
+                        DatoUbicacionMini(
+                            titulo = "Parcela",
+                            valor = primeraParcela?.code ?: "-",
+                            modifier = Modifier.fillMaxWidth()
                         )
-
-                        CampoFechaLista(
-                            label = "Fecha fin",
-                            value = fechaFinTexto,
-                            onValueChange = { fechaFinTexto = it },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Text(
-                        text = "Estado",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Black
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        EstadoBotonFiltro(
-                            texto = "Todos",
-                            seleccionado = estadoFiltro == "Todos",
-                            modifier = Modifier.weight(1f),
-                            onClick = { estadoFiltro = "Todos" }
-                        )
-
-                        EstadoBotonFiltro(
-                            texto = "Pendiente",
-                            seleccionado = estadoFiltro == "Pendiente",
-                            modifier = Modifier.weight(1f),
-                            onClick = { estadoFiltro = "Pendiente" }
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        EstadoBotonFiltro(
-                            texto = "En proceso",
-                            seleccionado = estadoFiltro == "En proceso",
-                            modifier = Modifier.weight(1f),
-                            onClick = { estadoFiltro = "En proceso" }
-                        )
-
-                        EstadoBotonFiltro(
-                            texto = "Completado",
-                            seleccionado = estadoFiltro == "Completado",
-                            modifier = Modifier.weight(1f),
-                            onClick = { estadoFiltro = "Completado" }
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    OutlinedButton(
-                        onClick = {
-                            cicloFiltro = null
-                            fechaInicioTexto = ""
-                            fechaFinTexto = ""
-                            estadoFiltro = "Todos"
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(30.dp)
-                    ) {
+                    } else {
                         Text(
-                            text = "Saltar filtros",
+                            text = "Mostrando monitoreos disponibles",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
                             color = Color.Black,
-                            fontWeight = FontWeight.Bold
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
                         )
-
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(22.dp))
+            Spacer(modifier = Modifier.height(14.dp))
+
+            FiltrosCompactosBarra(
+                cicloFiltro = cicloFiltro,
+                programas = programas,
+                fechaInicioTexto = fechaInicioTexto,
+                fechaFinTexto = fechaFinTexto,
+                estadoFiltro = estadoFiltro,
+                onCicloChange = { cicloFiltro = it },
+                onFechaInicioChange = { fechaInicioTexto = it },
+                onFechaFinChange = { fechaFinTexto = it },
+                onEstadoChange = { estadoFiltro = it },
+                onLimpiarClick = {
+                    cicloFiltro = null
+                    fechaInicioTexto = ""
+                    fechaFinTexto = ""
+                    estadoFiltro = "Todos"
+                }
+            )
+
+            Spacer(modifier = Modifier.height(18.dp))
 
             Text(
                 text = "Monitoreos disponibles: ${monitoreosFiltrados.size}",
@@ -424,7 +313,6 @@ fun MonitoreoListaScreen(
                 productor = productor,
                 rancho = rancho,
                 parcela = parcela,
-                nombreCia = nombreCia,
                 onDismiss = {
                     monitoreoInfoSeleccionado = null
                 }
@@ -434,98 +322,357 @@ fun MonitoreoListaScreen(
 }
 
 @Composable
-private fun HeaderLista(
-    nombreUsuario: String,
-    onBackClick: () -> Unit
+private fun FiltrosCompactosBarra(
+    cicloFiltro: LocalProgramEntity?,
+    programas: List<LocalProgramEntity>,
+    fechaInicioTexto: String,
+    fechaFinTexto: String,
+    estadoFiltro: String,
+    onCicloChange: (LocalProgramEntity?) -> Unit,
+    onFechaInicioChange: (String) -> Unit,
+    onFechaFinChange: (String) -> Unit,
+    onEstadoChange: (String) -> Unit,
+    onLimpiarClick: () -> Unit
 ) {
-    Box(
-        modifier = Modifier.fillMaxWidth()
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
     ) {
-        Button(
-            onClick = onBackClick,
+        Row(
             modifier = Modifier
-                .align(Alignment.TopStart)
-                .size(44.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF52AFC4)),
-            shape = CircleShape,
-            contentPadding = PaddingValues(0.dp)
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text("↩", color = Color.White, fontSize = 22.sp)
-        }
-
-        Text(
-            text = "☰",
-            modifier = Modifier.align(Alignment.TopEnd),
-            fontSize = 28.sp,
-            color = Color.Black
-        )
-
-        Column(
-            modifier = Modifier.align(Alignment.Center),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Spacer(modifier = Modifier.height(22.dp))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("🟩", fontSize = 34.sp)
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                Column {
-                    Text(
-                        text = "TIERRA",
-                        fontSize = 30.sp,
-                        fontWeight = FontWeight.Black,
-                        color = Color.Black
-                    )
-
-                    Text(
-                        text = "INTELIGENTE",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.Black
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Text(
-                text = "Bienvenido $nombreUsuario",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF666666)
+            FiltroCompactoCiclo(
+                cicloFiltro = cicloFiltro,
+                programas = programas,
+                onSelected = onCicloChange
             )
+
+            FiltroCompactoFecha(
+                titulo = "Inicio",
+                value = fechaInicioTexto,
+                onValueChange = onFechaInicioChange
+            )
+
+            FiltroCompactoFecha(
+                titulo = "Fin",
+                value = fechaFinTexto,
+                onValueChange = onFechaFinChange
+            )
+
+            FiltroCompactoEstado(
+                estadoFiltro = estadoFiltro,
+                onSelected = onEstadoChange
+            )
+
+            Button(
+                onClick = onLimpiarClick,
+                modifier = Modifier
+                    .width(92.dp)
+                    .height(56.dp),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFE9E0FA)
+                ),
+                contentPadding = PaddingValues(horizontal = 6.dp)
+            ) {
+                Text(
+                    text = "Limpiar",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF5E35B1),
+                    textAlign = TextAlign.Center
+                )
+            }
         }
     }
-
-    Spacer(modifier = Modifier.height(125.dp))
 }
 
 @Composable
-private fun TextoInfo(
-    titulo: String,
-    valor: String
+private fun FiltroCompactoCiclo(
+    cicloFiltro: LocalProgramEntity?,
+    programas: List<LocalProgramEntity>,
+    onSelected: (LocalProgramEntity?) -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth()
+    var expanded by remember { mutableStateOf(false) }
+
+    Box {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier
+                .width(130.dp)
+                .height(56.dp),
+            shape = RoundedCornerShape(10.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp)
+        ) {
+            Text(
+                text = "↻",
+                fontSize = 18.sp,
+                color = Color.Black
+            )
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = "Ciclo",
+                    fontSize = 10.sp,
+                    color = Color.DarkGray,
+                    maxLines = 1
+                )
+
+                Text(
+                    text = cicloFiltro?.cycle ?: "Todos",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Black,
+                    maxLines = 1
+                )
+            }
+
+            Text(
+                text = "⌄",
+                fontSize = 14.sp,
+                color = Color.Black
+            )
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text("Todos") },
+                onClick = {
+                    onSelected(null)
+                    expanded = false
+                }
+            )
+
+            programas.forEach { programa ->
+                DropdownMenuItem(
+                    text = { Text(programa.cycle) },
+                    onClick = {
+                        onSelected(programa)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FiltroCompactoFecha(
+    titulo: String,
+    value: String,
+    onValueChange: (String) -> Unit
+) {
+    val context = LocalContext.current
+
+    val formatoFecha = remember {
+        SimpleDateFormat("dd-MM-yyyy", Locale.getDefault()).apply {
+            isLenient = false
+        }
+    }
+
+    fun abrirCalendario() {
+        val calendario = Calendar.getInstance()
+
+        if (value.isNotBlank()) {
+            try {
+                val fechaGuardada = formatoFecha.parse(value)
+                if (fechaGuardada != null) {
+                    calendario.time = fechaGuardada
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        DatePickerDialog(
+            context,
+            { _, year, month, dayOfMonth ->
+                val fechaSeleccionada = Calendar.getInstance().apply {
+                    set(Calendar.YEAR, year)
+                    set(Calendar.MONTH, month)
+                    set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+
+                onValueChange(formatoFecha.format(fechaSeleccionada.time))
+            },
+            calendario.get(Calendar.YEAR),
+            calendario.get(Calendar.MONTH),
+            calendario.get(Calendar.DAY_OF_MONTH)
+        ).show()
+    }
+
+    OutlinedButton(
+        onClick = { abrirCalendario() },
+        modifier = Modifier
+            .width(128.dp)
+            .height(56.dp),
+        shape = RoundedCornerShape(10.dp),
+        contentPadding = PaddingValues(horizontal = 8.dp)
     ) {
         Text(
-            text = titulo,
-            fontWeight = FontWeight.Bold,
-            fontSize = 13.sp,
-            color = Color.Black
+            text = "📅",
+            fontSize = 16.sp
         )
 
         Spacer(modifier = Modifier.width(6.dp))
 
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = titulo,
+                fontSize = 10.sp,
+                color = Color.DarkGray,
+                maxLines = 1
+            )
+
+            Text(
+                text = value.ifBlank { "Fecha" },
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (value.isBlank()) Color.Gray else Color.Black,
+                maxLines = 1
+            )
+        }
+
         Text(
-            text = valor,
-            fontSize = 12.sp,
-            color = Color.DarkGray
+            text = "⌄",
+            fontSize = 14.sp,
+            color = Color.Black
         )
+    }
+}
+
+@Composable
+private fun FiltroCompactoEstado(
+    estadoFiltro: String,
+    onSelected: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    val estados = listOf(
+        "Todos",
+        "Pendiente",
+        "En proceso",
+        "Completado"
+    )
+
+    Box {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier
+                .width(130.dp)
+                .height(56.dp),
+            shape = RoundedCornerShape(10.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp)
+        ) {
+            Text(
+                text = "⚑",
+                fontSize = 17.sp,
+                color = Color.Black
+            )
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = "Estado",
+                    fontSize = 10.sp,
+                    color = Color.DarkGray,
+                    maxLines = 1
+                )
+
+                Text(
+                    text = estadoFiltro,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Black,
+                    maxLines = 1
+                )
+            }
+
+            Text(
+                text = "⌄",
+                fontSize = 14.sp,
+                color = Color.Black
+            )
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            estados.forEach { estado ->
+                DropdownMenuItem(
+                    text = { Text(estado) },
+                    onClick = {
+                        onSelected(estado)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DatoUbicacionMini(
+    titulo: String,
+    valor: String,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 9.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = titulo,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF5F6F5A),
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(3.dp))
+
+            Text(
+                text = valor,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.Black,
+                textAlign = TextAlign.Center,
+                maxLines = 1
+            )
+        }
     }
 }
 
@@ -614,197 +761,12 @@ private fun FilaMonitoreo(
 }
 
 @Composable
-private fun <T> SelectorFiltroLista(
-    label: String,
-    selected: T?,
-    items: List<T>,
-    itemText: (T) -> String,
-    enabled: Boolean,
-    modifier: Modifier = Modifier,
-    onSelected: (T) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Column(modifier = modifier) {
-        Text(
-            text = label,
-            fontSize = 13.sp,
-            color = Color.Black,
-            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
-        )
-
-        Box {
-            OutlinedButton(
-                onClick = {
-                    if (enabled) expanded = true
-                },
-                enabled = enabled,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                shape = RoundedCornerShape(4.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp)
-            ) {
-                Text(
-                    text = selected?.let(itemText) ?: "Todos",
-                    modifier = Modifier.weight(1f),
-                    color = Color.Black,
-                    maxLines = 1
-                )
-
-                Text(
-                    text = "➜",
-                    color = Color.Black,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false }
-            ) {
-                if (items.isEmpty()) {
-                    DropdownMenuItem(
-                        text = { Text("Sin datos") },
-                        onClick = { expanded = false }
-                    )
-                } else {
-                    items.forEach { item ->
-                        DropdownMenuItem(
-                            text = { Text(itemText(item)) },
-                            onClick = {
-                                onSelected(item)
-                                expanded = false
-                            }
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CampoFechaLista(
-    label: String,
-    value: String,
-    onValueChange: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val context = LocalContext.current
-
-    val formatoFecha = remember {
-        SimpleDateFormat("dd-MM-yyyy", Locale.getDefault()).apply {
-            isLenient = false
-        }
-    }
-
-    fun abrirCalendario() {
-        val calendario = Calendar.getInstance()
-
-        if (value.isNotBlank()) {
-            try {
-                val fechaGuardada = formatoFecha.parse(value)
-                if (fechaGuardada != null) {
-                    calendario.time = fechaGuardada
-                }
-            } catch (_: Exception) {
-            }
-        }
-
-        DatePickerDialog(
-            context,
-            { _, year, month, dayOfMonth ->
-                val fechaSeleccionada = Calendar.getInstance().apply {
-                    set(Calendar.YEAR, year)
-                    set(Calendar.MONTH, month)
-                    set(Calendar.DAY_OF_MONTH, dayOfMonth)
-                    set(Calendar.HOUR_OF_DAY, 0)
-                    set(Calendar.MINUTE, 0)
-                    set(Calendar.SECOND, 0)
-                    set(Calendar.MILLISECOND, 0)
-                }
-
-                onValueChange(formatoFecha.format(fechaSeleccionada.time))
-            },
-            calendario.get(Calendar.YEAR),
-            calendario.get(Calendar.MONTH),
-            calendario.get(Calendar.DAY_OF_MONTH)
-        ).show()
-    }
-
-    Column(modifier = modifier) {
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            color = Color.Black,
-            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
-        )
-
-        OutlinedButton(
-            onClick = {
-                abrirCalendario()
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp),
-            shape = RoundedCornerShape(4.dp),
-            contentPadding = PaddingValues(horizontal = 8.dp)
-        ) {
-            Text(
-                text = value.ifBlank { "Fecha" },
-                color = if (value.isBlank()) Color.Gray else Color.Black,
-                fontSize = 11.sp,
-                modifier = Modifier.weight(1f),
-                textAlign = TextAlign.Start
-            )
-
-            Text(
-                text = "📅",
-                fontSize = 14.sp
-            )
-        }
-    }
-}
-
-@Composable
-private fun EstadoBotonFiltro(
-    texto: String,
-    seleccionado: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    Button(
-        onClick = onClick,
-        modifier = modifier.height(38.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (seleccionado) {
-                Color(0xFFE9E0FA)
-            } else {
-                Color(0xFFF6EEEE)
-            }
-        ),
-        shape = RoundedCornerShape(20.dp),
-        contentPadding = PaddingValues(4.dp)
-    ) {
-        Text(
-            text = texto,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.Black,
-            textAlign = TextAlign.Center
-        )
-    }
-}
-
-@Composable
 private fun DetalleMonitoreoDialog(
     header: LocalPhytomonitoringHeaderEntity,
     programa: LocalProgramEntity?,
     productor: LocalAgroUnitEntity?,
     rancho: LocalRanchEntity?,
     parcela: LocalPlotEntity?,
-    nombreCia: String,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -819,7 +781,6 @@ private fun DetalleMonitoreoDialog(
             Column {
                 DatoDetalle("Monitoreo:", programa?.cycle ?: "Sin ciclo")
                 DatoDetalle("Estado:", textoEstado(header.status))
-                DatoDetalle("CIA:", nombreCia)
                 DatoDetalle("Productor:", productor?.commercial_name ?: "-")
                 DatoDetalle("Rancho:", rancho?.name ?: "-")
                 DatoDetalle("Parcela:", parcela?.code ?: "-")

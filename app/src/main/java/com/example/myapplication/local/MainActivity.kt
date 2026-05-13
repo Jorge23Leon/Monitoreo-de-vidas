@@ -729,7 +729,6 @@ class MainActivity : ComponentActivity() {
                     PantallaActual.LISTA_MONITOREOS -> {
                         MonitoreoListaScreen(
                             nombreUsuario = nombreUsuarioActual,
-                            nombreCia = ciaSeleccionada?.nombre ?: "Sin CIA",
                             busquedaFueConSaltoFiltros = busquedaFueConSaltoFiltros,
 
                             monitoreos = monitoreosEncontrados,
@@ -737,10 +736,6 @@ class MainActivity : ComponentActivity() {
                             ranchos = ranchosResultado,
                             parcelas = parcelasResultado,
                             programas = programasResultado,
-
-                            onBackClick = {
-                                pantallaActual = PantallaActual.FILTROS_MONITOREO
-                            },
 
                             onAbrirMapaClick = { header ->
                                 monitoreoSeleccionadoParaMapa = header
