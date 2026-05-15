@@ -24,6 +24,8 @@ data class LocalCropCatalogEntity(
 
     val variedad: String? = null,
 
+    val code: String? = null,
+
     val description: String? = null,
 
     val photo: String? = null

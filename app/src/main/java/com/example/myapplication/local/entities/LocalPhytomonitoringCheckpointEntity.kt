@@ -41,7 +41,6 @@ import androidx.room.PrimaryKey
         Index(value = ["idPhytosanitary"]),
         Index(value = ["idLocalPlot"]),
         Index(value = ["captured_at"])
-
     ]
 )
 data class LocalPhytomonitoringCheckpointEntity(
@@ -63,6 +62,12 @@ data class LocalPhytomonitoringCheckpointEntity(
     // Etapa o fase encontrada:
     // "Huevo", "Larva", "Adulto", "Inicial", "Avanzada", etc.
     val stage: String? = null,
+
+    // Observaciones o notas del monitoreo
+    val notes: String? = null,
+
+    // Foto local o URL de la imagen
+   //todo: val photo: String? = null,
 
     // Fecha y hora de captura en milisegundos
     @ColumnInfo(name = "captured_at")

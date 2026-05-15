@@ -3,6 +3,7 @@ package com.example.myapplication.local
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.LaunchedEffect
@@ -16,6 +17,7 @@ import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.LocalAgroUnitEntity
 import com.example.myapplication.local.entities.LocalCiaEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
+import com.example.myapplication.local.entities.LocalPhytomonitoringTargetPointEntity
 import com.example.myapplication.local.entities.LocalPlotEntity
 import com.example.myapplication.local.entities.LocalProgramEntity
 import com.example.myapplication.local.entities.LocalRanchEntity
@@ -26,7 +28,6 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
-import androidx.activity.compose.BackHandler
 
 enum class PantallaActual {
     LOGIN,
@@ -36,7 +37,8 @@ enum class PantallaActual {
     SELECCION_CIA,
     FILTROS_MONITOREO,
     LISTA_MONITOREOS,
-    MAPA_MONITOREO
+    MAPA_MONITOREO,
+    REGISTRO_PUNTO_MONITOREO
 }
 
 class MainActivity : ComponentActivity() {
@@ -165,6 +167,10 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf<LocalPhytomonitoringHeaderEntity?>(null)
                 }
 
+                var puntoSeleccionadoParaRegistro by remember {
+                    mutableStateOf<LocalPhytomonitoringTargetPointEntity?>(null)
+                }
+
                 fun limpiarFiltros() {
                     productores = emptyList()
                     ranchos = emptyList()
@@ -184,7 +190,9 @@ class MainActivity : ComponentActivity() {
                     canceladosChecked = false
 
                     busquedaFueConSaltoFiltros = false
+
                     monitoreoSeleccionadoParaMapa = null
+                    puntoSeleccionadoParaRegistro = null
 
                     monitoreosEncontrados = emptyList()
                     productoresResultado = emptyList()
@@ -211,6 +219,7 @@ class MainActivity : ComponentActivity() {
 
                     return true
                 }
+
                 fun cargarProductores(idLocalCia: Long) {
                     coroutineScope.launch {
                         try {
@@ -268,14 +277,47 @@ class MainActivity : ComponentActivity() {
 
                 fun obtenerEstadosSeleccionados(saltarFiltros: Boolean): List<String> {
                     if (saltarFiltros) {
-                        return listOf("pending", "in_progress")
+                        return listOf(
+                            "Pendiente",
+                            "En proceso",
+                            "pending",
+                            "in_progress",
+                            "vigente"
+                        )
                     }
 
                     return when {
-                        finalizadosChecked -> listOf("completed")
-                        vigentesChecked -> listOf("pending", "in_progress")
-                        canceladosChecked -> listOf("cancelled")
-                        else -> emptyList()
+                        finalizadosChecked -> listOf(
+                            "Completado",
+                            "completed",
+                            "finalizado"
+                        )
+
+                        vigentesChecked -> listOf(
+                            "Pendiente",
+                            "En proceso",
+                            "pending",
+                            "in_progress",
+                            "vigente"
+                        )
+
+                        canceladosChecked -> listOf(
+                            "Cancelado",
+                            "cancelled"
+                        )
+
+                        else -> listOf(
+                            "Pendiente",
+                            "En proceso",
+                            "Completado",
+                            "Cancelado",
+                            "pending",
+                            "in_progress",
+                            "completed",
+                            "cancelled",
+                            "vigente",
+                            "finalizado"
+                        )
                     }
                 }
 
@@ -333,6 +375,8 @@ class MainActivity : ComponentActivity() {
                                     programa.idProgram
                                 }
 
+                                val estadosFiltro = obtenerEstadosSeleccionados(saltarFiltros)
+
                                 val headers = if (idsProgramas.isEmpty()) {
                                     emptyList()
                                 } else {
@@ -340,14 +384,14 @@ class MainActivity : ComponentActivity() {
                                         .filtrarHeadersMonitoreo(
                                             programIds = idsProgramas,
                                             idProgram = null,
-                                            idPlot = if (saltarFiltros) null else parcelaSeleccionada?.idLocalPlot,
+                                            idPlot = if (saltarFiltros) {
+                                                null
+                                            } else {
+                                                parcelaSeleccionada?.idLocalPlot
+                                            },
                                             startDate = null,
                                             endDate = null,
-                                            statuses = listOf(
-                                                "pending",
-                                                "in_progress",
-                                                "completed"
-                                            )
+                                            statuses = estadosFiltro
                                         )
                                 }
 
@@ -417,9 +461,11 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+
                 LaunchedEffect(Unit) {
                     insertarUsuarioAdminSeguro()
                 }
+
                 BackHandler(
                     enabled = pantallaActual != PantallaActual.LOGIN
                 ) {
@@ -456,6 +502,10 @@ class MainActivity : ComponentActivity() {
 
                         PantallaActual.MAPA_MONITOREO -> {
                             pantallaActual = PantallaActual.LISTA_MONITOREOS
+                        }
+
+                        PantallaActual.REGISTRO_PUNTO_MONITOREO -> {
+                            pantallaActual = PantallaActual.MAPA_MONITOREO
                         }
 
                         else -> Unit
@@ -726,6 +776,7 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                     }
+
                     PantallaActual.LISTA_MONITOREOS -> {
                         MonitoreoListaScreen(
                             nombreUsuario = nombreUsuarioActual,
@@ -739,6 +790,7 @@ class MainActivity : ComponentActivity() {
 
                             onAbrirMapaClick = { header ->
                                 monitoreoSeleccionadoParaMapa = header
+                                puntoSeleccionadoParaRegistro = null
                                 pantallaActual = PantallaActual.MAPA_MONITOREO
                             }
                         )
@@ -763,7 +815,54 @@ class MainActivity : ComponentActivity() {
                                 database = database,
                                 header = header,
                                 nombreUsuario = nombreUsuarioActual,
-                                nombreMonitoreo = nombreMonitoreo
+                                nombreMonitoreo = nombreMonitoreo,
+                                onPuntoValidoClick = { idTargetPoint ->
+                                    coroutineScope.launch {
+                                        try {
+                                            val punto = withContext(Dispatchers.IO) {
+                                                database.LocalPhytomonitoringTargetPointDao()
+                                                    .getTargetPointById(idTargetPoint)
+                                            }
+
+                                            if (punto == null) {
+                                                mostrarMensaje("No se encontró el punto seleccionado")
+                                            } else {
+                                                puntoSeleccionadoParaRegistro = punto
+                                                pantallaActual = PantallaActual.REGISTRO_PUNTO_MONITOREO
+                                            }
+
+                                        } catch (e: Exception) {
+                                            mostrarMensaje("Error al abrir punto: ${e.message}")
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+
+                    PantallaActual.REGISTRO_PUNTO_MONITOREO -> {
+                        val header = monitoreoSeleccionadoParaMapa
+                        val punto = puntoSeleccionadoParaRegistro
+
+                        if (header == null || punto == null) {
+                            LaunchedEffect(Unit) {
+                                mostrarMensaje("No se seleccionó ningún punto")
+                                pantallaActual = PantallaActual.MAPA_MONITOREO
+                            }
+                        } else {
+                            RegistroPuntoMonitoreoScreen(
+                                database = database,
+                                nombreUsuario = nombreUsuarioActual,
+                                header = header,
+                                punto = punto,
+                                onCancelar = {
+                                    puntoSeleccionadoParaRegistro = null
+                                    pantallaActual = PantallaActual.MAPA_MONITOREO
+                                },
+                                onGuardado = {
+                                    puntoSeleccionadoParaRegistro = null
+                                    pantallaActual = PantallaActual.MAPA_MONITOREO
+                                }
                             )
                         }
                     }

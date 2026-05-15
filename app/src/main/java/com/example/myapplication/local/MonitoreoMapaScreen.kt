@@ -11,7 +11,9 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.os.Handler
 import android.os.Looper
+import android.webkit.JavascriptInterface
 import android.webkit.JsResult
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
@@ -62,9 +64,11 @@ fun MonitoreoMapaScreen(
     database: AppDatabase,
     header: LocalPhytomonitoringHeaderEntity,
     nombreUsuario: String,
-    nombreMonitoreo: String
+    nombreMonitoreo: String,
+    onPuntoValidoClick: (Long) -> Unit
 ) {
     val context = LocalContext.current
+    val onPuntoValidoActual by rememberUpdatedState(onPuntoValidoClick)
 
     var vertices by remember {
         mutableStateOf<List<LocalPlotVertexEntity>>(emptyList())
@@ -219,6 +223,26 @@ fun MonitoreoMapaScreen(
         )
     }
 
+    val capturasPuntosUnicos = remember(
+        checkpoints,
+        puntos,
+        header.idHeader
+    ) {
+        val idsPuntosActuales = puntos
+            .map { it.idTargetPoint }
+            .toSet()
+
+        checkpoints
+            .filter { checkpoint ->
+                checkpoint.idHeader == header.idHeader &&
+                        checkpoint.idTargetPoint in idsPuntosActuales
+            }
+            .map { checkpoint ->
+                checkpoint.idTargetPoint
+            }
+            .distinct()
+            .size
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -275,7 +299,7 @@ fun MonitoreoMapaScreen(
                         )
 
                         Text(
-                            text = "Vértices: ${vertices.size}  |  Puntos: ${puntos.size}  |  Capturas: ${checkpoints.size}",
+                            text = "Vértices: ${vertices.size}  |  Puntos: ${puntos.size}  |  Capturas: $capturasPuntosUnicos",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF4A4A4A),
@@ -292,6 +316,13 @@ fun MonitoreoMapaScreen(
                     factory = { ctx ->
                         WebView(ctx).apply {
                             webViewClient = WebViewClient()
+
+                            addJavascriptInterface(
+                                MapaBridge { idTargetPoint ->
+                                    onPuntoValidoActual(idTargetPoint)
+                                },
+                                "Android"
+                            )
 
                             webChromeClient = object : WebChromeClient() {
                                 override fun onJsAlert(
@@ -556,7 +587,6 @@ private fun crearHtmlMapaMonitoreo(
 
                 let map = null;
                 let userMarker = null;
-                let userCircle = null;
                 let currentUserLocation = null;
 
                 function mostrarError(mensaje) {
@@ -578,18 +608,6 @@ private fun crearHtmlMapaMonitoreo(
                     if (status === 'cancelled') return '#D32F2F';
                     if (status === 'in_progress') return '#0288D1';
                     return '#F9A825';
-                }
-
-                function contenidoPunto(p, index, distancia) {
-                    return (
-                        '<b>Punto ' + (index + 1) + '</b><br>' +
-                        'Estado: ' + textoEstado(p.status) + '<br>' +
-                        'Radio permitido: ' + p.radius + ' m<br>' +
-                        'Distancia actual: ' + distancia.toFixed(1) + ' m<br>' +
-                        '<hr>' +
-                        'Lat: ' + p.lat + '<br>' +
-                        'Lon: ' + p.lon
-                    );
                 }
 
                 function validarRangoDelPunto(p) {
@@ -616,36 +634,27 @@ private fun crearHtmlMapaMonitoreo(
                 }
 
                 window.updateUserLocation = function(lat, lon) {
-                    currentUserLocation = {
-                        lat: lat,
-                        lon: lon
-                    };
+    currentUserLocation = {
+        lat: lat,
+        lon: lon
+    };
 
-                    if (map == null) return;
+    if (map == null) return;
 
-                    if (userMarker == null) {
-                        userMarker = L.circleMarker([lat, lon], {
-                            radius: 9,
-                            color: '#0D47A1',
-                            weight: 3,
-                            fillColor: '#1976D2',
-                            fillOpacity: 0.95
-                        })
-                        .addTo(map)
-                        .bindPopup('<b>Tu ubicación actual</b>');
-
-                        userCircle = L.circle([lat, lon], {
-                            radius: 8,
-                            color: '#1976D2',
-                            weight: 1,
-                            fillColor: '#1976D2',
-                            fillOpacity: 0.18
-                        }).addTo(map);
-                    } else {
-                        userMarker.setLatLng([lat, lon]);
-                        userCircle.setLatLng([lat, lon]);
-                    }
-                };
+    if (userMarker == null) {
+        userMarker = L.circleMarker([lat, lon], {
+            radius: 10,
+            color: '#0D47A1',
+            weight: 3,
+            fillColor: '#1976D2',
+            fillOpacity: 0.95
+        })
+        .addTo(map)
+        .bindPopup('<b>Tu ubicación actual</b>');
+    } else {
+        userMarker.setLatLng([lat, lon]);
+    }
+};
 
                 function agregarCapaBase() {
                     const capaSatelital = L.tileLayer(
@@ -746,20 +755,22 @@ private fun crearHtmlMapaMonitoreo(
                         puntos.forEach((p, index) => {
                             const color = colorEstado(p.status);
 
-                            L.circle([p.lat, p.lon], {
-                                radius: p.radius,
-                                color: color,
-                                weight: 2,
-                                fillColor: color,
-                                fillOpacity: 0.16
-                            }).addTo(map);
-
                             const marker = L.circleMarker([p.lat, p.lon], {
-                                radius: 9,
+                                radius: 12,
                                 color: '#1A1A1A',
                                 weight: 2,
                                 fillColor: color,
                                 fillOpacity: 0.95
+                            }).addTo(map);
+
+                            const touchArea = L.circleMarker([p.lat, p.lon], {
+                                radius: 30,
+                                color: color,
+                                weight: 0,
+                                opacity: 0,
+                                fillColor: color,
+                                fillOpacity: 0,
+                                interactive: true
                             }).addTo(map);
 
                             marker.bindTooltip(
@@ -770,17 +781,27 @@ private fun crearHtmlMapaMonitoreo(
                                 }
                             );
 
-                            marker.on('click', function () {
+                            function abrirPunto() {
+                                if (p.status === 'completed') {
+                                    alert('Este punto ya fue capturado.');
+                                    return;
+                                }
+
                                 const distancia = validarRangoDelPunto(p);
 
                                 if (distancia == null) {
                                     return;
                                 }
 
-                                marker
-                                    .bindPopup(contenidoPunto(p, index, distancia))
-                                    .openPopup();
-                            });
+                                if (window.Android && Android.onPuntoSeleccionado) {
+                                    Android.onPuntoSeleccionado(String(p.idTargetPoint));
+                                } else {
+                                    alert('No se pudo abrir el registro del punto.');
+                                }
+                            }
+
+                            marker.on('click', abrirPunto);
+                            touchArea.on('click', abrirPunto);
                         });
 
                         if (usuarioInicial != null) {
@@ -829,8 +850,17 @@ private fun crearPuntosJson(
     puntos: List<LocalPhytomonitoringTargetPointEntity>,
     checkpoints: List<LocalPhytomonitoringCheckpointEntity>
 ): String {
-    val idsCapturados = checkpoints
+    val idsPuntosActuales = puntos
         .map { it.idTargetPoint }
+        .toSet()
+
+    val idsCapturados = checkpoints
+        .filter { checkpoint ->
+            checkpoint.idTargetPoint in idsPuntosActuales
+        }
+        .map { checkpoint ->
+            checkpoint.idTargetPoint
+        }
         .toSet()
 
     val array = JSONArray()
@@ -911,5 +941,20 @@ private fun hayInternet(context: Context): Boolean {
 
     } catch (_: Exception) {
         false
+    }
+}
+
+private class MapaBridge(
+    private val onPuntoSeleccionado: (Long) -> Unit
+) {
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    @JavascriptInterface
+    fun onPuntoSeleccionado(idTargetPoint: String) {
+        val id = idTargetPoint.toLongOrNull() ?: return
+
+        mainHandler.post {
+            onPuntoSeleccionado(id)
+        }
     }
 }
