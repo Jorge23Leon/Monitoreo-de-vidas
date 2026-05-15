@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <cache-path
+        name="fotos_monitoreo"
+        path="fotos_monitoreo/" />
+
+    <external-cache-path
+        name="fotos_monitoreo_external"
+        path="fotos_monitoreo/" />
+
+</paths>
