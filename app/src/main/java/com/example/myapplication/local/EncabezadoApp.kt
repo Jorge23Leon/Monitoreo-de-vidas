@@ -1,6 +1,8 @@
 package com.example.myapplication.local
 
+import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,12 +13,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -27,8 +35,16 @@ import java.util.Locale
 
 @Composable
 fun EncabezadoApp(
-    nombreUsuario: String
+    nombreUsuario: String,
+    onPerfilClick: (() -> Unit)? = null,
+    onMonitoreosClick: (() -> Unit)? = null
 ) {
+    val context = LocalContext.current
+
+    var menuAbierto by remember {
+        mutableStateOf(false)
+    }
+
     val fechaActual = remember {
         SimpleDateFormat(
             "dd 'de' MMMM 'de' yyyy",
@@ -100,14 +116,77 @@ fun EncabezadoApp(
             maxLines = 1
         )
 
-        Text(
-            text = "☰",
+        Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = 13.dp),
-            fontSize = 25.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.Black
-        )
+                .padding(top = 8.dp)
+        ) {
+            Text(
+                text = "☰",
+                modifier = Modifier
+                    .clickable {
+                        menuAbierto = true
+                    }
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.Black
+            )
+
+            DropdownMenu(
+                expanded = menuAbierto,
+                onDismissRequest = {
+                    menuAbierto = false
+                },
+                modifier = Modifier.background(Color.White)
+            ) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = "👤 Perfil del usuario",
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1B5E20)
+                        )
+                    },
+                    onClick = {
+                        menuAbierto = false
+
+                        if (onPerfilClick != null) {
+                            onPerfilClick()
+                        } else {
+                            Toast.makeText(
+                                context,
+                                "Perfil del usuario",
+                                Toast.LENGTH_SHORT
+                            ).show()
+
+                        }
+                    }
+                )
+
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = "📋 Monitoreos",
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1B5E20)
+                        )
+                    },
+                    onClick = {
+                        menuAbierto = false
+
+                        if (onMonitoreosClick != null) {
+                            onMonitoreosClick()
+                        } else {
+                            Toast.makeText(
+                                context,
+                                "Apartado de monitoreos",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                )
+            }
+        }
     }
 }

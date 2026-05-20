@@ -113,6 +113,7 @@ interface LocalPhytomonitoringHeaderDao {
         statuses: List<String>
     ): List<LocalPhytomonitoringHeaderEntity>
 
+
     @Query("""
     UPDATE local_phytomonitoring_headers
     SET 
@@ -127,9 +128,34 @@ interface LocalPhytomonitoringHeaderDao {
 
     @Query("""
     UPDATE local_phytomonitoring_headers
-    SET 
-        finished_at = :finishedAt,
-        status = 'Completado'
+    SET status = 'En proceso',
+        start_at = CASE 
+            WHEN start_at IS NULL THEN :now 
+            ELSE start_at 
+        END,
+        finished_at = NULL
+    WHERE idHeader = :idHeader
+      AND LOWER(TRIM(status)) IN ('pendiente', 'pending')
+""")
+    suspend fun iniciarMonitoreoSiEstaPendiente(
+        idHeader: Long,
+        now: Long
+    )
+
+    @Query("""
+    UPDATE local_phytomonitoring_headers
+    SET status = 'En proceso',
+        finished_at = NULL
+    WHERE idHeader = :idHeader
+""")
+    suspend fun dejarMonitoreoEnProceso(
+        idHeader: Long
+    )
+
+    @Query("""
+    UPDATE local_phytomonitoring_headers
+    SET status = 'Completado',
+        finished_at = :finishedAt
     WHERE idHeader = :idHeader
 """)
     suspend fun finalizarMonitoreo(
@@ -157,4 +183,8 @@ interface LocalPhytomonitoringHeaderDao {
 """)
     suspend fun regresarAPendiente(
         idHeader: Long
-    )}
+    )
+
+}
+
+

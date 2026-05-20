@@ -63,7 +63,9 @@ fun RegistroPuntoMonitoreoScreen(
     header: LocalPhytomonitoringHeaderEntity,
     punto: LocalPhytomonitoringTargetPointEntity,
     onCancelar: () -> Unit,
-    onGuardado: () -> Unit
+    onGuardado: () -> Unit,
+    onPerfilClick: () -> Unit = {},
+    onMonitoreosClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -80,8 +82,16 @@ fun RegistroPuntoMonitoreoScreen(
         mutableStateOf<LocalPhytosanitaryCatalogEntity?>(null)
     }
 
+    val etapasPorFito = remember {
+        mutableStateMapOf<Long, List<LocalPhytostageEntity>>()
+    }
+
     val cantidadesPorEtapa = remember {
-        mutableStateMapOf<String, Int>()
+        mutableStateMapOf<ClaveEtapaUi, Int>()
+    }
+
+    val fitosSinEtapasSeleccionados = remember {
+        mutableStateMapOf<Long, Boolean>()
     }
 
     var observaciones by rememberSaveable {
@@ -158,19 +168,32 @@ fun RegistroPuntoMonitoreoScreen(
         val fito = fitoSeleccionado
 
         etapas = emptyList()
-        cantidadesPorEtapa.clear()
 
         if (fito != null) {
             try {
-                val etapasDb = withContext(Dispatchers.IO) {
-                    database.localphytostageDao()
-                        .getStagesByPhytosanitary(fito.idPhytosanitary)
-                }
+                val etapasDb = etapasPorFito[fito.idPhytosanitary]
+                    ?: withContext(Dispatchers.IO) {
+                        database.localphytostageDao()
+                            .getStagesByPhytosanitary(fito.idPhytosanitary)
+                    }.also { etapasCargadas ->
+                        etapasPorFito[fito.idPhytosanitary] = etapasCargadas
+                    }
 
                 etapas = etapasDb
 
-                etapasDb.forEach { etapa ->
-                    cantidadesPorEtapa[etapa.stage] = 0
+                if (etapasDb.isEmpty()) {
+                    fitosSinEtapasSeleccionados[fito.idPhytosanitary] = true
+                } else {
+                    etapasDb.forEach { etapa ->
+                        val clave = ClaveEtapaUi(
+                            idPhytosanitary = fito.idPhytosanitary,
+                            stage = etapa.stage
+                        )
+
+                        if (!cantidadesPorEtapa.containsKey(clave)) {
+                            cantidadesPorEtapa[clave] = 0
+                        }
+                    }
                 }
 
             } catch (e: Exception) {
@@ -179,13 +202,25 @@ fun RegistroPuntoMonitoreoScreen(
         }
     }
 
+    val registrosPendientesPorEtapa = cantidadesPorEtapa.values.count { cantidad ->
+        cantidad > 0
+    }
+
+    val registrosPendientesSinEtapas = fitosSinEtapasSeleccionados.values.count { seleccionado ->
+        seleccionado
+    }
+
+    val registrosPendientes = registrosPendientesPorEtapa + registrosPendientesSinEtapas
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFFF8FBF7))
     ) {
         EncabezadoApp(
-            nombreUsuario = nombreUsuario
+            nombreUsuario = nombreUsuario,
+            onPerfilClick = onPerfilClick,
+            onMonitoreosClick = onMonitoreosClick
         )
 
         Column(
@@ -208,7 +243,7 @@ fun RegistroPuntoMonitoreoScreen(
             Spacer(modifier = Modifier.height(10.dp))
 
             InfoBox(
-                text = "Registros guardados en este punto: $registrosAgregados"
+                text = "Registros guardados: $registrosAgregados  •  Capturas por guardar: $registrosPendientes"
             )
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -287,18 +322,22 @@ fun RegistroPuntoMonitoreoScreen(
                             modifier = Modifier.padding(vertical = 6.dp)
                         ) {
                             etapas.forEach { etapa ->
-                                val cantidad = cantidadesPorEtapa[etapa.stage] ?: 0
+                                val clave = ClaveEtapaUi(
+                                    idPhytosanitary = fito.idPhytosanitary,
+                                    stage = etapa.stage
+                                )
+                                val cantidad = cantidadesPorEtapa[clave] ?: 0
 
                                 EtapaRowModerna(
                                     nombreEtapa = etapa.stage,
                                     cantidad = cantidad,
                                     onMenos = {
-                                        val actual = cantidadesPorEtapa[etapa.stage] ?: 0
-                                        cantidadesPorEtapa[etapa.stage] = maxOf(0, actual - 1)
+                                        val actual = cantidadesPorEtapa[clave] ?: 0
+                                        cantidadesPorEtapa[clave] = maxOf(0, actual - 1)
                                     },
                                     onMas = {
-                                        val actual = cantidadesPorEtapa[etapa.stage] ?: 0
-                                        cantidadesPorEtapa[etapa.stage] = actual + 1
+                                        val actual = cantidadesPorEtapa[clave] ?: 0
+                                        cantidadesPorEtapa[clave] = actual + 1
                                     }
                                 )
                             }
@@ -432,24 +471,21 @@ fun RegistroPuntoMonitoreoScreen(
                 onClick = {
                     if (finalizando) return@Button
 
-                    val fito = fitoSeleccionado
-
-                    if (fito == null && registrosAgregados <= 0) {
-                        Toast.makeText(
-                            context,
-                            "Selecciona una plaga/enfermedad o presiona Sin plaga",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        return@Button
-                    }
-
                     val registrosConCantidad = cantidadesPorEtapa
                         .filter { it.value > 0 }
 
-                    if (fito != null && etapas.isNotEmpty() && registrosConCantidad.isEmpty()) {
+                    val fitosSinEtapasPendientes = fitosSinEtapasSeleccionados
+                        .filter { it.value }
+                        .keys
+
+                    if (
+                        registrosConCantidad.isEmpty() &&
+                        fitosSinEtapasPendientes.isEmpty() &&
+                        registrosAgregados <= 0
+                    ) {
                         Toast.makeText(
                             context,
-                            "Captura al menos una fase con cantidad mayor a 0",
+                            "Selecciona una o varias plagas/enfermedades y captura cantidades",
                             Toast.LENGTH_SHORT
                         ).show()
                         return@Button
@@ -460,41 +496,40 @@ fun RegistroPuntoMonitoreoScreen(
                     coroutineScope.launch {
                         try {
                             withContext(Dispatchers.IO) {
-                                if (fito != null) {
-                                    if (etapas.isEmpty()) {
-                                        val checkpoint = LocalPhytomonitoringCheckpointEntity(
-                                            qty = 1,
-                                            presenceStatus = 1,
-                                            stage = null,
-                                            notes = observaciones.ifBlank { null },
-                                            capturedAt = System.currentTimeMillis(),
-                                            idTargetPoint = punto.idTargetPoint,
-                                            idHeader = header.idHeader,
-                                            idPhytosanitary = fito.idPhytosanitary,
-                                            idLocalPlot = punto.idLocalPlot
-                                        )
+                                val ahora = System.currentTimeMillis()
 
-                                        database.localphytomonitoringcheckpointDao()
-                                            .insertCheckpoint(checkpoint)
+                                registrosConCantidad.forEach { (clave, cantidad) ->
+                                    val checkpoint = LocalPhytomonitoringCheckpointEntity(
+                                        qty = cantidad,
+                                        presenceStatus = 1,
+                                        stage = clave.stage,
+                                        notes = observaciones.ifBlank { null },
+                                        capturedAt = ahora,
+                                        idTargetPoint = punto.idTargetPoint,
+                                        idHeader = header.idHeader,
+                                        idPhytosanitary = clave.idPhytosanitary,
+                                        idLocalPlot = punto.idLocalPlot
+                                    )
 
-                                    } else {
-                                        registrosConCantidad.forEach { (etapa, cantidad) ->
-                                            val checkpoint = LocalPhytomonitoringCheckpointEntity(
-                                                qty = cantidad,
-                                                presenceStatus = 1,
-                                                stage = etapa,
-                                                notes = observaciones.ifBlank { null },
-                                                capturedAt = System.currentTimeMillis(),
-                                                idTargetPoint = punto.idTargetPoint,
-                                                idHeader = header.idHeader,
-                                                idPhytosanitary = fito.idPhytosanitary,
-                                                idLocalPlot = punto.idLocalPlot
-                                            )
+                                    database.localphytomonitoringcheckpointDao()
+                                        .insertCheckpoint(checkpoint)
+                                }
 
-                                            database.localphytomonitoringcheckpointDao()
-                                                .insertCheckpoint(checkpoint)
-                                        }
-                                    }
+                                fitosSinEtapasPendientes.forEach { idPhytosanitary ->
+                                    val checkpoint = LocalPhytomonitoringCheckpointEntity(
+                                        qty = 1,
+                                        presenceStatus = 1,
+                                        stage = null,
+                                        notes = observaciones.ifBlank { null },
+                                        capturedAt = ahora,
+                                        idTargetPoint = punto.idTargetPoint,
+                                        idHeader = header.idHeader,
+                                        idPhytosanitary = idPhytosanitary,
+                                        idLocalPlot = punto.idLocalPlot
+                                    )
+
+                                    database.localphytomonitoringcheckpointDao()
+                                        .insertCheckpoint(checkpoint)
                                 }
 
                                 database.LocalPhytomonitoringTargetPointDao()
@@ -986,3 +1021,8 @@ private fun CircleCounterButtonModerno(
         )
     }
 }
+
+private data class ClaveEtapaUi(
+    val idPhytosanitary: Long,
+    val stage: String
+)

@@ -1,6 +1,7 @@
 package com.example.myapplication.local
 
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -38,7 +39,9 @@ enum class PantallaActual {
     FILTROS_MONITOREO,
     LISTA_MONITOREOS,
     MAPA_MONITOREO,
-    REGISTRO_PUNTO_MONITOREO
+    REGISTRO_PUNTO_MONITOREO,
+    REPORTE_MONITOREO,
+    PERFIL_USUARIO
 }
 
 class MainActivity : ComponentActivity() {
@@ -167,6 +170,10 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf<LocalPhytomonitoringHeaderEntity?>(null)
                 }
 
+                var monitoreoSeleccionadoParaReporte by remember {
+                    mutableStateOf<LocalPhytomonitoringHeaderEntity?>(null)
+                }
+
                 var puntoSeleccionadoParaRegistro by remember {
                     mutableStateOf<LocalPhytomonitoringTargetPointEntity?>(null)
                 }
@@ -192,6 +199,7 @@ class MainActivity : ComponentActivity() {
                     busquedaFueConSaltoFiltros = false
 
                     monitoreoSeleccionadoParaMapa = null
+                    monitoreoSeleccionadoParaReporte = null
                     puntoSeleccionadoParaRegistro = null
 
                     monitoreosEncontrados = emptyList()
@@ -228,6 +236,7 @@ class MainActivity : ComponentActivity() {
                                     .getProductoresByCia(idLocalCia)
                             }
                         } catch (e: Exception) {
+                            e.printStackTrace()
                             mostrarMensaje("Error al cargar productores: ${e.message}")
                         }
                     }
@@ -241,6 +250,7 @@ class MainActivity : ComponentActivity() {
                                     .getRanchosByProductor(idProductor)
                             }
                         } catch (e: Exception) {
+                            e.printStackTrace()
                             mostrarMensaje("Error al cargar ranchos: ${e.message}")
                         }
                     }
@@ -254,6 +264,7 @@ class MainActivity : ComponentActivity() {
                                     .getParcelasByRancho(idRanch)
                             }
                         } catch (e: Exception) {
+                            e.printStackTrace()
                             mostrarMensaje("Error al cargar parcelas: ${e.message}")
                         }
                     }
@@ -270,55 +281,60 @@ class MainActivity : ComponentActivity() {
                                     )
                             }
                         } catch (e: Exception) {
+                            e.printStackTrace()
                             mostrarMensaje("Error al cargar ciclos: ${e.message}")
                         }
                     }
                 }
 
                 fun obtenerEstadosSeleccionados(saltarFiltros: Boolean): List<String> {
-                    if (saltarFiltros) {
-                        return listOf(
-                            "Pendiente",
-                            "En proceso",
-                            "pending",
-                            "in_progress",
-                            "vigente"
-                        )
-                    }
+                    return listOf(
+                        "Pendiente",
+                        "En proceso",
+                        "Completado",
+                        "Cancelado",
 
-                    return when {
-                        finalizadosChecked -> listOf(
-                            "Completado",
-                            "completed",
-                            "finalizado"
-                        )
+                        "pending",
+                        "in_progress",
+                        "completed",
+                        "cancelled",
 
-                        vigentesChecked -> listOf(
-                            "Pendiente",
-                            "En proceso",
-                            "pending",
-                            "in_progress",
-                            "vigente"
-                        )
+                        "pendiente",
+                        "en proceso",
+                        "completado",
+                        "cancelado",
 
-                        canceladosChecked -> listOf(
-                            "Cancelado",
-                            "cancelled"
-                        )
+                        "vigente",
+                        "finalizado"
+                    )
+                }
 
-                        else -> listOf(
-                            "Pendiente",
-                            "En proceso",
-                            "Completado",
-                            "Cancelado",
-                            "pending",
-                            "in_progress",
-                            "completed",
-                            "cancelled",
-                            "vigente",
-                            "finalizado"
-                        )
-                    }
+                fun abrirReporte(header: LocalPhytomonitoringHeaderEntity) {
+                    Log.d(
+                        "MainActivity",
+                        "Abriendo reporte idHeader=${header.idHeader}, status=${header.status}"
+                    )
+
+                    mostrarMensaje("Abriendo información del monitoreo ${header.idHeader}")
+
+                    monitoreoSeleccionadoParaReporte = header
+                    monitoreoSeleccionadoParaMapa = null
+                    puntoSeleccionadoParaRegistro = null
+
+                    pantallaActual = PantallaActual.REPORTE_MONITOREO
+                }
+
+                fun abrirMapa(header: LocalPhytomonitoringHeaderEntity) {
+                    Log.d(
+                        "MainActivity",
+                        "Abriendo mapa idHeader=${header.idHeader}, status=${header.status}"
+                    )
+
+                    monitoreoSeleccionadoParaMapa = header
+                    monitoreoSeleccionadoParaReporte = null
+                    puntoSeleccionadoParaRegistro = null
+
+                    pantallaActual = PantallaActual.MAPA_MONITOREO
                 }
 
                 fun buscarMonitoreos(saltarFiltros: Boolean) {
@@ -457,6 +473,7 @@ class MainActivity : ComponentActivity() {
                             pantallaActual = PantallaActual.LISTA_MONITOREOS
 
                         } catch (e: Exception) {
+                            e.printStackTrace()
                             mostrarMensaje("Error al buscar monitoreos: ${e.message}")
                         }
                     }
@@ -506,6 +523,18 @@ class MainActivity : ComponentActivity() {
 
                         PantallaActual.REGISTRO_PUNTO_MONITOREO -> {
                             pantallaActual = PantallaActual.MAPA_MONITOREO
+                        }
+
+                        PantallaActual.REPORTE_MONITOREO -> {
+                            pantallaActual = PantallaActual.LISTA_MONITOREOS
+                        }
+
+                        PantallaActual.PERFIL_USUARIO -> {
+                            pantallaActual = if (ciaSeleccionada != null) {
+                                PantallaActual.FILTROS_MONITOREO
+                            } else {
+                                PantallaActual.SELECCION_CIA
+                            }
                         }
 
                         else -> Unit
@@ -568,6 +597,7 @@ class MainActivity : ComponentActivity() {
                                             }
 
                                         } catch (e: Exception) {
+                                            e.printStackTrace()
                                             mostrarMensaje("Error al iniciar sesión: ${e.message}")
                                         } finally {
                                             cargando = false
@@ -639,6 +669,7 @@ class MainActivity : ComponentActivity() {
                                             pantallaActual = PantallaActual.LOGIN
 
                                         } catch (e: Exception) {
+                                            e.printStackTrace()
                                             mostrarMensaje(
                                                 "No se pudo registrar. Revisa si el usuario o correo ya existen"
                                             )
@@ -721,6 +752,14 @@ class MainActivity : ComponentActivity() {
                                         pantallaActual = PantallaActual.LOGIN
                                     }
                                 )
+                            },
+
+                            onPerfilClick = {
+                                pantallaActual = PantallaActual.PERFIL_USUARIO
+                            },
+
+                            onMonitoreosClick = {
+                                pantallaActual = PantallaActual.FILTROS_MONITOREO
                             }
                         )
                     }
@@ -769,10 +808,26 @@ class MainActivity : ComponentActivity() {
 
                                 cicloSeleccionado = null
                                 ciclos = emptyList()
+
+                                productorSeleccionado?.let { productor ->
+                                    cargarCiclos(
+                                        idProductor = productor.idLocalAgroUnit,
+                                        idPlot = parcela.idLocalPlot
+                                    )
+                                }
                             },
 
                             onBuscarClick = {
                                 buscarMonitoreos(saltarFiltros = false)
+                            },
+
+
+                            onPerfilClick = {
+                                pantallaActual = PantallaActual.PERFIL_USUARIO
+                            },
+
+                            onMonitoreosClick = {
+                                pantallaActual = PantallaActual.LISTA_MONITOREOS
                             }
                         )
                     }
@@ -781,7 +836,6 @@ class MainActivity : ComponentActivity() {
                         MonitoreoListaScreen(
                             nombreUsuario = nombreUsuarioActual,
                             busquedaFueConSaltoFiltros = busquedaFueConSaltoFiltros,
-
                             monitoreos = monitoreosEncontrados,
                             productores = productoresResultado,
                             ranchos = ranchosResultado,
@@ -789,9 +843,20 @@ class MainActivity : ComponentActivity() {
                             programas = programasResultado,
 
                             onAbrirMapaClick = { header ->
-                                monitoreoSeleccionadoParaMapa = header
-                                puntoSeleccionadoParaRegistro = null
-                                pantallaActual = PantallaActual.MAPA_MONITOREO
+                                if (esEstadoFinalizadoMain(header.status)) {
+                                    abrirReporte(header)
+                                } else {
+                                    abrirMapa(header)
+                                }
+                            },
+                            onAbrirReporteClick = { header ->
+                                abrirReporte(header)
+                            },
+                                    onPerfilClick = {
+                                pantallaActual = PantallaActual.PERFIL_USUARIO
+                            },
+                            onMonitoreosClick = {
+                                pantallaActual = PantallaActual.LISTA_MONITOREOS
                             }
                         )
                     }
@@ -809,13 +874,14 @@ class MainActivity : ComponentActivity() {
                                 .firstOrNull { programa ->
                                     programa.idProgram == header.idProgram
                                 }
-                                ?.cycle ?: "Monitoreo ${header.idHeader}"
+                                ?.cycle ?: header.cycle.ifBlank { "Monitoreo ${header.idHeader}" }
 
                             MonitoreoMapaScreen(
                                 database = database,
                                 header = header,
                                 nombreUsuario = nombreUsuarioActual,
                                 nombreMonitoreo = nombreMonitoreo,
+
                                 onPuntoValidoClick = { idTargetPoint ->
                                     coroutineScope.launch {
                                         try {
@@ -832,9 +898,36 @@ class MainActivity : ComponentActivity() {
                                             }
 
                                         } catch (e: Exception) {
+                                            e.printStackTrace()
                                             mostrarMensaje("Error al abrir punto: ${e.message}")
                                         }
                                     }
+                                },
+
+
+                                onMonitoreoActualizado = { nuevoEstado ->
+                                    mostrarMensaje(
+                                        if (nuevoEstado == "Completado") {
+                                            "Monitoreo terminado correctamente"
+                                        } else {
+                                            "Monitoreo guardado en proceso"
+                                        }
+                                    )
+
+                                    monitoreoSeleccionadoParaMapa = null
+                                    puntoSeleccionadoParaRegistro = null
+
+                                    buscarMonitoreos(
+                                        saltarFiltros = busquedaFueConSaltoFiltros
+                                    )
+                                },
+
+                                onPerfilClick = {
+                                    pantallaActual = PantallaActual.PERFIL_USUARIO
+                                },
+
+                                onMonitoreosClick = {
+                                    pantallaActual = PantallaActual.LISTA_MONITOREOS
                                 }
                             )
                         }
@@ -862,6 +955,110 @@ class MainActivity : ComponentActivity() {
                                 onGuardado = {
                                     puntoSeleccionadoParaRegistro = null
                                     pantallaActual = PantallaActual.MAPA_MONITOREO
+                                },
+                                onPerfilClick = {
+                                    pantallaActual = PantallaActual.PERFIL_USUARIO
+                                },
+                                onMonitoreosClick = {
+                                    pantallaActual = PantallaActual.LISTA_MONITOREOS
+                                }
+                            )
+                        }
+                    }
+
+                    PantallaActual.REPORTE_MONITOREO -> {
+                        val header = monitoreoSeleccionadoParaReporte
+
+                        LaunchedEffect(header?.idHeader) {
+                            Log.d(
+                                "MainActivity",
+                                "Entrando a REPORTE_MONITOREO con idHeader=${header?.idHeader}"
+                            )
+                        }
+
+                        if (header == null) {
+                            LaunchedEffect(Unit) {
+                                mostrarMensaje("No se seleccionó ningún reporte")
+                                pantallaActual = PantallaActual.LISTA_MONITOREOS
+                            }
+                        } else {
+                            val programa = programasResultado.firstOrNull { programa ->
+                                programa.idProgram == header.idProgram
+                            }
+
+                            val parcela = parcelasResultado.firstOrNull { parcela ->
+                                parcela.idLocalPlot == header.idLocalPlot
+                            }
+
+                            val rancho = parcela?.let { parcelaEncontrada ->
+                                ranchosResultado.firstOrNull { rancho ->
+                                    rancho.idLocalRanch == parcelaEncontrada.idLocalRanch
+                                }
+                            }
+
+                            val productor = programa?.let { programaEncontrado ->
+                                productoresResultado.firstOrNull { productor ->
+                                    productor.idLocalAgroUnit == programaEncontrado.idLocalAgroUnit
+                                }
+                            }
+
+                            ReporteMonitoreoScreen(
+                                database = database,
+                                nombreUsuario = nombreUsuarioActual,
+                                nombreCia = ciaSeleccionada?.nombre ?: "-",
+                                header = header,
+                                programa = programa,
+                                productor = productor,
+                                rancho = rancho,
+                                parcela = parcela,
+                                onBackClick = {
+                                    pantallaActual = PantallaActual.LISTA_MONITOREOS
+                                },
+                                onPerfilClick = {
+                                    pantallaActual = PantallaActual.PERFIL_USUARIO
+                                },
+                                onMonitoreosClick = {
+                                    pantallaActual = PantallaActual.LISTA_MONITOREOS
+                                }
+                            )
+                        }
+                    }
+
+
+                    PantallaActual.PERFIL_USUARIO -> {
+                        if (idUsuarioActual == 0L) {
+                            LaunchedEffect(Unit) {
+                                mostrarMensaje("No hay usuario activo")
+                                pantallaActual = PantallaActual.LOGIN
+                            }
+                        } else {
+                            PerfilUsuarioScreen(
+                                database = database,
+                                idUser = idUsuarioActual,
+                                nombreUsuario = nombreUsuarioActual,
+                                onBackClick = {
+                                    pantallaActual = if (ciaSeleccionada != null) {
+                                        PantallaActual.FILTROS_MONITOREO
+                                    } else {
+                                        PantallaActual.SELECCION_CIA
+                                    }
+                                },
+                                onPerfilActualizado = { usuario: UserEntity ->
+                                    idUsuarioActual = usuario.idUser
+                                    nombreUsuarioActual = usuario.firstName
+                                    rolUsuarioActual = usuario.role
+
+                                    mostrarMensaje("Perfil actualizado")
+                                },
+                                onPerfilClick = {
+                                    pantallaActual = PantallaActual.PERFIL_USUARIO
+                                },
+                                onMonitoreosClick = {
+                                    pantallaActual = if (monitoreosEncontrados.isNotEmpty()) {
+                                        PantallaActual.LISTA_MONITOREOS
+                                    } else {
+                                        PantallaActual.FILTROS_MONITOREO
+                                    }
                                 }
                             )
                         }
@@ -965,3 +1162,13 @@ private data class ResultadoMonitoreoTemp(
     val parcelas: List<LocalPlotEntity>,
     val programas: List<LocalProgramEntity>
 )
+
+private fun esEstadoFinalizadoMain(status: String): Boolean {
+    return when (status.lowercase().trim()) {
+        "completed",
+        "completado",
+        "finalizado" -> true
+
+        else -> false
+    }
+}

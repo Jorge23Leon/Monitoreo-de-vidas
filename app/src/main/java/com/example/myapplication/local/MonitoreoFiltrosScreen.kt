@@ -55,7 +55,9 @@ fun MonitoreoFiltrosScreen(
     onRanchoChange: (LocalRanchEntity) -> Unit,
     onParcelaChange: (LocalPlotEntity) -> Unit,
 
-    onBuscarClick: () -> Unit
+    onBuscarClick: () -> Unit,
+    onPerfilClick: () -> Unit = {},
+    onMonitoreosClick: () -> Unit = {}
 ) {
     Box(
         modifier = Modifier
@@ -71,7 +73,9 @@ fun MonitoreoFiltrosScreen(
         ) {
 
             EncabezadoApp(
-                nombreUsuario = nombreUsuario
+                nombreUsuario = nombreUsuario,
+                onPerfilClick = onPerfilClick,
+                onMonitoreosClick = onMonitoreosClick
             )
             
             Spacer(modifier = Modifier.height(12.dp))

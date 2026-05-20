@@ -80,4 +80,44 @@ interface UserDao {
         WHERE LOWER(TRIM(role)) = LOWER(TRIM(:role))
     """)
     suspend fun countByRole(role: String): Int
+
+    @Query("""
+    SELECT COUNT(*)
+    FROM users
+    WHERE LOWER(TRIM(username)) = LOWER(TRIM(:username))
+      AND idUser != :idUser
+""")
+    suspend fun existeUsernameEnOtroUsuario(
+        username: String,
+        idUser: Long
+    ): Int
+
+    @Query("""
+    SELECT COUNT(*)
+    FROM users
+    WHERE LOWER(TRIM(email)) = LOWER(TRIM(:email))
+      AND idUser != :idUser
+""")
+    suspend fun existeEmailEnOtroUsuario(
+        email: String,
+        idUser: Long
+    ): Int
+
+    @Query("""
+    UPDATE users
+    SET first_name = :firstName,
+        last_name = :lastName,
+        username = :username,
+        email = :email,
+        password = :password
+    WHERE idUser = :idUser
+""")
+    suspend fun actualizarPerfilUsuarioSinRol(
+        idUser: Long,
+        firstName: String,
+        lastName: String,
+        username: String,
+        email: String,
+        password: String
+    ): Int
 }

@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -28,7 +27,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,7 +61,11 @@ fun MonitoreoListaScreen(
     parcelas: List<LocalPlotEntity>,
     programas: List<LocalProgramEntity>,
 
-    onAbrirMapaClick: (LocalPhytomonitoringHeaderEntity) -> Unit
+    onAbrirMapaClick: (LocalPhytomonitoringHeaderEntity) -> Unit,
+    onAbrirReporteClick: (LocalPhytomonitoringHeaderEntity) -> Unit,
+    onPerfilClick: () -> Unit = {},
+    onMonitoreosClick: () -> Unit = {},
+
 ) {
     val productoresMap = remember(productores) {
         productores.associateBy { it.idLocalAgroUnit }
@@ -97,15 +99,12 @@ fun MonitoreoListaScreen(
         mutableStateOf("Todos")
     }
 
-    var monitoreoInfoSeleccionado by remember {
-        mutableStateOf<LocalPhytomonitoringHeaderEntity?>(null)
-    }
-
     val fechaInicioMillis = parseFechaInicioLista(fechaInicioTexto)
     val fechaFinMillis = parseFechaFinLista(fechaFinTexto)
 
     val monitoreosFiltrados = monitoreos.filter { header ->
-        val cumpleCiclo = cicloFiltro == null || header.idProgram == cicloFiltro?.idProgram
+        val cumpleCiclo = cicloFiltro == null ||
+                header.idProgram == cicloFiltro?.idProgram
 
         val cumpleFechaInicio = fechaInicioMillis == null ||
                 header.estStartDate >= fechaInicioMillis
@@ -113,17 +112,22 @@ fun MonitoreoListaScreen(
         val cumpleFechaFin = fechaFinMillis == null ||
                 header.estStartDate <= fechaFinMillis
 
+        val statusNormalizado = header.status.lowercase().trim()
+
         val cumpleEstado = when (estadoFiltro) {
-            "Pendiente" -> header.status.lowercase() == "pending" ||
-                    header.status.lowercase() == "pendiente"
+            "Pendiente" -> statusNormalizado == "pending" ||
+                    statusNormalizado == "pendiente"
 
-            "En proceso" -> header.status.lowercase() == "in_progress" ||
-                    header.status.lowercase() == "en proceso" ||
-                    header.status.lowercase() == "vigente"
+            "En proceso" -> statusNormalizado == "in_progress" ||
+                    statusNormalizado == "en proceso" ||
+                    statusNormalizado == "vigente"
 
-            "Completado" -> header.status.lowercase() == "completed" ||
-                    header.status.lowercase() == "completado" ||
-                    header.status.lowercase() == "finalizado"
+            "Completado" -> statusNormalizado == "completed" ||
+                    statusNormalizado == "completado" ||
+                    statusNormalizado == "finalizado"
+
+            "Cancelado" -> statusNormalizado == "cancelled" ||
+                    statusNormalizado == "cancelado"
 
             else -> true
         }
@@ -131,7 +135,7 @@ fun MonitoreoListaScreen(
         cumpleCiclo && cumpleFechaInicio && cumpleFechaFin && cumpleEstado
     }
 
-    val primerHeader = monitoreos.firstOrNull()
+    val primerHeader = monitoreosFiltrados.firstOrNull() ?: monitoreos.firstOrNull()
     val primerPrograma = primerHeader?.let { programasMap[it.idProgram] }
     val primeraParcela = primerHeader?.let { parcelasMap[it.idLocalPlot] }
     val primerRancho = primeraParcela?.let { ranchosMap[it.idLocalRanch] }
@@ -149,9 +153,10 @@ fun MonitoreoListaScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-
             EncabezadoApp(
-                nombreUsuario = nombreUsuario
+                nombreUsuario = nombreUsuario,
+                onPerfilClick = onPerfilClick,
+                onMonitoreosClick = onMonitoreosClick
             )
 
             Spacer(modifier = Modifier.height(18.dp))
@@ -259,7 +264,7 @@ fun MonitoreoListaScreen(
                         HeaderTabla("Estado", Modifier.weight(1f))
                         HeaderTabla("Inicio", Modifier.weight(1f))
                         HeaderTabla("Fin", Modifier.weight(1f))
-                        HeaderTabla("Info.", Modifier.weight(0.8f))
+                        HeaderTabla("Acción", Modifier.weight(0.8f))
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
@@ -279,16 +284,28 @@ fun MonitoreoListaScreen(
                             val programa = programasMap[header.idProgram]
                             val nombreMonitoreo = programa?.cycle ?: "M-${header.idHeader}"
 
+                            val esFinalizado = esEstadoFinalizadoLista(header.status)
+                            val esCancelado = esEstadoCanceladoLista(header.status)
+
+                            val accionTexto = when {
+                                esFinalizado -> "Info"
+                                esCancelado -> "Cerrado"
+                                else -> "Monitoreo"
+                            }
+
                             FilaMonitoreo(
                                 nombreMonitoreo = nombreMonitoreo,
                                 status = header.status,
                                 fechaInicio = header.estStartDate,
                                 fechaFin = header.estFinishDate,
-                                onAbrirMapaClick = {
-                                    onAbrirMapaClick(header)
-                                },
-                                onInfoClick = {
-                                    monitoreoInfoSeleccionado = header
+                                accionTexto = accionTexto,
+                                enabled = !esCancelado,
+                                onAccionClick = {
+                                    when {
+                                        esFinalizado -> onAbrirReporteClick(header)
+                                        esCancelado -> Unit
+                                        else -> onAbrirMapaClick(header)
+                                    }
                                 }
                             )
 
@@ -297,26 +314,6 @@ fun MonitoreoListaScreen(
                     }
                 }
             }
-        }
-
-        val headerDetalle = monitoreoInfoSeleccionado
-
-        if (headerDetalle != null) {
-            val programa = programasMap[headerDetalle.idProgram]
-            val parcela = parcelasMap[headerDetalle.idLocalPlot]
-            val rancho = parcela?.let { ranchosMap[it.idLocalRanch] }
-            val productor = programa?.let { productoresMap[it.idLocalAgroUnit] }
-
-            DetalleMonitoreoDialog(
-                header = headerDetalle,
-                programa = programa,
-                productor = productor,
-                rancho = rancho,
-                parcela = parcela,
-                onDismiss = {
-                    monitoreoInfoSeleccionado = null
-                }
-            )
         }
     }
 }
@@ -571,7 +568,8 @@ private fun FiltroCompactoEstado(
         "Todos",
         "Pendiente",
         "En proceso",
-        "Completado"
+        "Completado",
+        "Cancelado"
     )
 
     Box {
@@ -697,14 +695,15 @@ private fun FilaMonitoreo(
     status: String,
     fechaInicio: Long,
     fechaFin: Long,
-    onAbrirMapaClick: () -> Unit,
-    onInfoClick: () -> Unit
+    accionTexto: String,
+    enabled: Boolean,
+    onAccionClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable {
-                onAbrirMapaClick()
+            .clickable(enabled = enabled) {
+                onAccionClick()
             },
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -740,19 +739,25 @@ private fun FilaMonitoreo(
         )
 
         Button(
-            onClick = onInfoClick,
+            onClick = onAccionClick,
+            enabled = enabled,
             modifier = Modifier
                 .weight(0.8f)
                 .height(32.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF7ED957)
+                containerColor = when (accionTexto) {
+                    "Info" -> Color(0xFF1976D2)
+                    "Cerrado" -> Color(0xFFBDBDBD)
+                    else -> Color(0xFF7ED957)
+                },
+                disabledContainerColor = Color(0xFFBDBDBD)
             ),
             shape = RoundedCornerShape(20.dp),
             contentPadding = PaddingValues(0.dp)
         ) {
             Text(
-                text = "Info",
-                color = Color.Black,
+                text = accionTexto,
+                color = if (accionTexto == "Info") Color.White else Color.Black,
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -760,87 +765,18 @@ private fun FilaMonitoreo(
     }
 }
 
-@Composable
-private fun DetalleMonitoreoDialog(
-    header: LocalPhytomonitoringHeaderEntity,
-    programa: LocalProgramEntity?,
-    productor: LocalAgroUnitEntity?,
-    rancho: LocalRanchEntity?,
-    parcela: LocalPlotEntity?,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "Información del monitoreo",
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            Column {
-                DatoDetalle("Monitoreo:", programa?.cycle ?: "Sin ciclo")
-                DatoDetalle("Estado:", textoEstado(header.status))
-                DatoDetalle("Productor:", productor?.commercial_name ?: "-")
-                DatoDetalle("Rancho:", rancho?.name ?: "-")
-                DatoDetalle("Parcela:", parcela?.code ?: "-")
-                DatoDetalle("Fecha programada:", formatearFechaCompleta(header.estStartDate))
-                DatoDetalle("Fecha fin estimada:", formatearFechaCompleta(header.estFinishDate))
-                DatoDetalle("Iniciado:", formatearFechaOpcional(header.startAt))
-                DatoDetalle("Finalizado:", formatearFechaOpcional(header.finishedAt))
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onDismiss
-            ) {
-                Text("Cerrar")
-            }
-        }
-    )
-}
-
-@Composable
-private fun DatoDetalle(
-    titulo: String,
-    valor: String
-) {
-    Column(
-        modifier = Modifier.padding(bottom = 8.dp)
-    ) {
-        Text(
-            text = titulo,
-            fontWeight = FontWeight.Bold,
-            fontSize = 12.sp,
-            color = Color.Black
-        )
-
-        Text(
-            text = valor,
-            fontSize = 12.sp,
-            color = Color.DarkGray
-        )
-    }
-}
-
 private fun textoEstado(status: String): String {
-    return when (status.lowercase()) {
-        "pending" -> "Pendiente"
-        "in_progress" -> "En proceso"
-        "completed" -> "Completado"
-        "cancelled" -> "Cancelado"
-        "pendiente" -> "Pendiente"
-        "en proceso" -> "En proceso"
-        "vigente" -> "En proceso"
-        "completado" -> "Completado"
-        "finalizado" -> "Completado"
-        "cancelado" -> "Cancelado"
+    return when (status.lowercase().trim()) {
+        "pending", "pendiente" -> "Pendiente"
+        "in_progress", "en proceso", "vigente" -> "En proceso"
+        "completed", "completado", "finalizado" -> "Completado"
+        "cancelled", "cancelado" -> "Cancelado"
         else -> status
     }
 }
 
 private fun colorEstado(status: String): Color {
-    return when (status.lowercase()) {
+    return when (status.lowercase().trim()) {
         "pending", "pendiente" -> Color(0xFFC9B800)
         "in_progress", "en proceso", "vigente" -> Color(0xFF4CAF50)
         "completed", "completado", "finalizado" -> Color(0xFF1976D2)
@@ -852,26 +788,6 @@ private fun colorEstado(status: String): Color {
 private fun formatearFechaCorta(fecha: Long): String {
     return try {
         val sdf = SimpleDateFormat("dd-MM-yyyy", Locale.getDefault())
-        sdf.format(Date(fecha))
-    } catch (e: Exception) {
-        "-"
-    }
-}
-
-private fun formatearFechaCompleta(fecha: Long): String {
-    return try {
-        val sdf = SimpleDateFormat("dd-MM-yyyy HH:mm", Locale.getDefault())
-        sdf.format(Date(fecha))
-    } catch (e: Exception) {
-        "-"
-    }
-}
-
-private fun formatearFechaOpcional(fecha: Long?): String {
-    if (fecha == null) return "No registrado"
-
-    return try {
-        val sdf = SimpleDateFormat("dd-MM-yyyy HH:mm", Locale.getDefault())
         sdf.format(Date(fecha))
     } catch (e: Exception) {
         "-"
@@ -910,5 +826,22 @@ private fun parseFechaFinLista(fechaTexto: String): Long? {
 
     } catch (e: Exception) {
         null
+    }
+}
+
+private fun esEstadoFinalizadoLista(status: String): Boolean {
+    return when (status.lowercase().trim()) {
+        "completed",
+        "completado",
+        "finalizado" -> true
+        else -> false
+    }
+}
+
+private fun esEstadoCanceladoLista(status: String): Boolean {
+    return when (status.lowercase().trim()) {
+        "cancelled",
+        "cancelado" -> true
+        else -> false
     }
 }

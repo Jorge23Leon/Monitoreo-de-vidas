@@ -13,22 +13,28 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Handler
 import android.os.Looper
+import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.JsResult
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
+import android.widget.TextView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Text
@@ -38,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,6 +62,7 @@ import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringTargetPointEntity
 import com.example.myapplication.local.entities.LocalPlotVertexEntity
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -65,10 +73,16 @@ fun MonitoreoMapaScreen(
     header: LocalPhytomonitoringHeaderEntity,
     nombreUsuario: String,
     nombreMonitoreo: String,
-    onPuntoValidoClick: (Long) -> Unit
+    onPuntoValidoClick: (Long) -> Unit,
+    onMonitoreoActualizado: (String) -> Unit,
+    onPerfilClick: () -> Unit = {},
+    onMonitoreosClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
     val onPuntoValidoActual by rememberUpdatedState(onPuntoValidoClick)
+    val onMonitoreoActualizadoActual by rememberUpdatedState(onMonitoreoActualizado)
 
     var vertices by remember {
         mutableStateOf<List<LocalPlotVertexEntity>>(emptyList())
@@ -105,6 +119,10 @@ fun MonitoreoMapaScreen(
         mutableStateOf(true)
     }
 
+    var finalizandoMonitoreo by remember {
+        mutableStateOf(false)
+    }
+
     var error by remember {
         mutableStateOf<String?>(null)
     }
@@ -126,6 +144,12 @@ fun MonitoreoMapaScreen(
 
         try {
             val resultado = withContext(Dispatchers.IO) {
+                database.localphytomonitoringheaderDao()
+                    .iniciarMonitoreoSiEstaPendiente(
+                        idHeader = header.idHeader,
+                        now = System.currentTimeMillis()
+                    )
+
                 val listaVertices = database.LocalPlotVertexDao()
                     .getVerticesByPlot(header.idLocalPlot)
 
@@ -206,23 +230,6 @@ fun MonitoreoMapaScreen(
         }
     }
 
-    val htmlMapa = remember(
-        vertices,
-        puntos,
-        checkpoints,
-        nombreMonitoreo,
-        internetDisponible
-    ) {
-        crearHtmlMapaMonitoreo(
-            nombreMonitoreo = nombreMonitoreo,
-            vertices = vertices,
-            puntos = puntos,
-            checkpoints = checkpoints,
-            ubicacionInicial = ubicacionActualizada,
-            internetDisponible = internetDisponible
-        )
-    }
-
     val capturasPuntosUnicos = remember(
         checkpoints,
         puntos,
@@ -243,6 +250,24 @@ fun MonitoreoMapaScreen(
             .distinct()
             .size
     }
+
+    val htmlMapa = remember(
+        vertices,
+        puntos,
+        checkpoints,
+        nombreMonitoreo,
+        internetDisponible
+    ) {
+        crearHtmlMapaMonitoreo(
+            nombreMonitoreo = nombreMonitoreo,
+            vertices = vertices,
+            puntos = puntos,
+            checkpoints = checkpoints,
+            ubicacionInicial = ubicacionActualizada,
+            internetDisponible = internetDisponible
+        )
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -252,7 +277,9 @@ fun MonitoreoMapaScreen(
             modifier = Modifier.fillMaxSize()
         ) {
             EncabezadoApp(
-                nombreUsuario = nombreUsuario
+                nombreUsuario = nombreUsuario,
+                onPerfilClick = onPerfilClick,
+                onMonitoreosClick = onMonitoreosClick
             )
 
             BarraMapaMonitoreo(
@@ -308,119 +335,292 @@ fun MonitoreoMapaScreen(
                     }
                 }
 
-                AndroidView(
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(
+                    onClick = {
+                        if (finalizandoMonitoreo) return@Button
+
+                        val totalPuntos = puntos.size
+                        val puntosCapturados = capturasPuntosUnicos
+                        val puntosFaltantes = totalPuntos - puntosCapturados
+
+                        fun dejarEnProceso() {
+                            finalizandoMonitoreo = true
+
+                            coroutineScope.launch {
+                                try {
+                                    withContext(Dispatchers.IO) {
+                                        database.localphytomonitoringheaderDao()
+                                            .dejarMonitoreoEnProceso(
+                                                idHeader = header.idHeader
+                                            )
+                                    }
+
+                                    Toast.makeText(
+                                        context,
+                                        "Monitoreo guardado en proceso",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+
+                                    onMonitoreoActualizadoActual("En proceso")
+
+                                } catch (e: Exception) {
+                                    Toast.makeText(
+                                        context,
+                                        "Error al dejar en proceso: ${e.message}",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                } finally {
+                                    finalizandoMonitoreo = false
+                                }
+                            }
+                        }
+
+                        fun terminarMonitoreo() {
+                            finalizandoMonitoreo = true
+
+                            coroutineScope.launch {
+                                try {
+                                    withContext(Dispatchers.IO) {
+                                        database.localphytomonitoringheaderDao()
+                                            .finalizarMonitoreo(
+                                                idHeader = header.idHeader,
+                                                finishedAt = System.currentTimeMillis()
+                                            )
+                                    }
+
+                                    Toast.makeText(
+                                        context,
+                                        "Monitoreo terminado correctamente",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+
+                                    onMonitoreoActualizadoActual("Completado")
+
+                                } catch (e: Exception) {
+                                    Toast.makeText(
+                                        context,
+                                        "Error al terminar monitoreo: ${e.message}",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                } finally {
+                                    finalizandoMonitoreo = false
+                                }
+                            }
+                        }
+
+                        if (totalPuntos <= 0) {
+                            AlertDialog.Builder(context)
+                                .setTitle("Sin puntos")
+                                .setMessage("Este monitoreo no tiene puntos asignados.")
+                                .setPositiveButton("Aceptar") { dialog, _ ->
+                                    dialog.dismiss()
+                                }
+                                .show()
+                            return@Button
+                        }
+
+                        if (puntosFaltantes > 0) {
+                            AlertDialog.Builder(context)
+                                .setTitle("Faltan puntos por monitorear")
+                                .setMessage(
+                                    "Llevas $puntosCapturados de $totalPuntos puntos capturados.\n\n" +
+                                            "Aún faltan $puntosFaltantes puntos.\n\n" +
+                                            "Puedes dejar el monitoreo en proceso para continuarlo después, " +
+                                            "o terminarlo de todos modos."
+                                )
+                                .setNegativeButton("Dejar en proceso") { dialog, _ ->
+                                    dialog.dismiss()
+                                    dejarEnProceso()
+                                }
+                                .setPositiveButton("Terminar monitoreo") { dialog, _ ->
+                                    dialog.dismiss()
+                                    terminarMonitoreo()
+                                }
+                                .show()
+                        } else {
+                            AlertDialog.Builder(context)
+                                .setTitle("Terminar monitoreo")
+                                .setMessage(
+                                    "Todos los puntos ya fueron capturados.\n\n" +
+                                            "¿Deseas terminar el monitoreo?"
+                                )
+                                .setNegativeButton("Cancelar") { dialog, _ ->
+                                    dialog.dismiss()
+                                }
+                                .setPositiveButton("Terminar") { dialog, _ ->
+                                    dialog.dismiss()
+                                    terminarMonitoreo()
+                                }
+                                .show()
+                        }
+                    },
+                    enabled = !finalizandoMonitoreo,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp)
+                        .height(52.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF2E7D32),
+                        disabledContainerColor = Color(0xFF9E9E9E)
+                    )
+                ) {
+                    Text(
+                        text = if (finalizandoMonitoreo) {
+                            "Procesando..."
+                        } else {
+                            "✅ Terminar monitoreo"
+                        },
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                MapaMonitoreoWebViewSeguro(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
                         .padding(12.dp),
-                    factory = { ctx ->
-                        WebView(ctx).apply {
-                            webViewClient = WebViewClient()
-
-                            addJavascriptInterface(
-                                MapaBridge { idTargetPoint ->
-                                    onPuntoValidoActual(idTargetPoint)
-                                },
-                                "Android"
-                            )
-
-                            webChromeClient = object : WebChromeClient() {
-                                override fun onJsAlert(
-                                    view: WebView?,
-                                    url: String?,
-                                    message: String?,
-                                    result: JsResult?
-                                ): Boolean {
-                                    AlertDialog.Builder(ctx)
-                                        .setMessage(message ?: "")
-                                        .setPositiveButton("Aceptar") { dialog, _ ->
-                                            dialog.dismiss()
-                                            result?.confirm()
-                                        }
-                                        .setOnCancelListener {
-                                            result?.cancel()
-                                        }
-                                        .show()
-
-                                    return true
-                                }
-                            }
-
-                            setBackgroundColor(AndroidColor.TRANSPARENT)
-                            setLayerType(WebView.LAYER_TYPE_HARDWARE, null)
-
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            settings.loadsImagesAutomatically = true
-                            settings.allowFileAccess = true
-                            settings.allowContentAccess = true
-                            settings.setSupportZoom(true)
-                            settings.builtInZoomControls = true
-                            settings.displayZoomControls = false
-
-                            settings.cacheMode = if (hayInternet(ctx)) {
-                                WebSettings.LOAD_DEFAULT
-                            } else {
-                                WebSettings.LOAD_CACHE_ELSE_NETWORK
-                            }
-
-                            settings.mixedContentMode =
-                                WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-
-                            settings.userAgentString =
-                                settings.userAgentString + " AndroidWebViewMonitoreo"
-
-                            tag = htmlMapa
-
-                            loadDataWithBaseURL(
-                                "file:///android_asset/",
-                                htmlMapa,
-                                "text/html",
-                                "UTF-8",
-                                null
-                            )
-                        }
+                    htmlMapa = htmlMapa,
+                    ubicacionUsuario = ubicacionUsuario,
+                    internetDisponible = internetDisponible,
+                    onInternetDisponibleChange = { nuevoValor ->
+                        internetDisponible = nuevoValor
                     },
-                    update = { webView ->
-                        val internetActual = hayInternet(context)
-
-                        webView.settings.cacheMode = if (internetActual) {
-                            WebSettings.LOAD_DEFAULT
-                        } else {
-                            WebSettings.LOAD_CACHE_ELSE_NETWORK
-                        }
-
-                        if (internetActual != internetDisponible) {
-                            internetDisponible = internetActual
-                        }
-
-                        if (webView.tag != htmlMapa) {
-                            webView.tag = htmlMapa
-                            webView.loadDataWithBaseURL(
-                                "file:///android_asset/",
-                                htmlMapa,
-                                "text/html",
-                                "UTF-8",
-                                null
-                            )
-                        }
-
-                        ubicacionUsuario?.let { location ->
-                            val js = """
-                                if (window.updateUserLocation) {
-                                    window.updateUserLocation(${location.first}, ${location.second});
-                                }
-                            """.trimIndent()
-
-                            webView.postDelayed({
-                                webView.evaluateJavascript(js, null)
-                            }, 300)
-                        }
+                    onPuntoValidoClick = { idTargetPoint ->
+                        onPuntoValidoActual(idTargetPoint)
                     }
                 )
             }
         }
     }
+}
+
+
+@Composable
+private fun MapaMonitoreoWebViewSeguro(
+    modifier: Modifier = Modifier,
+    htmlMapa: String,
+    ubicacionUsuario: Pair<Double, Double>?,
+    internetDisponible: Boolean,
+    onInternetDisponibleChange: (Boolean) -> Unit,
+    onPuntoValidoClick: (Long) -> Unit
+) {
+    AndroidView<View>(
+        modifier = modifier,
+        factory = { ctx ->
+            try {
+                WebView(ctx).apply {
+                    webViewClient = WebViewClient()
+
+                    addJavascriptInterface(
+                        MapaBridge { idTargetPoint ->
+                            onPuntoValidoClick(idTargetPoint)
+                        },
+                        "Android"
+                    )
+
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onJsAlert(
+                            view: WebView?,
+                            url: String?,
+                            message: String?,
+                            result: JsResult?
+                        ): Boolean {
+                            AlertDialog.Builder(ctx)
+                                .setMessage(message ?: "")
+                                .setPositiveButton("Aceptar") { dialog, _ ->
+                                    dialog.dismiss()
+                                    result?.confirm()
+                                }
+                                .setOnCancelListener {
+                                    result?.cancel()
+                                }
+                                .show()
+
+                            return true
+                        }
+                    }
+
+                    setBackgroundColor(AndroidColor.WHITE)
+
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.loadsImagesAutomatically = true
+                    settings.allowFileAccess = true
+                    settings.allowContentAccess = true
+                    settings.setSupportZoom(true)
+                    settings.builtInZoomControls = true
+                    settings.displayZoomControls = false
+
+                    settings.cacheMode = if (hayInternet(ctx)) {
+                        WebSettings.LOAD_DEFAULT
+                    } else {
+                        WebSettings.LOAD_CACHE_ELSE_NETWORK
+                    }
+
+                    settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                    settings.userAgentString = settings.userAgentString + " AndroidWebViewMonitoreo"
+
+                    tag = htmlMapa
+
+                    loadDataWithBaseURL(
+                        "file:///android_asset/",
+                        htmlMapa,
+                        "text/html",
+                        "UTF-8",
+                        null
+                    )
+                }
+            } catch (e: Throwable) {
+                TextView(ctx).apply {
+                    text = "No se pudo abrir el mapa.\n\nDetalle: ${e.javaClass.simpleName}: ${e.message}"
+                    setTextColor(android.graphics.Color.RED)
+                    setPadding(24, 24, 24, 24)
+                }
+            }
+        },
+        update = { view ->
+            if (view is WebView) {
+                val internetActual = hayInternet(view.context)
+
+                view.settings.cacheMode = if (internetActual) {
+                    WebSettings.LOAD_DEFAULT
+                } else {
+                    WebSettings.LOAD_CACHE_ELSE_NETWORK
+                }
+
+                if (internetActual != internetDisponible) {
+                    onInternetDisponibleChange(internetActual)
+                }
+
+                if (view.tag != htmlMapa) {
+                    view.tag = htmlMapa
+                    view.loadDataWithBaseURL(
+                        "file:///android_asset/",
+                        htmlMapa,
+                        "text/html",
+                        "UTF-8",
+                        null
+                    )
+                }
+
+                ubicacionUsuario?.let { location ->
+                    val js = """
+                        if (window.updateUserLocation) {
+                            window.updateUserLocation(${location.first}, ${location.second});
+                        }
+                    """.trimIndent()
+
+                    view.postDelayed({
+                        view.evaluateJavascript(js, null)
+                    }, 300)
+                }
+            }
+        }
+    )
 }
 
 @Composable
@@ -634,27 +834,27 @@ private fun crearHtmlMapaMonitoreo(
                 }
 
                 window.updateUserLocation = function(lat, lon) {
-    currentUserLocation = {
-        lat: lat,
-        lon: lon
-    };
+                    currentUserLocation = {
+                        lat: lat,
+                        lon: lon
+                    };
 
-    if (map == null) return;
+                    if (map == null) return;
 
-    if (userMarker == null) {
-        userMarker = L.circleMarker([lat, lon], {
-            radius: 10,
-            color: '#0D47A1',
-            weight: 3,
-            fillColor: '#1976D2',
-            fillOpacity: 0.95
-        })
-        .addTo(map)
-        .bindPopup('<b>Tu ubicación actual</b>');
-    } else {
-        userMarker.setLatLng([lat, lon]);
-    }
-};
+                    if (userMarker == null) {
+                        userMarker = L.circleMarker([lat, lon], {
+                            radius: 10,
+                            color: '#0D47A1',
+                            weight: 3,
+                            fillColor: '#1976D2',
+                            fillOpacity: 0.95
+                        })
+                        .addTo(map)
+                        .bindPopup('<b>Tu ubicación actual</b>');
+                    } else {
+                        userMarker.setLatLng([lat, lon]);
+                    }
+                };
 
                 function agregarCapaBase() {
                     const capaSatelital = L.tileLayer(

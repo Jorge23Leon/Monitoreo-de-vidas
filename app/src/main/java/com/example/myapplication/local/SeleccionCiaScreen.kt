@@ -49,7 +49,9 @@ fun SeleccionCiaScreen(
     onPreferenteChange: (Boolean) -> Unit,
     onCiaChange: (LocalCiaEntity) -> Unit,
     onSeleccionarClick: () -> Unit,
-    onCerrarSesionClick: () -> Unit
+    onCerrarSesionClick: () -> Unit,
+    onPerfilClick: () -> Unit = {},
+    onMonitoreosClick: () -> Unit = {}
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -65,7 +67,9 @@ fun SeleccionCiaScreen(
             modifier = Modifier.fillMaxSize()
         ) {
             EncabezadoApp(
-                nombreUsuario = nombreUsuario
+                nombreUsuario = nombreUsuario,
+                onPerfilClick = onPerfilClick,
+                onMonitoreosClick = onMonitoreosClick
             )
             Spacer(modifier = Modifier.height(24.dp))
 
