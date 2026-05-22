@@ -1,4 +1,4 @@
-package com.example.myapplication.local
+package com.example.myapplication.local.monitoreo.lista
 
 import android.app.DatePickerDialog
 import androidx.compose.foundation.background
@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.myapplication.local.common.EncabezadoApp
 import com.example.myapplication.local.entities.LocalAgroUnitEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
 import com.example.myapplication.local.entities.LocalPlotEntity
@@ -53,6 +54,7 @@ import java.util.Locale
 @Composable
 fun MonitoreoListaScreen(
     nombreUsuario: String,
+    rolUsuario: String = "",
     busquedaFueConSaltoFiltros: Boolean,
 
     monitoreos: List<LocalPhytomonitoringHeaderEntity>,
@@ -65,8 +67,9 @@ fun MonitoreoListaScreen(
     onAbrirReporteClick: (LocalPhytomonitoringHeaderEntity) -> Unit,
     onPerfilClick: () -> Unit = {},
     onMonitoreosClick: () -> Unit = {},
+    onAdminClick: () -> Unit = {},
 
-) {
+    ) {
     val productoresMap = remember(productores) {
         productores.associateBy { it.idLocalAgroUnit }
     }
@@ -155,8 +158,10 @@ fun MonitoreoListaScreen(
         ) {
             EncabezadoApp(
                 nombreUsuario = nombreUsuario,
+                rolUsuario = rolUsuario,
                 onPerfilClick = onPerfilClick,
-                onMonitoreosClick = onMonitoreosClick
+                onMonitoreosClick = onMonitoreosClick,
+                onAdminClick = onAdminClick
             )
 
             Spacer(modifier = Modifier.height(18.dp))

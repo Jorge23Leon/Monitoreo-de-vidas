@@ -1,4 +1,4 @@
-package com.example.myapplication.local
+package com.example.myapplication.local.common
 
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -36,13 +36,20 @@ import java.util.Locale
 @Composable
 fun EncabezadoApp(
     nombreUsuario: String,
+    rolUsuario: String = "",
     onPerfilClick: (() -> Unit)? = null,
-    onMonitoreosClick: (() -> Unit)? = null
+    onMonitoreosClick: (() -> Unit)? = null,
+    onAdminClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
 
     var menuAbierto by remember {
         mutableStateOf(false)
+    }
+
+    val esAdmin = remember(rolUsuario) {
+        rolUsuario.trim().equals("admin", ignoreCase = true) ||
+                rolUsuario.trim().equals("administrador", ignoreCase = true)
     }
 
     val fechaActual = remember {
@@ -159,33 +166,57 @@ fun EncabezadoApp(
                                 "Perfil del usuario",
                                 Toast.LENGTH_SHORT
                             ).show()
-
                         }
                     }
                 )
 
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text = "📋 Monitoreos",
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1B5E20)
-                        )
-                    },
-                    onClick = {
-                        menuAbierto = false
+                if (esAdmin) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = "📋 Monitoreos",
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1B5E20)
+                            )
+                        },
+                        onClick = {
+                            menuAbierto = false
 
-                        if (onMonitoreosClick != null) {
-                            onMonitoreosClick()
-                        } else {
-                            Toast.makeText(
-                                context,
-                                "Apartado de monitoreos",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            if (onMonitoreosClick != null) {
+                                onMonitoreosClick()
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "Apartado de monitoreos",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
                         }
-                    }
-                )
+                    )
+
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = "🛠 Panel administrador",
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1B5E20)
+                            )
+                        },
+                        onClick = {
+                            menuAbierto = false
+
+                            if (onAdminClick != null) {
+                                onAdminClick()
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "Panel administrador",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    )
+                }
             }
         }
     }

@@ -1,4 +1,5 @@
-package com.example.myapplication.local
+package com.example.myapplication.local.info
+
 
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -32,6 +33,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.myapplication.local.common.EncabezadoApp
+
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.UserEntity
 import kotlinx.coroutines.Dispatchers
@@ -43,10 +46,12 @@ fun PerfilUsuarioScreen(
     database: AppDatabase,
     idUser: Long,
     nombreUsuario: String,
+    rolUsuario: String = "",
     onBackClick: () -> Unit,
     onPerfilActualizado: (UserEntity) -> Unit,
     onPerfilClick: () -> Unit,
-    onMonitoreosClick: () -> Unit
+    onMonitoreosClick: () -> Unit,
+    onAdminClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -125,8 +130,10 @@ fun PerfilUsuarioScreen(
     ) {
         EncabezadoApp(
             nombreUsuario = nombreUsuario,
+            rolUsuario = rolUsuario,
             onPerfilClick = onPerfilClick,
-            onMonitoreosClick = onMonitoreosClick
+            onMonitoreosClick = onMonitoreosClick,
+            onAdminClick = onAdminClick
         )
 
         when {

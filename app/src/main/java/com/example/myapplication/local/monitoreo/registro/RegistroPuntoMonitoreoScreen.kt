@@ -1,4 +1,4 @@
-package com.example.myapplication.local
+package com.example.myapplication.local.monitoreo.registro
 
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
@@ -46,6 +46,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.myapplication.local.common.EncabezadoApp
+import com.example.myapplication.local.common.ImageUriBox
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.LocalPhytomonitoringCheckpointEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
@@ -60,12 +62,14 @@ import kotlinx.coroutines.withContext
 fun RegistroPuntoMonitoreoScreen(
     database: AppDatabase,
     nombreUsuario: String,
+    rolUsuario: String = "",
     header: LocalPhytomonitoringHeaderEntity,
     punto: LocalPhytomonitoringTargetPointEntity,
     onCancelar: () -> Unit,
     onGuardado: () -> Unit,
     onPerfilClick: () -> Unit = {},
-    onMonitoreosClick: () -> Unit = {}
+    onMonitoreosClick: () -> Unit = {},
+    onAdminClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -102,6 +106,14 @@ fun RegistroPuntoMonitoreoScreen(
         mutableStateOf("Cultivo no identificado")
     }
 
+    var fotoCultivo by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    var numeroPuntoVisible by remember {
+        mutableStateOf(1)
+    }
+
     var registrosAgregados by rememberSaveable {
         mutableStateOf(0)
     }
@@ -133,6 +145,16 @@ fun RegistroPuntoMonitoreoScreen(
                 val cultivoDb = database.localCropCatalogDao()
                     .getCropById(header.idCrop)
 
+                val puntosDelMonitoreo = database.LocalPhytomonitoringTargetPointDao()
+                    .getTargetPointsByHeader(header.idHeader)
+                    .sortedBy { it.idTargetPoint }
+
+                val numeroPuntoCalculado = puntosDelMonitoreo
+                    .indexOfFirst { it.idTargetPoint == punto.idTargetPoint }
+                    .let { index ->
+                        if (index >= 0) index + 1 else 1
+                    }
+
                 val capturasExistentes = database.localphytomonitoringcheckpointDao()
                     .getCheckpointsByTargetPoint(punto.idTargetPoint)
                     .filter { checkpoint ->
@@ -146,16 +168,20 @@ fun RegistroPuntoMonitoreoScreen(
                     .distinct()
                     .size
 
-                Triple(
-                    catalogoDb,
-                    cultivoDb?.name ?: "Cultivo no identificado",
-                    totalPlagasAgregadas
+                RegistroPuntoDataUi(
+                    catalogo = catalogoDb,
+                    nombreCultivo = cultivoDb?.name ?: "Cultivo no identificado",
+                    fotoCultivo = cultivoDb?.photo,
+                    numeroPuntoVisible = numeroPuntoCalculado,
+                    totalPlagasAgregadas = totalPlagasAgregadas
                 )
             }
 
-            catalogo = resultado.first
-            nombreCultivo = resultado.second
-            registrosAgregados = resultado.third
+            catalogo = resultado.catalogo
+            nombreCultivo = resultado.nombreCultivo
+            fotoCultivo = resultado.fotoCultivo
+            numeroPuntoVisible = resultado.numeroPuntoVisible
+            registrosAgregados = resultado.totalPlagasAgregadas
 
         } catch (e: Exception) {
             error = "Error al cargar datos: ${e.message}"
@@ -219,8 +245,10 @@ fun RegistroPuntoMonitoreoScreen(
     ) {
         EncabezadoApp(
             nombreUsuario = nombreUsuario,
+            rolUsuario = rolUsuario,
             onPerfilClick = onPerfilClick,
-            onMonitoreosClick = onMonitoreosClick
+            onMonitoreosClick = onMonitoreosClick,
+            onAdminClick = onAdminClick
         )
 
         Column(
@@ -231,13 +259,15 @@ fun RegistroPuntoMonitoreoScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             RegistroHeaderCard(
-                punto = punto
+                punto = punto,
+                numeroPunto = numeroPuntoVisible
             )
 
             Spacer(modifier = Modifier.height(10.dp))
 
             CultivoMonitoreadoCard(
-                nombreCultivo = nombreCultivo
+                nombreCultivo = nombreCultivo,
+                fotoCultivo = fotoCultivo
             )
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -291,7 +321,7 @@ fun RegistroPuntoMonitoreoScreen(
 
             fitoSeleccionado?.let { fito ->
                 RegistroActivoCard(
-                    nombre = fito.name
+                    fito = fito
                 )
 
                 Spacer(modifier = Modifier.height(14.dp))
@@ -590,7 +620,8 @@ fun RegistroPuntoMonitoreoScreen(
 
 @Composable
 private fun RegistroHeaderCard(
-    punto: LocalPhytomonitoringTargetPointEntity
+    punto: LocalPhytomonitoringTargetPointEntity,
+    numeroPunto: Int
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -617,7 +648,7 @@ private fun RegistroHeaderCard(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "Punto monitoreo (${punto.idTargetPoint})",
+                text = "Punto monitoreo ($numeroPunto)",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Black,
                 color = Color(0xFF1B1B1B),
@@ -638,7 +669,8 @@ private fun RegistroHeaderCard(
 
 @Composable
 private fun CultivoMonitoreadoCard(
-    nombreCultivo: String
+    nombreCultivo: String,
+    fotoCultivo: String?
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -650,25 +682,37 @@ private fun CultivoMonitoreadoCard(
             defaultElevation = 2.dp
         )
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                text = "Cultivo monitoreado",
-                fontSize = 12.sp,
-                color = Color(0xFF4F4F4F)
+            ImageUriBox(
+                photo = fotoCultivo,
+                fallbackIcon = "🌱",
+                sizeDp = 68
             )
 
-            Text(
-                text = nombreCultivo,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF145A20),
-                textAlign = TextAlign.Center
-            )
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.Start
+            ) {
+                Text(
+                    text = "Cultivo monitoreado",
+                    fontSize = 12.sp,
+                    color = Color(0xFF4F4F4F)
+                )
+
+                Text(
+                    text = nombreCultivo,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF145A20),
+                    textAlign = TextAlign.Start
+                )
+            }
         }
     }
 }
@@ -792,22 +836,15 @@ private fun FitoCardModerna(
                 modifier = Modifier.size(56.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(54.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFE8F5E9)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = if (item.type.equals("ENFERMEDAD", ignoreCase = true)) {
-                            "🦠"
-                        } else {
-                            "🐛"
-                        },
-                        fontSize = 22.sp
-                    )
-                }
+                ImageUriBox(
+                    photo = item.photo,
+                    fallbackIcon = if (item.type.equals("ENFERMEDAD", ignoreCase = true)) {
+                        "🦠"
+                    } else {
+                        "🐛"
+                    },
+                    sizeDp = 54
+                )
 
                 if (seleccionado) {
                     Box(
@@ -844,8 +881,14 @@ private fun FitoCardModerna(
 
 @Composable
 private fun RegistroActivoCard(
-    nombre: String
+    fito: LocalPhytosanitaryCatalogEntity
 ) {
+    val iconoFito = if (fito.type.equals("ENFERMEDAD", ignoreCase = true)) {
+        "🦠"
+    } else {
+        "🐛"
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -862,18 +905,11 @@ private fun RegistroActivoCard(
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFFD5F0D0)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "🌿",
-                    fontSize = 22.sp
-                )
-            }
+            ImageUriBox(
+                photo = fito.photo,
+                fallbackIcon = iconoFito,
+                sizeDp = 44
+            )
 
             Spacer(modifier = Modifier.size(12.dp))
 
@@ -887,7 +923,7 @@ private fun RegistroActivoCard(
                 )
 
                 Text(
-                    text = nombre,
+                    text = fito.name,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF145A20)
@@ -1021,6 +1057,14 @@ private fun CircleCounterButtonModerno(
         )
     }
 }
+
+private data class RegistroPuntoDataUi(
+    val catalogo: List<LocalPhytosanitaryCatalogEntity>,
+    val nombreCultivo: String,
+    val fotoCultivo: String?,
+    val numeroPuntoVisible: Int,
+    val totalPlagasAgregadas: Int
+)
 
 private data class ClaveEtapaUi(
     val idPhytosanitary: Long,

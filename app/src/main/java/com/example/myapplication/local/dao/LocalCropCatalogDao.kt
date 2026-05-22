@@ -1,9 +1,11 @@
 package com.example.myapplication.local.dao
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import com.example.myapplication.local.entities.LocalCropCatalogEntity
 
 @Dao
@@ -11,6 +13,12 @@ interface LocalCropCatalogDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertCrop(crop: LocalCropCatalogEntity): Long
+
+    @Update
+    suspend fun updateCrop(crop: LocalCropCatalogEntity)
+
+    @Delete
+    suspend fun deleteCrop(crop: LocalCropCatalogEntity)
 
     @Query("""
         SELECT *

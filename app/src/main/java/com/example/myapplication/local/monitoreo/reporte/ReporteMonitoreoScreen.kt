@@ -1,4 +1,4 @@
-package com.example.myapplication.local
+package com.example.myapplication.local.monitoreo.reporte
 
 import android.content.Context
 import android.content.ContentValues
@@ -51,6 +51,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.example.myapplication.local.common.EncabezadoApp
+import com.example.myapplication.local.common.ImageUriBox
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.LocalAgroUnitEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringCheckpointEntity
@@ -76,6 +78,7 @@ import java.util.Locale
 fun ReporteMonitoreoScreen(
     database: AppDatabase,
     nombreUsuario: String,
+    rolUsuario: String = "",
     nombreCia: String,
     header: LocalPhytomonitoringHeaderEntity,
     programa: LocalProgramEntity?,
@@ -84,7 +87,8 @@ fun ReporteMonitoreoScreen(
     parcela: LocalPlotEntity?,
     onBackClick: () -> Unit,
     onPerfilClick: () -> Unit = {},
-    onMonitoreosClick: () -> Unit = {}
+    onMonitoreosClick: () -> Unit = {},
+    onAdminClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -96,6 +100,7 @@ fun ReporteMonitoreoScreen(
     var vertices by remember { mutableStateOf<List<LocalPlotVertexEntity>>(emptyList()) }
     var catalogo by remember { mutableStateOf<List<LocalPhytosanitaryCatalogEntity>>(emptyList()) }
     var nombreCultivo by remember { mutableStateOf("Cultivo no identificado") }
+    var fotoCultivo by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(header.idHeader) {
         cargando = true
@@ -123,7 +128,8 @@ fun ReporteMonitoreoScreen(
                     checkpoints = checkpointsDb,
                     vertices = verticesDb,
                     catalogo = catalogoDb,
-                    cultivo = cultivoDb?.name ?: "Cultivo no identificado"
+                    cultivo = cultivoDb?.name ?: "Cultivo no identificado",
+                    fotoCultivo = cultivoDb?.photo
                 )
             }
 
@@ -132,6 +138,7 @@ fun ReporteMonitoreoScreen(
             vertices = data.vertices
             catalogo = data.catalogo
             nombreCultivo = data.cultivo
+            fotoCultivo = data.fotoCultivo
         } catch (e: Exception) {
             e.printStackTrace()
             error = "Error al cargar reporte: ${e.javaClass.simpleName} - ${e.message}"
@@ -225,8 +232,10 @@ fun ReporteMonitoreoScreen(
     ) {
         EncabezadoApp(
             nombreUsuario = nombreUsuario,
+            rolUsuario = rolUsuario,
             onPerfilClick = onPerfilClick,
-            onMonitoreosClick = onMonitoreosClick
+            onMonitoreosClick = onMonitoreosClick,
+            onAdminClick = onAdminClick
         )
 
         when {
@@ -282,6 +291,7 @@ fun ReporteMonitoreoScreen(
                         rancho = rancho?.name ?: "-",
                         parcela = parcela?.code ?: "-",
                         cultivo = nombreCultivo,
+                        fotoCultivo = fotoCultivo,
                         fechaProgramada = formatearFechaReporteUi(header.estStartDate),
                         inicioReal = formatearFechaOpcionalReporteUi(header.startAt),
                         finalizado = formatearFechaOpcionalReporteUi(header.finishedAt),
@@ -482,6 +492,7 @@ private fun HeroReporteCard(
     rancho: String,
     parcela: String,
     cultivo: String,
+    fotoCultivo: String?,
     fechaProgramada: String,
     inicioReal: String,
     finalizado: String,
@@ -540,20 +551,44 @@ private fun HeroReporteCard(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                Text(
-                    text = "Productor",
-                    color = Color(0xFFE8F5E9),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    ImageUriBox(
+                        photo = fotoCultivo,
+                        fallbackIcon = "🌱",
+                        sizeDp = 76
+                    )
 
-                Text(
-                    text = productor,
-                    color = Color.White,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Black,
-                    maxLines = 2
-                )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Productor",
+                            color = Color(0xFFE8F5E9),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Text(
+                            text = productor,
+                            color = Color.White,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Black,
+                            maxLines = 2
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Text(
+                            text = "Cultivo: $cultivo",
+                            color = Color(0xFFE8F5E9),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(10.dp))
 
@@ -1563,7 +1598,8 @@ private data class ReporteDataUi(
     val checkpoints: List<LocalPhytomonitoringCheckpointEntity>,
     val vertices: List<LocalPlotVertexEntity>,
     val catalogo: List<LocalPhytosanitaryCatalogEntity>,
-    val cultivo: String
+    val cultivo: String,
+    val fotoCultivo: String?
 )
 
 private data class FilaReporteCapturaUi(

@@ -1,4 +1,5 @@
-package com.example.myapplication.local
+package com.example.myapplication.local.info
+
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -31,7 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun ContactoScreen(
+fun InformacionScreen(
     onCloseClick: () -> Unit
 ) {
     val scrollState = rememberScrollState()
@@ -39,7 +40,7 @@ fun ContactoScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF7F7F7))
+            .background(Color(0xFFF4F8F0))
     ) {
         Column(
             modifier = Modifier
@@ -48,41 +49,45 @@ fun ContactoScreen(
                 .padding(22.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            ContactHeader()
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            ContactCard(
-                icon = "🛠️",
-                title = "Soporte técnico",
-                content = "Aquí podemos brindarte soporte técnico relacionado con el uso de la aplicación, errores de acceso, fallas en el registro de monitoreos o dudas sobre la captura de información."
-            )
-
-            ContactCard(
-                icon = "📧",
-                title = "Correo de soporte",
-                content = "soporte@tierrainteligente.com"
-            )
-
-            ContactCard(
-                icon = "☎️",
-                title = "Teléfono Grupo GPA",
-                content = "477 772 6065"
-            )
-
-            ContactCard(
-                icon = "📍",
-                title = "Sucursal matriz",
-                content = "Camino a Rancho Alegre #110-A, Col. Villas de San Juan Segunda Sección, C.P. 37295, León, Guanajuato."
-            )
-
-            ContactCard(
-                icon = "💬",
-                title = "Recomendación al solicitar ayuda",
-                content = "Cuando reportes un problema, incluye tu usuario, el tipo de error, la pantalla donde ocurrió y una breve descripción de lo que estabas realizando. Esto ayuda a dar seguimiento más rápido."
+            InfoHeader(
+                title = "Información",
+                subtitle = "Conoce el objetivo de la aplicación y el enfoque tecnológico de Grupo GPA."
             )
 
             Spacer(modifier = Modifier.height(18.dp))
+
+            InfoCard(
+                title = "Descripción de la app",
+                icon = "🌱",
+                text = "Esta aplicación está diseñada para apoyar el monitoreo agrícola de plagas y enfermedades en cultivos. Permite registrar información en campo, consultar puntos de monitoreo, capturar datos técnicos y organizar evidencia para facilitar el seguimiento del cultivo."
+            )
+
+            InfoCard(
+                title = "Objetivo de la aplicación",
+                icon = "🎯",
+                text = "El objetivo principal es apoyar a técnicos y productores en la identificación, registro y seguimiento de plagas y enfermedades, ayudando a mejorar la toma de decisiones mediante información ordenada, precisa y disponible para consulta."
+            )
+
+            InfoCard(
+                title = "Información de Grupo GPA",
+                icon = "🏭",
+                text = "Grupo GPA es una empresa mexicana con sede en León, Guanajuato. Se enfoca en investigación, desarrollo, innovación, producción y comercialización, con especialidad en la industria metalmecánica y en la fabricación de maquinaria de automatización."
+            )
+
+            InfoCard(
+                title = "Experiencia e innovación",
+                icon = "⚙️",
+                text = "GPA ha evolucionado desde soluciones de automatización hacia la fabricación de máquinas y componentes complejos. Su trabajo se relaciona con sectores como la industria automotriz, ferroviaria, aeroespacial, agroindustrial y metalmecánica."
+            )
+
+            InfoCard(
+                title = "Relación con el sector agroindustrial",
+                icon = "🚜",
+                text = "Dentro del enfoque agroindustrial, la digitalización permite fortalecer el registro de datos en campo, el seguimiento de cultivos y el análisis técnico para mejorar procesos agrícolas. Esta aplicación forma parte de esa visión: usar tecnología para organizar información y apoyar decisiones en campo."
+            )
+
+            Spacer(modifier = Modifier.height(18.dp))
+
             Text(
                 text = "Redes",
                 fontSize = 22.sp,
@@ -92,7 +97,7 @@ fun ContactoScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            ContactRedesRow()
+            RedesRow()
 
             Spacer(modifier = Modifier.height(32.dp))
         }
@@ -115,7 +120,10 @@ fun ContactoScreen(
 }
 
 @Composable
-private fun ContactHeader() {
+private fun InfoHeader(
+    title: String,
+    subtitle: String
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(26.dp),
@@ -128,8 +136,8 @@ private fun ContactHeader() {
                 .background(
                     Brush.linearGradient(
                         colors = listOf(
-                            Color(0xFF263238),
-                            Color(0xFF66BB6A)
+                            Color(0xFF2F6B35),
+                            Color(0xFF9BCB72)
                         )
                     ),
                     RoundedCornerShape(26.dp)
@@ -138,8 +146,8 @@ private fun ContactHeader() {
         ) {
             Column {
                 Text(
-                    text = "Contacto y soporte",
-                    fontSize = 27.sp,
+                    text = title,
+                    fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
@@ -147,7 +155,7 @@ private fun ContactHeader() {
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "Comunícate con el equipo de soporte si necesitas ayuda con el uso de la aplicación.",
+                    text = subtitle,
                     fontSize = 14.sp,
                     color = Color.White,
                     lineHeight = 19.sp
@@ -158,10 +166,10 @@ private fun ContactHeader() {
 }
 
 @Composable
-private fun ContactCard(
-    icon: String,
+private fun InfoCard(
     title: String,
-    content: String
+    icon: String,
+    text: String
 ) {
     Card(
         modifier = Modifier
@@ -171,53 +179,54 @@ private fun ContactCard(
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(18.dp),
-            verticalAlignment = Alignment.Top
+        Column(
+            modifier = Modifier.padding(18.dp)
         ) {
-            Text(
-                text = icon,
-                fontSize = 27.sp
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = icon,
+                    fontSize = 26.sp
+                )
 
-            Spacer(modifier = Modifier.padding(horizontal = 7.dp))
+                Spacer(modifier = Modifier.padding(horizontal = 5.dp))
 
-            Column {
                 Text(
                     text = title,
-                    fontSize = 18.sp,
+                    fontSize = 19.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF1F331F)
                 )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Text(
-                    text = content,
-                    fontSize = 14.sp,
-                    color = Color(0xFF333333),
-                    lineHeight = 20.sp,
-                    textAlign = TextAlign.Start
-                )
             }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = text,
+                fontSize = 14.sp,
+                color = Color(0xFF333333),
+                lineHeight = 20.sp,
+                textAlign = TextAlign.Start
+            )
         }
     }
 }
 
 @Composable
-private fun ContactRedesRow() {
+private fun RedesRow() {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
-        ContactRedSocialItem("f", "Facebook", Color(0xFF1877F2))
-        ContactRedSocialItem("◎", "Instagram", Color(0xFFE4405F))
-        ContactRedSocialItem("▶", "YouTube", Color(0xFFFF0000))
+        RedSocialItem("f", "Facebook", Color(0xFF1877F2))
+        RedSocialItem("◎", "Instagram", Color(0xFFE4405F))
+        RedSocialItem("▶", "YouTube", Color(0xFFFF0000))
     }
 }
 
 @Composable
-private fun ContactRedSocialItem(
+private fun RedSocialItem(
     icon: String,
     label: String,
     color: Color
@@ -251,8 +260,8 @@ private fun ContactRedSocialItem(
 
 @Preview(showBackground = true)
 @Composable
-fun ContactoScreenPreview() {
+fun InformacionScreenPreview() {
     MaterialTheme {
-        ContactoScreen(onCloseClick = {})
+        InformacionScreen(onCloseClick = {})
     }
 }

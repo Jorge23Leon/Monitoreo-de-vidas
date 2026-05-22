@@ -1,4 +1,4 @@
-package com.example.myapplication.local
+package com.example.myapplication.local.auth
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement

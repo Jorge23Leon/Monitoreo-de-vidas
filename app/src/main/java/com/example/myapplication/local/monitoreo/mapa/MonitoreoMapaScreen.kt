@@ -1,4 +1,5 @@
-package com.example.myapplication.local
+package com.example.myapplication.local.monitoreo.mapa
+
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -56,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import com.example.myapplication.local.common.EncabezadoApp
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.LocalPhytomonitoringCheckpointEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
@@ -72,11 +74,13 @@ fun MonitoreoMapaScreen(
     database: AppDatabase,
     header: LocalPhytomonitoringHeaderEntity,
     nombreUsuario: String,
+    rolUsuario: String = "",
     nombreMonitoreo: String,
     onPuntoValidoClick: (Long) -> Unit,
     onMonitoreoActualizado: (String) -> Unit,
     onPerfilClick: () -> Unit = {},
-    onMonitoreosClick: () -> Unit = {}
+    onMonitoreosClick: () -> Unit = {},
+    onAdminClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -278,8 +282,10 @@ fun MonitoreoMapaScreen(
         ) {
             EncabezadoApp(
                 nombreUsuario = nombreUsuario,
+                rolUsuario = rolUsuario,
                 onPerfilClick = onPerfilClick,
-                onMonitoreosClick = onMonitoreosClick
+                onMonitoreosClick = onMonitoreosClick,
+                onAdminClick = onAdminClick
             )
 
             BarraMapaMonitoreo(

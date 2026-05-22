@@ -1,4 +1,4 @@
-package com.example.myapplication.local
+package com.example.myapplication.local.cia
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -38,11 +38,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.myapplication.local.common.EncabezadoApp
 import com.example.myapplication.local.entities.LocalCiaEntity
 
 @Composable
 fun SeleccionCiaScreen(
     nombreUsuario: String,
+    rolUsuario: String = "",
     cias: List<LocalCiaEntity>,
     ciaSeleccionada: LocalCiaEntity?,
     seleccionarPreferente: Boolean,
@@ -51,7 +53,8 @@ fun SeleccionCiaScreen(
     onSeleccionarClick: () -> Unit,
     onCerrarSesionClick: () -> Unit,
     onPerfilClick: () -> Unit = {},
-    onMonitoreosClick: () -> Unit = {}
+    onMonitoreosClick: () -> Unit = {},
+    onAdminClick: () -> Unit = {}
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -68,8 +71,10 @@ fun SeleccionCiaScreen(
         ) {
             EncabezadoApp(
                 nombreUsuario = nombreUsuario,
+                rolUsuario = rolUsuario,
                 onPerfilClick = onPerfilClick,
-                onMonitoreosClick = onMonitoreosClick
+                onMonitoreosClick = onMonitoreosClick,
+                onAdminClick = onAdminClick
             )
             Spacer(modifier = Modifier.height(24.dp))
 

@@ -1,9 +1,11 @@
 package com.example.myapplication.local.dao
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import com.example.myapplication.local.entities.LocalPhytosanitaryCatalogEntity
 
 @Dao
@@ -11,6 +13,12 @@ interface LocalPhytosanitaryCatalogDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertPhytosanitary(item: LocalPhytosanitaryCatalogEntity): Long
+
+    @Update
+    suspend fun updatePhytosanitary(item: LocalPhytosanitaryCatalogEntity)
+
+    @Delete
+    suspend fun deletePhytosanitary(item: LocalPhytosanitaryCatalogEntity)
 
     @Query("""
         SELECT *

@@ -1,4 +1,4 @@
-package com.example.myapplication.local
+package com.example.myapplication.local.monitoreo.filtros
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.myapplication.local.common.EncabezadoApp
 import com.example.myapplication.local.entities.LocalAgroUnitEntity
 import com.example.myapplication.local.entities.LocalPlotEntity
 import com.example.myapplication.local.entities.LocalRanchEntity
@@ -41,6 +42,7 @@ import com.example.myapplication.local.entities.LocalRanchEntity
 @Composable
 fun MonitoreoFiltrosScreen(
     nombreUsuario: String,
+    rolUsuario: String = "",
     nombreCia: String,
 
     productores: List<LocalAgroUnitEntity>,
@@ -57,7 +59,8 @@ fun MonitoreoFiltrosScreen(
 
     onBuscarClick: () -> Unit,
     onPerfilClick: () -> Unit = {},
-    onMonitoreosClick: () -> Unit = {}
+    onMonitoreosClick: () -> Unit = {},
+    onAdminClick: () -> Unit = {}
 ) {
     Box(
         modifier = Modifier
@@ -74,10 +77,12 @@ fun MonitoreoFiltrosScreen(
 
             EncabezadoApp(
                 nombreUsuario = nombreUsuario,
+                rolUsuario = rolUsuario,
                 onPerfilClick = onPerfilClick,
-                onMonitoreosClick = onMonitoreosClick
+                onMonitoreosClick = onMonitoreosClick,
+                onAdminClick = onAdminClick
             )
-            
+
             Spacer(modifier = Modifier.height(12.dp))
 
             Text(
