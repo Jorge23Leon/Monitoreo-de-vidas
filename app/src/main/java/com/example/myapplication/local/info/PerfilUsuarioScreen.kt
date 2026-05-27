@@ -114,7 +114,7 @@ fun PerfilUsuarioScreen(
                 username = usuarioDb.username
                 email = usuarioDb.email
                 password = usuarioDb.password
-                role = usuarioDb.role
+                role = rolUsuario
             }
         } catch (e: Exception) {
             error = "Error al cargar usuario: ${e.message}"

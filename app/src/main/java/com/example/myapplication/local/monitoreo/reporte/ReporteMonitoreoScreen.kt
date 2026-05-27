@@ -1575,7 +1575,8 @@ private fun textoEstadoReporteUi(status: String): String {
     }
 }
 
-private fun formatearFechaReporteUi(fecha: Long): String {
+private fun formatearFechaReporteUi(fecha: Long?): String {
+    if (fecha == null) return "No programada"
     return try {
         SimpleDateFormat("dd-MM-yyyy HH:mm", Locale.getDefault()).format(Date(fecha))
     } catch (_: Exception) {

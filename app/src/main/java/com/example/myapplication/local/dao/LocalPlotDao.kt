@@ -29,7 +29,7 @@ interface LocalPlotDao {
     @Query("SELECT * FROM local_plots WHERE idLocalPlot = :idLocalPlot LIMIT 1")
     suspend fun getPlotById(idLocalPlot: Long): LocalPlotEntity?
 
-    @Query("SELECT * FROM local_plots WHERE idLocalRanch = :idLocalRanch ORDER BY code ASC")
+    @Query("SELECT * FROM local_plots WHERE idLocalRanch = :idLocalRanch ORDER BY name ASC")
     suspend fun getPlotsByRanch(idLocalRanch: Long): List<LocalPlotEntity>
 
     @Query("SELECT * FROM local_plots WHERE code = :code LIMIT 1")
@@ -42,18 +42,37 @@ interface LocalPlotDao {
     suspend fun deleteAllPlots()
 
     @Query("""
-    SELECT *
-    FROM local_plots
-    WHERE idLocalRanch = :idRanch
-    ORDER BY code ASC
-""")
+        SELECT *
+        FROM local_plots
+        WHERE idLocalRanch = :idRanch
+        ORDER BY name ASC
+    """)
     suspend fun getParcelasByRancho(idRanch: Long): List<LocalPlotEntity>
 
+    @Query("""
+        SELECT *
+        FROM local_plots
+        WHERE assigned_user_id = :idUser
+        ORDER BY name ASC
+    """)
+    suspend fun getParcelasAsignadasAUsuario(idUser: Long): List<LocalPlotEntity>
 
     @Query("""
-    SELECT *
-    FROM local_plots
-    WHERE idLocalPlot IN (:ids)
-""")
+        SELECT *
+        FROM local_plots
+        WHERE idLocalRanch = :idRanch
+          AND assigned_user_id = :idUser
+        ORDER BY name ASC
+    """)
+    suspend fun getParcelasByRanchoAndUser(
+        idRanch: Long,
+        idUser: Long
+    ): List<LocalPlotEntity>
+
+    @Query("""
+        SELECT *
+        FROM local_plots
+        WHERE idLocalPlot IN (:ids)
+    """)
     suspend fun getParcelasByIds(ids: List<Long>): List<LocalPlotEntity>
 }

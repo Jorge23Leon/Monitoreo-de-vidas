@@ -192,12 +192,12 @@ internal fun DialogImportarPoligonoExcelGestion(
                     etiqueta = "Parcela destino",
                     valor = parcelaSeleccionada?.let { parcela ->
                         val rancho = ranchos.firstOrNull { it.idLocalRanch == parcela.idLocalRanch }
-                        "${parcela.code} (${rancho?.name ?: "Rancho no encontrado"})"
+                        "${parcela.code?.takeIf { it.isNotBlank() } ?: parcela.name} (${rancho?.name ?: "Rancho no encontrado"})"
                     } ?: "Seleccionar parcela",
                     opciones = parcelas,
                     textoOpcion = { parcela ->
                         val rancho = ranchos.firstOrNull { it.idLocalRanch == parcela.idLocalRanch }
-                        "${parcela.code} (${rancho?.name ?: "Rancho no encontrado"})"
+                        "${parcela.code?.takeIf { it.isNotBlank() } ?: parcela.name} (${rancho?.name ?: "Rancho no encontrado"})"
                     },
                     habilitado = !guardando && !cargandoArchivo && parcelas.isNotEmpty(),
                     onSeleccionar = { parcelaSeleccionada = it }
@@ -327,7 +327,7 @@ internal fun PoligonoParcelaItemGestion(
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = parcela.code,
+                        text = parcela.code?.takeIf { it.isNotBlank() } ?: parcela.name,
                         fontWeight = FontWeight.Black,
                         color = Color(0xFF263B1E),
                         fontSize = 14.sp

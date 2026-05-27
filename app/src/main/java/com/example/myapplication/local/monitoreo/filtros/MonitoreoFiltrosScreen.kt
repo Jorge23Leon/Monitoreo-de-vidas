@@ -157,7 +157,7 @@ fun MonitoreoFiltrosScreen(
                         label = "Parcela",
                         selected = parcelaSeleccionada,
                         items = parcelas,
-                        itemText = { it.code },
+                        itemText = { it.code?.takeIf { codigo -> codigo.isNotBlank() } ?: it.name },
                         enabled = parcelas.isNotEmpty(),
                         modifier = Modifier.fillMaxWidth(),
                         onSelected = onParcelaChange

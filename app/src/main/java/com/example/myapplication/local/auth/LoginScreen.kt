@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -20,7 +19,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,7 +41,7 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun LoginScreen(
-    onLoginClick: (username: String, password: String, role: String) -> Unit,
+    onLoginClick: (username: String, password: String) -> Unit,
     onRegisterClick: () -> Unit,
     onForgotPasswordClick: () -> Unit,
     onInformationClick: () -> Unit,
@@ -52,12 +50,7 @@ fun LoginScreen(
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
-
-    var roleSelected by remember { mutableStateOf("Técnico") }
-    var expandedRole by remember { mutableStateOf(false) }
     var expandedMenu by remember { mutableStateOf(false) }
-
-    val roles = listOf("Admin", "Técnico")
 
     Box(
         modifier = Modifier
@@ -169,58 +162,6 @@ fun LoginScreen(
                     Spacer(modifier = Modifier.height(18.dp))
 
                     Text(
-                        text = "Rol",
-                        modifier = Modifier.fillMaxWidth(),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Black
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Box(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        OutlinedButton(
-                            onClick = { expandedRole = true },
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier.width(155.dp)
-                        ) {
-                            Text(
-                                text = roleSelected,
-                                fontSize = 14.sp,
-                                color = Color.Black
-                            )
-
-                            Spacer(modifier = Modifier.width(8.dp))
-
-                            Text(
-                                text = "⌄",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.Black
-                            )
-                        }
-
-                        DropdownMenu(
-                            expanded = expandedRole,
-                            onDismissRequest = { expandedRole = false }
-                        ) {
-                            roles.forEach { role ->
-                                DropdownMenuItem(
-                                    text = { Text(role) },
-                                    onClick = {
-                                        roleSelected = role
-                                        expandedRole = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(18.dp))
-
-                    Text(
                         text = "Contraseña",
                         modifier = Modifier.fillMaxWidth(),
                         fontSize = 16.sp,
@@ -282,8 +223,7 @@ fun LoginScreen(
                         onClick = {
                             onLoginClick(
                                 username.trim(),
-                                password.trim(),
-                                roleSelected
+                                password.trim()
                             )
                         },
                         modifier = Modifier
@@ -312,7 +252,7 @@ fun LoginScreen(
 fun LoginScreenPreview() {
     MaterialTheme {
         LoginScreen(
-            onLoginClick = { _, _, _ -> },
+            onLoginClick = { _, _ -> },
             onRegisterClick = {},
             onForgotPasswordClick = {},
             onInformationClick = {},

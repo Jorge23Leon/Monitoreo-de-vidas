@@ -25,18 +25,24 @@ import com.example.myapplication.local.monitoreo.mapa.MonitoreoMapaScreen
 import com.example.myapplication.local.monitoreo.registro.RegistroPuntoMonitoreoScreen
 import com.example.myapplication.local.monitoreo.reporte.ReporteMonitoreoScreen
 
+
+
 enum class PantallaActual {
     LOGIN,
     REGISTRO,
     INFORMACION,
     CONTACTO,
+
+    SELECCION_PARENT_CIA,
     SELECCION_CIA,
+
     FILTROS_MONITOREO,
     LISTA_MONITOREOS,
     MAPA_MONITOREO,
     REGISTRO_PUNTO_MONITOREO,
     REPORTE_MONITOREO,
     PERFIL_USUARIO,
+
     ADMIN_HOME,
     ADMIN_MONITOREOS,
     ADMIN_CATALOGOS,
@@ -51,7 +57,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         database = AppDatabase.getDatabase(applicationContext)
-
         setContent {
             MaterialTheme {
                 val mainViewModel: MainViewModel = viewModel()
@@ -79,11 +84,10 @@ class MainActivity : ComponentActivity() {
 
                     PantallaActual.LOGIN -> {
                         LoginScreen(
-                            onLoginClick = { usernameInput, passwordInput, roleInput ->
+                            onLoginClick = { usernameInput, passwordInput ->
                                 mainViewModel.onLoginClick(
                                     usernameInput = usernameInput,
-                                    passwordInput = passwordInput,
-                                    roleInput = roleInput
+                                    passwordInput = passwordInput
                                 )
                             },
                             onRegisterClick = {
@@ -139,11 +143,18 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                     }
-
+                    PantallaActual.SELECCION_PARENT_CIA,
                     PantallaActual.SELECCION_CIA -> {
                         SeleccionCiaScreen(
                             nombreUsuario = uiState.nombreUsuarioActual,
                             rolUsuario = uiState.rolUsuarioActual,
+
+                            parentCias = uiState.parentCiasUsuario,
+                            parentCiaSeleccionada = uiState.parentCiaSeleccionada,
+                            onParentCiaChange = { parentCia ->
+                                mainViewModel.onParentCiaChange(parentCia)
+                            },
+
                             cias = uiState.ciasUsuario,
                             ciaSeleccionada = uiState.ciaSeleccionada,
                             seleccionarPreferente = uiState.seleccionarPreferente,
@@ -317,6 +328,7 @@ class MainActivity : ComponentActivity() {
                                 database = database,
                                 nombreUsuario = uiState.nombreUsuarioActual,
                                 rolUsuario = uiState.rolUsuarioActual,
+                                idUsuarioActual = uiState.idUsuarioActual,
                                 header = header,
                                 punto = punto,
 
@@ -402,13 +414,13 @@ class MainActivity : ComponentActivity() {
                     }
 
                     PantallaActual.ADMIN_HOME -> {
-                        if (!esRolAdministradorVm(uiState.rolUsuarioActual)) {
+                        if (!puedeVerPanelTrabajoVm(uiState.rolUsuarioActual)) {
                             LaunchedEffect(Unit) {
                                 mainViewModel.irA(
-                                    if (uiState.ciaSeleccionada != null) {
-                                        PantallaActual.FILTROS_MONITOREO
-                                    } else {
-                                        PantallaActual.SELECCION_CIA
+                                    when {
+                                        uiState.ciaSeleccionada != null -> PantallaActual.FILTROS_MONITOREO
+                                        uiState.parentCiaSeleccionada != null -> PantallaActual.SELECCION_CIA
+                                        else -> PantallaActual.SELECCION_CIA
                                     }
                                 )
                             }
@@ -417,6 +429,9 @@ class MainActivity : ComponentActivity() {
                                 nombreUsuario = uiState.nombreUsuarioActual,
                                 rolUsuario = uiState.rolUsuarioActual,
                                 nombreCia = uiState.ciaSeleccionada?.nombre ?: "Sin CIA",
+                                puedeCrearMonitoreos = puedeCrearMonitoreosVm(uiState.rolUsuarioActual),
+                                puedeGestionCatalogos = puedeGestionCatalogosVm(uiState.rolUsuarioActual),
+                                puedeGestionAgricola = puedeGestionAgricolaVm(uiState.rolUsuarioActual),
 
                                 onMonitoreosAdminClick = {
                                     mainViewModel.irA(PantallaActual.ADMIN_MONITOREOS)
@@ -446,7 +461,7 @@ class MainActivity : ComponentActivity() {
                     }
 
                     PantallaActual.ADMIN_MONITOREOS -> {
-                        if (!esRolAdministradorVm(uiState.rolUsuarioActual)) {
+                        if (!puedeCrearMonitoreosVm(uiState.rolUsuarioActual)) {
                             LaunchedEffect(Unit) {
                                 mainViewModel.irA(PantallaActual.FILTROS_MONITOREO)
                             }
@@ -457,6 +472,7 @@ class MainActivity : ComponentActivity() {
                                 rolUsuario = uiState.rolUsuarioActual,
                                 idLocalCia = uiState.ciaSeleccionada?.idLocalCia,
                                 nombreCia = uiState.ciaSeleccionada?.nombre ?: "Sin CIA",
+                                idUsuarioActual = uiState.idUsuarioActual,
 
                                 onBackClick = {
                                     mainViewModel.irA(PantallaActual.ADMIN_HOME)
@@ -490,7 +506,7 @@ class MainActivity : ComponentActivity() {
                     }
 
                     PantallaActual.ADMIN_CATALOGOS -> {
-                        if (!esRolAdministradorVm(uiState.rolUsuarioActual)) {
+                        if (!puedeGestionCatalogosVm(uiState.rolUsuarioActual)) {
                             LaunchedEffect(Unit) {
                                 mainViewModel.irA(PantallaActual.FILTROS_MONITOREO)
                             }
@@ -529,7 +545,7 @@ class MainActivity : ComponentActivity() {
                     }
 
                     PantallaActual.ADMIN_GESTION_AGRICOLA -> {
-                        if (!esRolAdministradorVm(uiState.rolUsuarioActual)) {
+                        if (!puedeGestionAgricolaVm(uiState.rolUsuarioActual)) {
                             LaunchedEffect(Unit) {
                                 mainViewModel.irA(PantallaActual.FILTROS_MONITOREO)
                             }
@@ -583,10 +599,10 @@ class MainActivity : ComponentActivity() {
 
                                 onBackClick = {
                                     mainViewModel.irA(
-                                        if (uiState.ciaSeleccionada != null) {
-                                            PantallaActual.FILTROS_MONITOREO
-                                        } else {
-                                            PantallaActual.SELECCION_CIA
+                                        when {
+                                            uiState.ciaSeleccionada != null -> PantallaActual.FILTROS_MONITOREO
+                                            uiState.parentCiaSeleccionada != null -> PantallaActual.SELECCION_CIA
+                                            else -> PantallaActual.LOGIN
                                         }
                                     )
                                 },

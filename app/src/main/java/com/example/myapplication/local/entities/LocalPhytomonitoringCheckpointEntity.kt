@@ -32,6 +32,12 @@ import androidx.room.PrimaryKey
             parentColumns = ["idLocalPlot"],
             childColumns = ["idLocalPlot"],
             onDelete = ForeignKey.RESTRICT
+        ),
+        ForeignKey(
+            entity = UserEntity::class,
+            parentColumns = ["idUser"],
+            childColumns = ["captured_by_user_id"],
+            onDelete = ForeignKey.SET_NULL
         )
     ],
     indices = [
@@ -40,7 +46,8 @@ import androidx.room.PrimaryKey
         Index(value = ["idHeader"]),
         Index(value = ["idPhytosanitary"]),
         Index(value = ["idLocalPlot"]),
-        Index(value = ["captured_at"])
+        Index(value = ["captured_at"]),
+        Index(value = ["captured_by_user_id"])
     ]
 )
 data class LocalPhytomonitoringCheckpointEntity(
@@ -50,38 +57,23 @@ data class LocalPhytomonitoringCheckpointEntity(
     @ColumnInfo(name = "ext_id")
     val extId: String? = null,
 
-    // Cantidad encontrada:
-    // insectos, daños, plantas afectadas, etc.
     val qty: Int? = null,
 
-    // 0 = No presente
-    // 1 = Presente
+    // 0 = No presente, 1 = Presente
     @ColumnInfo(name = "presence_status")
     val presenceStatus: Int? = null,
 
-    // Etapa o fase encontrada:
-    // "Huevo", "Larva", "Adulto", "Inicial", "Avanzada", etc.
     val stage: String? = null,
-
-    // Observaciones o notas del monitoreo
     val notes: String? = null,
 
-    // Foto local o URL de la imagen
-   //todo: val photo: String? = null,
-
-    // Fecha y hora de captura en milisegundos
     @ColumnInfo(name = "captured_at")
     val capturedAt: Long? = null,
 
-    // Punto objetivo
+    @ColumnInfo(name = "captured_by_user_id")
+    val capturedByUserId: Long? = null,
+
     val idTargetPoint: Long,
-
-    // Header / sesión de monitoreo
     val idHeader: Long,
-
-    // Plaga o enfermedad registrada
     val idPhytosanitary: Long,
-
-    // Parcela donde se registró
     val idLocalPlot: Long
 )

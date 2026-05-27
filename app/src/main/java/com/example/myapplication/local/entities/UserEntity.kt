@@ -2,15 +2,25 @@ package com.example.myapplication.local.entities
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "users",
+    foreignKeys = [
+        ForeignKey(
+            entity = LocalRoleEntity::class,
+            parentColumns = ["idRole"],
+            childColumns = ["idRole"],
+            onDelete = ForeignKey.RESTRICT
+        )
+    ],
     indices = [
         Index(value = ["ext_id"], unique = true),
         Index(value = ["username"], unique = true),
-        Index(value = ["email"], unique = true)
+        Index(value = ["email"], unique = true),
+        Index(value = ["idRole"])
     ]
 )
 data class UserEntity(
@@ -27,10 +37,8 @@ data class UserEntity(
     val lastName: String? = null,
 
     val username: String,
-
     val email: String,
-
     val password: String,
 
-    val role: String
+    val idRole: Long
 )

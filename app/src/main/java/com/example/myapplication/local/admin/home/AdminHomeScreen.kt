@@ -33,6 +33,9 @@ fun AdminHomeScreen(
     nombreUsuario: String,
     rolUsuario: String,
     nombreCia: String,
+    puedeCrearMonitoreos: Boolean,
+    puedeGestionCatalogos: Boolean,
+    puedeGestionAgricola: Boolean,
     onMonitoreosAdminClick: () -> Unit,
     onCatalogosClick: () -> Unit,
     onGestionAgricolaClick: () -> Unit,
@@ -63,7 +66,7 @@ fun AdminHomeScreen(
             Spacer(modifier = Modifier.height(18.dp))
 
             Text(
-                text = "Panel administrador",
+                text = "Panel de trabajo",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Black,
                 color = Color.Black,
@@ -84,30 +87,55 @@ fun AdminHomeScreen(
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            AdminOptionCard(
-                icono = "🗺️",
-                titulo = "Crear y administrar monitoreos",
-                descripcion = "Preparar programas, encabezados y puntos objetivo usando LocalProgramEntity, LocalPhytomonitoringHeaderEntity y LocalPhytomonitoringTargetPointEntity.",
-                onClick = onMonitoreosAdminClick
-            )
+            var mostroOpcion = false
 
-            Spacer(modifier = Modifier.height(12.dp))
+            if (puedeCrearMonitoreos) {
+                mostroOpcion = true
+                AdminOptionCard(
+                    icono = "🗺️",
+                    titulo = "Crear y administrar monitoreos",
+                    descripcion = "Preparar programas, encabezados y puntos objetivo para la CIA seleccionada.",
+                    onClick = onMonitoreosAdminClick
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
 
-            AdminOptionCard(
-                icono = "📚",
-                titulo = "Administrar catálogos",
-                descripcion = "Gestionar cultivos, plagas, enfermedades y etapas usando LocalCropCatalogEntity, LocalPhytosanitaryCatalogEntity y LocalPhytostageEntity.",
-                onClick = onCatalogosClick
-            )
+            if (puedeGestionCatalogos) {
+                mostroOpcion = true
+                AdminOptionCard(
+                    icono = "📚",
+                    titulo = "Administrar catálogos",
+                    descripcion = "Gestionar cultivos, plagas y enfermedades. Esta opción es solo para SUPER ADMIN.",
+                    onClick = onCatalogosClick
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            if (puedeGestionAgricola) {
+                mostroOpcion = true
+                AdminOptionCard(
+                    icono = "🌾",
+                    titulo = "Gestión agrícola",
+                    descripcion = "Agregar productores, ranchos, parcelas y vértices. Esta opción es solo para SUPER ADMIN.",
+                    onClick = onGestionAgricolaClick
+                )
+            }
 
-            AdminOptionCard(
-                icono = "🌾",
-                titulo = "Gestión agrícola",
-                descripcion = "Agregar productores, ranchos, parcelas y vértices usando LocalAgroUnitEntity, LocalRanchEntity, LocalPlotEntity y LocalPlotVertexEntity.",
-                onClick = onGestionAgricolaClick
-            )
+            if (!mostroOpcion) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8E1))
+                ) {
+                    Text(
+                        text = "Tu rol no tiene opciones administrativas. Puedes entrar a Monitoreos desde el menú superior.",
+                        modifier = Modifier.padding(16.dp),
+                        color = Color(0xFFE65100),
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
         }
     }
 }
@@ -124,9 +152,7 @@ private fun AdminOptionCard(
             .fillMaxWidth()
             .clickable { onClick() },
         shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        ),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
         Row(
@@ -144,14 +170,9 @@ private fun AdminOptionCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text(
-                text = icono,
-                fontSize = 34.sp
-            )
+            Text(text = icono, fontSize = 34.sp)
 
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = titulo,
                     fontSize = 17.sp,

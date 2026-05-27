@@ -83,6 +83,7 @@ fun AdminMonitoreoScreen(
     rolUsuario: String,
     idLocalCia: Long?,
     nombreCia: String,
+    idUsuarioActual: Long,
     onBackClick: () -> Unit,
     onPerfilClick: () -> Unit,
     onMonitoreosClick: () -> Unit,
@@ -155,7 +156,18 @@ fun AdminMonitoreoScreen(
         coroutineScope.launch {
             try {
                 parcelas = withContext(Dispatchers.IO) {
-                    database.localPlotDao().getParcelasByRancho(rancho.idLocalRanch)
+                    if (esRolTecnicoAdminMonitoreo(rolUsuario)) {
+                        database.localPlotDao().getParcelasByRanchoAndUser(
+                            idRanch = rancho.idLocalRanch,
+                            idUser = idUsuarioActual
+                        )
+                    } else {
+                        database.localPlotDao().getParcelasByRancho(rancho.idLocalRanch)
+                    }
+                }
+
+                if (parcelas.isEmpty() && esRolTecnicoAdminMonitoreo(rolUsuario)) {
+                    onMensaje("No tienes parcelas asignadas en este rancho")
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -257,7 +269,8 @@ fun AdminMonitoreoScreen(
                                     status = "Pendiente",
                                     idProgram = idProgram,
                                     idLocalPlot = parcela.idLocalPlot,
-                                    idCrop = cultivo.idCrop
+                                    idCrop = cultivo.idCrop,
+                                    assignedUserId = parcela.assignedUserId
                                 )
                             )
 
@@ -403,10 +416,10 @@ fun AdminMonitoreoScreen(
 
                     AdminSelectorField(
                         etiqueta = "Parcela",
-                        valor = parcelaSeleccionada?.code ?: "Seleccionar parcela",
+                        valor = parcelaSeleccionada?.nombreMostrarAdmin() ?: "Seleccionar parcela",
                         opciones = parcelas,
                         textoOpcion = { parcela ->
-                            if (parcela.description.isNullOrBlank()) parcela.code else "${parcela.code} - ${parcela.description}"
+                            parcela.nombreMostrarAdmin()
                         },
                         habilitado = !guardando && parcelas.isNotEmpty(),
                         onSeleccionar = { parcela ->
@@ -651,6 +664,15 @@ private fun AdminDatePickerField(
                 fontSize = 20.sp
             )
         }
+    }
+}
+
+private fun LocalPlotEntity.nombreMostrarAdmin(): String {
+    val codigo = code?.takeIf { it.isNotBlank() }
+    return when {
+        codigo == null -> name
+        codigo == name -> name
+        else -> "$codigo - $name"
     }
 }
 
@@ -936,7 +958,7 @@ private fun AdminResumenMonitoreo(
 
             ResumenRow("Productor", productor?.commercial_name ?: "Pendiente")
             ResumenRow("Rancho", rancho?.name ?: "Pendiente")
-            ResumenRow("Parcela", parcela?.code ?: "Pendiente")
+            ResumenRow("Parcela", parcela?.nombreMostrarAdmin() ?: "Pendiente")
             ResumenRow("Cultivo", cultivo?.name ?: "Pendiente")
             ResumenRow("Ciclo", ciclo.ifBlank { "Pendiente" })
             ResumenRow("Fechas", "${fechaInicio.ifBlank { "Inicio" }} → ${fechaFin.ifBlank { "Fin" }}")
@@ -1357,4 +1379,21 @@ private fun puntoDentroDelPoligonoAdmin(
     }
 
     return dentro
+}
+
+
+private fun esRolTecnicoAdminMonitoreo(rol: String): Boolean {
+    val limpio = rol
+        .trim()
+        .lowercase(Locale.getDefault())
+        .replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
+        .replace(".", "")
+        .replace("_", " ")
+        .replace(Regex("\\s+"), " ")
+
+    return limpio == "tecnico" || limpio == "tecnicos"
 }

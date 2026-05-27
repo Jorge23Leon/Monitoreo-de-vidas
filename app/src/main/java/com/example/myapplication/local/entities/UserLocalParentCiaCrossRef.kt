@@ -6,8 +6,8 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 
 @Entity(
-    tableName = "user_local_cias",
-    primaryKeys = ["idUser", "idLocalCia"],
+    tableName = "user_local_parent_cias",
+    primaryKeys = ["idUser", "idParentCia"],
     foreignKeys = [
         ForeignKey(
             entity = UserEntity::class,
@@ -16,20 +16,21 @@ import androidx.room.Index
             onDelete = ForeignKey.CASCADE
         ),
         ForeignKey(
-            entity = LocalCiaEntity::class,
-            parentColumns = ["idLocalCia"],
-            childColumns = ["idLocalCia"],
+            entity = LocalParentCiaEntity::class,
+            parentColumns = ["idParentCia"],
+            childColumns = ["idParentCia"],
             onDelete = ForeignKey.CASCADE
         )
     ],
     indices = [
         Index(value = ["idUser"]),
-        Index(value = ["idLocalCia"])
+        Index(value = ["idParentCia"])
     ]
 )
-data class UserLocalCiaCrossRef(
+data class UserLocalParentCiaCrossRef(
+    @ColumnInfo(name = "idUser")
     val idUser: Long,
-    val idLocalCia: Long,
-    @ColumnInfo(name = "ext_id")
-    val extId: String? = null
+
+    @ColumnInfo(name = "idParentCia")
+    val idParentCia: Long
 )

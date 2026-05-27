@@ -7,6 +7,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.example.myapplication.local.entities.UserEntity
+import com.example.myapplication.local.models.UsuarioSesion
 
 @Dao
 interface UserDao {
@@ -48,17 +49,28 @@ interface UserDao {
     suspend fun getUserByEmail(email: String): UserEntity?
 
     @Query("""
-        SELECT * FROM users
-        WHERE LOWER(TRIM(username)) = LOWER(TRIM(:username))
-        AND TRIM(password) = TRIM(:password)
-        AND LOWER(TRIM(role)) = LOWER(TRIM(:role))
-        LIMIT 1
-    """)
-    suspend fun login(
+    SELECT 
+        u.idUser AS idUser,
+        u.ext_id AS extId,
+        u.first_name AS firstName,
+        u.last_name AS lastName,
+        u.username AS username,
+        u.email AS email,
+
+        r.idRole AS idRole,
+        r.role_name AS roleName,
+        r.level AS level
+    FROM users AS u
+    INNER JOIN local_roles AS r
+        ON r.idRole = u.idRole
+    WHERE LOWER(TRIM(u.username)) = LOWER(TRIM(:username))
+      AND TRIM(u.password) = TRIM(:password)
+    LIMIT 1
+""")
+    suspend fun loginConRol(
         username: String,
-        password: String,
-        role: String
-    ): UserEntity?
+        password: String
+    ): UsuarioSesion?
 
     @Query("SELECT COUNT(*) FROM users")
     suspend fun countUsers(): Int
@@ -76,42 +88,45 @@ interface UserDao {
     suspend fun countByEmail(email: String): Int
 
     @Query("""
-        SELECT COUNT(*) FROM users
-        WHERE LOWER(TRIM(role)) = LOWER(TRIM(:role))
+        SELECT COUNT(*)
+        FROM users AS u
+        INNER JOIN local_roles AS r
+            ON r.idRole = u.idRole
+        WHERE LOWER(TRIM(r.role_name)) = LOWER(TRIM(:roleName))
     """)
-    suspend fun countByRole(role: String): Int
+    suspend fun countByRole(roleName: String): Int
 
     @Query("""
-    SELECT COUNT(*)
-    FROM users
-    WHERE LOWER(TRIM(username)) = LOWER(TRIM(:username))
-      AND idUser != :idUser
-""")
+        SELECT COUNT(*)
+        FROM users
+        WHERE LOWER(TRIM(username)) = LOWER(TRIM(:username))
+          AND idUser != :idUser
+    """)
     suspend fun existeUsernameEnOtroUsuario(
         username: String,
         idUser: Long
     ): Int
 
     @Query("""
-    SELECT COUNT(*)
-    FROM users
-    WHERE LOWER(TRIM(email)) = LOWER(TRIM(:email))
-      AND idUser != :idUser
-""")
+        SELECT COUNT(*)
+        FROM users
+        WHERE LOWER(TRIM(email)) = LOWER(TRIM(:email))
+          AND idUser != :idUser
+    """)
     suspend fun existeEmailEnOtroUsuario(
         email: String,
         idUser: Long
     ): Int
 
     @Query("""
-    UPDATE users
-    SET first_name = :firstName,
-        last_name = :lastName,
-        username = :username,
-        email = :email,
-        password = :password
-    WHERE idUser = :idUser
-""")
+        UPDATE users
+        SET first_name = :firstName,
+            last_name = :lastName,
+            username = :username,
+            email = :email,
+            password = :password
+        WHERE idUser = :idUser
+    """)
     suspend fun actualizarPerfilUsuarioSinRol(
         idUser: Long,
         firstName: String,

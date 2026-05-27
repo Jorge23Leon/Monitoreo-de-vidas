@@ -47,9 +47,27 @@ fun EncabezadoApp(
         mutableStateOf(false)
     }
 
-    val esAdmin = remember(rolUsuario) {
-        rolUsuario.trim().equals("admin", ignoreCase = true) ||
-                rolUsuario.trim().equals("administrador", ignoreCase = true)
+    val rolNormalizado = remember(rolUsuario) {
+        normalizarRolHeader(rolUsuario)
+    }
+
+    val puedeVerPanelTrabajo = remember(rolUsuario) {
+        rolNormalizado in listOf(
+            "admin",
+            "gerente",
+            "supervisor",
+            "tecnico"
+        )
+    }
+
+    val puedeVerMonitoreos = remember(rolUsuario) {
+        rolNormalizado in listOf(
+            "admin",
+            "gerente",
+            "supervisor",
+            "tecnico",
+            "invitado"
+        )
     }
 
     val fechaActual = remember {
@@ -170,7 +188,7 @@ fun EncabezadoApp(
                     }
                 )
 
-                if (esAdmin) {
+                if (puedeVerMonitoreos) {
                     DropdownMenuItem(
                         text = {
                             Text(
@@ -193,11 +211,13 @@ fun EncabezadoApp(
                             }
                         }
                     )
+                }
 
+                if (puedeVerPanelTrabajo) {
                     DropdownMenuItem(
                         text = {
                             Text(
-                                text = "🛠 Panel administrador",
+                                text = "🛠 Panel de trabajo",
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF1B5E20)
                             )
@@ -210,7 +230,7 @@ fun EncabezadoApp(
                             } else {
                                 Toast.makeText(
                                     context,
-                                    "Panel administrador",
+                                    "Panel de trabajo",
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
@@ -220,4 +240,41 @@ fun EncabezadoApp(
             }
         }
     }
+}
+
+private fun normalizarRolHeader(rol: String): String {
+    val limpio = rol
+        .trim()
+        .lowercase(Locale.getDefault())
+        .replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
+        .replace(".", "")
+        .replace("_", " ")
+        .replace(Regex("\\s+"), " ")
+
+    return when (limpio) {
+        "super admin", "admin", "administrador" -> "admin"
+
+        "gerente" -> "gerente"
+
+        "ingy supervision",
+        "ing y supervision",
+        "supervisor" -> "supervisor"
+
+        "tecnico",
+        "tecnicos",
+        "técnico",
+        "técnicos" -> "tecnico"
+
+        "invitado" -> "invitado"
+
+        else -> limpio
+    }
+}
+
+private fun esSuperAdminHeader(rol: String): Boolean {
+    return normalizarRolHeader(rol) == "admin"
 }

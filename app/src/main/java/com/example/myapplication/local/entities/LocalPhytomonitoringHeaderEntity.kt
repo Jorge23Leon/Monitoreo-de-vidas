@@ -16,27 +16,32 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.CASCADE
         ),
         ForeignKey(
-            entity = LocalPlotEntity::class,
-            parentColumns = ["idLocalPlot"],
-            childColumns = ["idLocalPlot"],
-            onDelete = ForeignKey.RESTRICT
-        ),
-        ForeignKey(
             entity = LocalCropCatalogEntity::class,
             parentColumns = ["idCrop"],
             childColumns = ["idCrop"],
             onDelete = ForeignKey.RESTRICT
+        ),
+        ForeignKey(
+            entity = LocalPlotEntity::class,
+            parentColumns = ["idLocalPlot"],
+            childColumns = ["idLocalPlot"],
+            onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = UserEntity::class,
+            parentColumns = ["idUser"],
+            childColumns = ["assigned_user_id"],
+            onDelete = ForeignKey.SET_NULL
         )
     ],
     indices = [
         Index(value = ["ext_id"], unique = true),
         Index(value = ["idProgram"]),
-        Index(value = ["idLocalPlot"]),
         Index(value = ["idCrop"]),
-        Index(value = ["cycle"]),
+        Index(value = ["idLocalPlot"]),
         Index(value = ["status"]),
-        Index(value = ["est_start_date"]),
-        Index(value = ["est_finish_date"])
+        Index(value = ["cycle"]),
+        Index(value = ["assigned_user_id"])
     ]
 )
 data class LocalPhytomonitoringHeaderEntity(
@@ -49,10 +54,10 @@ data class LocalPhytomonitoringHeaderEntity(
     val cycle: String,
 
     @ColumnInfo(name = "est_start_date")
-    val estStartDate: Long,
+    val estStartDate: Long? = null,
 
     @ColumnInfo(name = "est_finish_date")
-    val estFinishDate: Long,
+    val estFinishDate: Long? = null,
 
     @ColumnInfo(name = "start_at")
     val startAt: Long? = null,
@@ -60,15 +65,12 @@ data class LocalPhytomonitoringHeaderEntity(
     @ColumnInfo(name = "finished_at")
     val finishedAt: Long? = null,
 
-    /**
-     * Valores esperados:
-     * "Pendiente", "En proceso", "Cancelado", "Completado"
-     */
     val status: String = "Pendiente",
 
     val idProgram: Long,
-
+    val idCrop: Long,
     val idLocalPlot: Long,
 
-    val idCrop: Long
+    @ColumnInfo(name = "assigned_user_id")
+    val assignedUserId: Long? = null
 )

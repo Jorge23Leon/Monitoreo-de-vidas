@@ -67,9 +67,8 @@ fun MonitoreoListaScreen(
     onAbrirReporteClick: (LocalPhytomonitoringHeaderEntity) -> Unit,
     onPerfilClick: () -> Unit = {},
     onMonitoreosClick: () -> Unit = {},
-    onAdminClick: () -> Unit = {},
-
-    ) {
+    onAdminClick: () -> Unit = {}
+) {
     val productoresMap = remember(productores) {
         productores.associateBy { it.idLocalAgroUnit }
     }
@@ -86,7 +85,47 @@ fun MonitoreoListaScreen(
         programas.associateBy { it.idProgram }
     }
 
-    var cicloFiltro by remember {
+    val idsParcelasConMonitoreo = remember(monitoreos) {
+        monitoreos.map { it.idLocalPlot }.distinct().toSet()
+    }
+
+    val parcelasDisponibles = remember(parcelas, idsParcelasConMonitoreo) {
+        parcelas
+            .filter { it.idLocalPlot in idsParcelasConMonitoreo }
+            .distinctBy { it.idLocalPlot }
+            .sortedBy { obtenerNombreParcelaLista(it) }
+    }
+
+    var idParcelaSeleccionada by remember(parcelasDisponibles) {
+        mutableStateOf(parcelasDisponibles.firstOrNull()?.idLocalPlot)
+    }
+
+    val parcelaSeleccionada = remember(parcelasDisponibles, idParcelaSeleccionada) {
+        parcelasDisponibles.firstOrNull { it.idLocalPlot == idParcelaSeleccionada }
+            ?: parcelasDisponibles.firstOrNull()
+    }
+
+    val idParcelaFiltro = parcelaSeleccionada?.idLocalPlot
+
+    val monitoreosPorParcela = remember(monitoreos, idParcelaFiltro) {
+        if (idParcelaFiltro == null) {
+            monitoreos
+        } else {
+            monitoreos.filter { it.idLocalPlot == idParcelaFiltro }
+        }
+    }
+
+    val idsProgramasPorParcela = remember(monitoreosPorParcela) {
+        monitoreosPorParcela.map { it.idProgram }.distinct().toSet()
+    }
+
+    val programasPorParcela = remember(programas, idsProgramasPorParcela) {
+        programas
+            .filter { it.idProgram in idsProgramasPorParcela }
+            .distinctBy { it.idProgram }
+    }
+
+    var cicloFiltro by remember(idParcelaFiltro) {
         mutableStateOf<LocalProgramEntity?>(null)
     }
 
@@ -105,15 +144,17 @@ fun MonitoreoListaScreen(
     val fechaInicioMillis = parseFechaInicioLista(fechaInicioTexto)
     val fechaFinMillis = parseFechaFinLista(fechaFinTexto)
 
-    val monitoreosFiltrados = monitoreos.filter { header ->
+    val monitoreosFiltrados = monitoreosPorParcela.filter { header ->
         val cumpleCiclo = cicloFiltro == null ||
                 header.idProgram == cicloFiltro?.idProgram
 
+        val inicioHeader = header.estStartDate ?: 0L
+
         val cumpleFechaInicio = fechaInicioMillis == null ||
-                header.estStartDate >= fechaInicioMillis
+                inicioHeader >= fechaInicioMillis
 
         val cumpleFechaFin = fechaFinMillis == null ||
-                header.estStartDate <= fechaFinMillis
+                inicioHeader <= fechaFinMillis
 
         val statusNormalizado = header.status.lowercase().trim()
 
@@ -138,11 +179,13 @@ fun MonitoreoListaScreen(
         cumpleCiclo && cumpleFechaInicio && cumpleFechaFin && cumpleEstado
     }
 
-    val primerHeader = monitoreosFiltrados.firstOrNull() ?: monitoreos.firstOrNull()
-    val primerPrograma = primerHeader?.let { programasMap[it.idProgram] }
-    val primeraParcela = primerHeader?.let { parcelasMap[it.idLocalPlot] }
-    val primerRancho = primeraParcela?.let { ranchosMap[it.idLocalRanch] }
-    val primerProductor = primerPrograma?.let { productoresMap[it.idLocalAgroUnit] }
+    val headerReferencia = monitoreosPorParcela.firstOrNull()
+        ?: monitoreosFiltrados.firstOrNull()
+        ?: monitoreos.firstOrNull()
+
+    val programaReferencia = headerReferencia?.let { programasMap[it.idProgram] }
+    val ranchoReferencia = parcelaSeleccionada?.let { ranchosMap[it.idLocalRanch] }
+    val productorReferencia = programaReferencia?.let { productoresMap[it.idLocalAgroUnit] }
 
     Box(
         modifier = Modifier
@@ -186,22 +229,26 @@ fun MonitoreoListaScreen(
                         ) {
                             DatoUbicacionMini(
                                 titulo = "Productor",
-                                valor = primerProductor?.commercial_name ?: "-",
+                                valor = productorReferencia?.commercial_name ?: "-",
                                 modifier = Modifier.weight(1f)
                             )
 
                             DatoUbicacionMini(
                                 titulo = "Rancho",
-                                valor = primerRancho?.name ?: "-",
+                                valor = ranchoReferencia?.name ?: "-",
                                 modifier = Modifier.weight(1f)
                             )
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        DatoUbicacionMini(
-                            titulo = "Parcela",
-                            valor = primeraParcela?.code ?: "-",
+                        SelectorParcelaMonitoreo(
+                            parcelaSeleccionada = parcelaSeleccionada,
+                            parcelas = parcelasDisponibles,
+                            onParcelaSeleccionada = { parcela ->
+                                idParcelaSeleccionada = parcela.idLocalPlot
+                                cicloFiltro = null
+                            },
                             modifier = Modifier.fillMaxWidth()
                         )
                     } else {
@@ -221,7 +268,7 @@ fun MonitoreoListaScreen(
 
             FiltrosCompactosBarra(
                 cicloFiltro = cicloFiltro,
-                programas = programas,
+                programas = programasPorParcela,
                 fechaInicioTexto = fechaInicioTexto,
                 fechaFinTexto = fechaFinTexto,
                 estadoFiltro = estadoFiltro,
@@ -317,6 +364,87 @@ fun MonitoreoListaScreen(
                             Spacer(modifier = Modifier.height(10.dp))
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectorParcelaMonitoreo(
+    parcelaSeleccionada: LocalPlotEntity?,
+    parcelas: List<LocalPlotEntity>,
+    onParcelaSeleccionada: (LocalPlotEntity) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val puedeCambiar = parcelas.size > 1
+
+    Box(modifier = modifier) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = puedeCambiar) { expanded = true },
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = if (puedeCambiar) "Parcela  ▼" else "Parcela",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF5F6F5A),
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(5.dp))
+
+                Text(
+                    text = parcelaSeleccionada?.let { obtenerNombreParcelaLista(it) } ?: "-",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Black,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1
+                )
+
+                if (puedeCambiar) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Toca para cambiar de parcela",
+                        fontSize = 9.sp,
+                        color = Color(0xFF2E7D32),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.fillMaxWidth(0.90f)
+        ) {
+            if (parcelas.isEmpty()) {
+                DropdownMenuItem(
+                    text = { Text("Sin parcelas disponibles") },
+                    onClick = { expanded = false }
+                )
+            } else {
+                parcelas.forEach { parcela ->
+                    DropdownMenuItem(
+                        text = { Text(obtenerNombreParcelaLista(parcela)) },
+                        onClick = {
+                            onParcelaSeleccionada(parcela)
+                            expanded = false
+                        }
+                    )
                 }
             }
         }
@@ -698,8 +826,8 @@ private fun HeaderTabla(
 private fun FilaMonitoreo(
     nombreMonitoreo: String,
     status: String,
-    fechaInicio: Long,
-    fechaFin: Long,
+    fechaInicio: Long?,
+    fechaFin: Long?,
     accionTexto: String,
     enabled: Boolean,
     onAccionClick: () -> Unit
@@ -770,6 +898,12 @@ private fun FilaMonitoreo(
     }
 }
 
+private fun obtenerNombreParcelaLista(parcela: LocalPlotEntity): String {
+    return parcela.code
+        ?.takeIf { it.isNotBlank() }
+        ?: parcela.name
+}
+
 private fun textoEstado(status: String): String {
     return when (status.lowercase().trim()) {
         "pending", "pendiente" -> "Pendiente"
@@ -790,7 +924,9 @@ private fun colorEstado(status: String): Color {
     }
 }
 
-private fun formatearFechaCorta(fecha: Long): String {
+private fun formatearFechaCorta(fecha: Long?): String {
+    if (fecha == null) return "-"
+
     return try {
         val sdf = SimpleDateFormat("dd-MM-yyyy", Locale.getDefault())
         sdf.format(Date(fecha))

@@ -49,7 +49,7 @@ interface LocalPhytomonitoringCheckpointDao {
         SELECT *
         FROM local_phytomonitoring_checkpoints
         WHERE idHeader = :idHeader
-        AND idTargetPoint = :idTargetPoint
+          AND idTargetPoint = :idTargetPoint
         ORDER BY captured_at DESC
     """)
     suspend fun getCheckpointsByHeaderAndTargetPoint(
@@ -64,6 +64,25 @@ interface LocalPhytomonitoringCheckpointDao {
     """)
     suspend fun countCheckpointsByTargetPoint(
         idTargetPoint: Long
+    ): Int
+
+    @Query("""
+        SELECT *
+        FROM local_phytomonitoring_checkpoints
+        WHERE captured_by_user_id = :idUser
+        ORDER BY captured_at DESC
+    """)
+    suspend fun getCheckpointsByUser(idUser: Long): List<LocalPhytomonitoringCheckpointEntity>
+
+    @Query("""
+        SELECT COUNT(*)
+        FROM local_phytomonitoring_checkpoints
+        WHERE idHeader = :idHeader
+          AND captured_by_user_id = :idUser
+    """)
+    suspend fun countCheckpointsByHeaderAndUser(
+        idHeader: Long,
+        idUser: Long
     ): Int
 
     @Delete

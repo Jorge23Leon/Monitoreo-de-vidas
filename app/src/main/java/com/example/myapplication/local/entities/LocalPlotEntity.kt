@@ -5,7 +5,6 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
-
 @Entity(
     tableName = "local_plots",
     foreignKeys = [
@@ -14,12 +13,18 @@ import androidx.room.PrimaryKey
             parentColumns = ["idLocalRanch"],
             childColumns = ["idLocalRanch"],
             onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = UserEntity::class,
+            parentColumns = ["idUser"],
+            childColumns = ["assigned_user_id"],
+            onDelete = ForeignKey.SET_NULL
         )
     ],
     indices = [
         Index(value = ["ext_id"], unique = true),
         Index(value = ["idLocalRanch"]),
-        Index(value = ["idLocalRanch", "code"], unique = true)
+        Index(value = ["assigned_user_id"])
     ]
 )
 data class LocalPlotEntity(
@@ -29,13 +34,13 @@ data class LocalPlotEntity(
     @ColumnInfo(name = "ext_id")
     val extId: String? = null,
 
-    val code: String,
+    val name: String,
+    val code: String? = null,
+    val lat: Double? = null,
+    val lon: Double? = null,
 
-    val description: String? = null,
+    val idLocalRanch: Long,
 
-    val lat: Double,
-
-    val lon: Double,
-
-    val idLocalRanch: Long
+    @ColumnInfo(name = "assigned_user_id")
+    val assignedUserId: Long? = null
 )

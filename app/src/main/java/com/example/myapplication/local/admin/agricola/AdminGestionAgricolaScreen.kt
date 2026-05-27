@@ -444,7 +444,7 @@ fun AdminGestionAgricolaScreen(
                                 lat !in -90.0..90.0 || lon !in -180.0..180.0
 
                         val duplicado = ranchoDestino != null && parcelasExistentes.any {
-                            it.idLocalRanch == ranchoDestino.idLocalRanch && it.code.equals(codigo, ignoreCase = true)
+                            it.idLocalRanch == ranchoDestino.idLocalRanch && (it.code?.equals(codigo, ignoreCase = true) == true)
                         }
 
                         if (datosInvalidos || duplicado || ranchoDestino == null) {
@@ -453,8 +453,8 @@ fun AdminGestionAgricolaScreen(
                             if (item.lat == null || item.lon == null) coordenadasDefault++
                             val nueva = LocalPlotEntity(
                                 extId = null,
+                                name = item.description?.trim()?.takeIf { it.isNotBlank() } ?: codigo,
                                 code = codigo,
-                                description = item.description,
                                 lat = lat,
                                 lon = lon,
                                 idLocalRanch = ranchoDestino.idLocalRanch
@@ -499,7 +499,7 @@ fun AdminGestionAgricolaScreen(
     ) {
         val ranchoSeleccionado = rancho
         val codigoLimpio = codigo.trim().uppercase(Locale.getDefault())
-        val descripcionLimpia = descripcion.trim().ifBlank { null }
+        val nombreParcela = descripcion.trim().ifBlank { codigoLimpio }
         val latTextoLimpio = latTexto.trim()
         val lonTextoLimpio = lonTexto.trim()
         val latManual = latTextoLimpio.ifBlank { "0" }.toDoubleOrNull()
@@ -522,7 +522,7 @@ fun AdminGestionAgricolaScreen(
             parcelas.any {
                 it.idLocalPlot != (parcelaBase?.idLocalPlot ?: -1L) &&
                         it.idLocalRanch == ranchoSeleccionado.idLocalRanch &&
-                        it.code.equals(codigoLimpio, ignoreCase = true)
+                        (it.code?.equals(codigoLimpio, ignoreCase = true) == true)
             } -> onMensaje("Ya existe una parcela con ese código en el rancho seleccionado")
             else -> {
                 coroutineScope.launch {
@@ -533,8 +533,8 @@ fun AdminGestionAgricolaScreen(
                             val parcelaPersistida = if (parcelaBase == null) {
                                 val nuevaParcela = LocalPlotEntity(
                                     extId = null,
+                                    name = nombreParcela,
                                     code = codigoLimpio,
-                                    description = descripcionLimpia,
                                     lat = lat,
                                     lon = lon,
                                     idLocalRanch = ranchoSeleccionado.idLocalRanch
@@ -543,8 +543,8 @@ fun AdminGestionAgricolaScreen(
                                 nuevaParcela.copy(idLocalPlot = nuevoId)
                             } else {
                                 val parcelaActualizada = parcelaBase.copy(
+                                    name = nombreParcela,
                                     code = codigoLimpio,
-                                    description = descripcionLimpia,
                                     lat = lat,
                                     lon = lon,
                                     idLocalRanch = ranchoSeleccionado.idLocalRanch
@@ -968,8 +968,8 @@ fun AdminGestionAgricolaScreen(
 
                                     GestionInfoItem(
                                         icono = "🌾",
-                                        titulo = parcela.code,
-                                        subtitulo = "Rancho: ${rancho?.name ?: "No encontrado"}  •  $estadoCoordenadas  •  Centro: ${parcela.lat}, ${parcela.lon}${parcela.description?.let { "  •  $it" } ?: ""}",
+                                        titulo = parcela.nombreMostrarGestion(),
+                                        subtitulo = "Rancho: ${rancho?.name ?: "No encontrado"}  •  $estadoCoordenadas  •  Centro: ${parcela.lat ?: "-"}, ${parcela.lon ?: "-"}  •  Nombre: ${parcela.name}",
                                         onEditar = { abrirEditarParcela(parcela) },
                                         onEliminar = {
                                             mostrarConfirmacionEliminar = ConfirmacionEliminarGestion.Parcela(parcela)
@@ -1015,6 +1015,10 @@ private data class ResultadoImportacionGestion(
     val coordenadasDefault: Int = 0
 )
 
+private fun LocalPlotEntity.nombreMostrarGestion(): String {
+    return code?.takeIf { it.isNotBlank() } ?: name
+}
+
 private fun String.normalizarClaveGestion(): String {
     val normalized = Normalizer.normalize(trim().lowercase(Locale.getDefault()), Normalizer.Form.NFD)
     return normalized
@@ -1034,7 +1038,7 @@ private sealed class ConfirmacionEliminarGestion(
     )
 
     data class Parcela(val parcela: LocalPlotEntity) : ConfirmacionEliminarGestion(
-        "¿Seguro que deseas eliminar la parcela \"${parcela.code}\"? Solo se eliminará si no tiene programas o monitoreos relacionados."
+        "¿Seguro que deseas eliminar la parcela \"${parcela.nombreMostrarGestion()}\"? Solo se eliminará si no tiene programas o monitoreos relacionados."
     )
 }
 
@@ -1490,7 +1494,7 @@ private fun DialogParcelaGestion(
         mutableStateOf(ranchos.firstOrNull { it.idLocalRanch == parcela?.idLocalRanch } ?: ranchos.firstOrNull())
     }
     var codigo by remember(parcela?.idLocalPlot) { mutableStateOf(parcela?.code ?: "") }
-    var descripcion by remember(parcela?.idLocalPlot) { mutableStateOf(parcela?.description ?: "") }
+    var descripcion by remember(parcela?.idLocalPlot) { mutableStateOf(parcela?.name ?: "") }
     var lat by remember(parcela?.idLocalPlot) { mutableStateOf(parcela?.lat?.toString() ?: "") }
     var lon by remember(parcela?.idLocalPlot) { mutableStateOf(parcela?.lon?.toString() ?: "") }
 
@@ -1576,7 +1580,7 @@ private fun DialogParcelaGestion(
                 Spacer(modifier = Modifier.height(8.dp))
                 GestionTextField(codigo, { codigo = it }, "Código de parcela", "Ejemplo: CIEM", guardando || cargandoPoligono)
                 Spacer(modifier = Modifier.height(8.dp))
-                GestionTextField(descripcion, { descripcion = it }, "Descripción", "Opcional", guardando || cargandoPoligono)
+                GestionTextField(descripcion, { descripcion = it }, "Nombre de parcela", "Ejemplo: Parcela CIEM", guardando || cargandoPoligono)
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     GestionDecimalField(lat, { lat = it }, "Latitud", guardando || cargandoPoligono, Modifier.weight(1f), obligatorio = false)
