@@ -12,8 +12,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import com.example.myapplication.local.common.EncabezadoApp
 import com.example.myapplication.local.entities.LocalCiaEntity
 import com.example.myapplication.local.entities.LocalParentCiaEntity
+import java.util.Locale
 
 @Composable
 fun SeleccionCiaScreen(
@@ -67,6 +68,17 @@ fun SeleccionCiaScreen(
     onAdminClick: () -> Unit = {}
 ) {
     var expandedParentCia by remember { mutableStateOf(false) }
+
+    val rolNormalizado = remember(rolUsuario) {
+        normalizarRolSeleccionCia(rolUsuario)
+    }
+
+    val esSupervisor = rolNormalizado == "supervisor"
+    val puedeContinuar = if (esSupervisor) {
+        ciaSeleccionada != null
+    } else {
+        parentCiaSeleccionada != null && ciaSeleccionada != null
+    }
 
     Box(
         modifier = Modifier
@@ -95,7 +107,7 @@ fun SeleccionCiaScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Seleccionar organización",
+                    text = if (esSupervisor) "Seleccionar CIA hija" else "Seleccionar organización",
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF1F331F),
@@ -105,7 +117,11 @@ fun SeleccionCiaScreen(
                 Spacer(modifier = Modifier.height(6.dp))
 
                 Text(
-                    text = "Primero elige la CIA padre y después selecciona una CIA hija.",
+                    text = if (esSupervisor) {
+                        "Selecciona una de las CIAS hijas disponibles para consultar sus monitoreos."
+                    } else {
+                        "Primero elige la CIA padre y después selecciona una CIA hija."
+                    },
                     fontSize = 13.sp,
                     color = Color(0xFF666666),
                     textAlign = TextAlign.Center,
@@ -114,97 +130,99 @@ fun SeleccionCiaScreen(
 
                 Spacer(modifier = Modifier.height(18.dp))
 
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(
-                            width = 1.dp,
-                            color = Color(0xFFDDE8D6),
-                            shape = RoundedCornerShape(18.dp)
-                        ),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFFFAFCF8)
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(
+                if (!esSupervisor) {
+                    Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(14.dp)
+                            .border(
+                                width = 1.dp,
+                                color = Color(0xFFDDE8D6),
+                                shape = RoundedCornerShape(18.dp)
+                            ),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFFFAFCF8)
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
-                        Text(
-                            text = "1. Selecciona tu organización (CIA padre)",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF253A25)
-                        )
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        Box(
-                            modifier = Modifier.fillMaxWidth()
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp)
                         ) {
-                            OutlinedButton(
-                                onClick = {
-                                    if (parentCias.isNotEmpty()) {
-                                        expandedParentCia = true
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(14.dp)
+                            Text(
+                                text = "1. Selecciona tu organización (CIA padre)",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF253A25)
+                            )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Box(
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(
-                                    text = "🏢",
-                                    fontSize = 20.sp
-                                )
-
-                                Spacer(modifier = Modifier.width(10.dp))
-
-                                Text(
-                                    text = parentCiaSeleccionada?.name
-                                        ?: "Selecciona una CIA padre",
-                                    fontSize = 14.sp,
-                                    color = Color.Black,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 1
-                                )
-
-                                Text(
-                                    text = "⌄",
-                                    fontSize = 20.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.Black
-                                )
-                            }
-
-                            DropdownMenu(
-                                expanded = expandedParentCia,
-                                onDismissRequest = { expandedParentCia = false }
-                            ) {
-                                if (parentCias.isEmpty()) {
-                                    DropdownMenuItem(
-                                        text = { Text("No hay CIAS padre asignadas") },
-                                        onClick = { expandedParentCia = false }
+                                OutlinedButton(
+                                    onClick = {
+                                        if (parentCias.isNotEmpty()) {
+                                            expandedParentCia = true
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(14.dp)
+                                ) {
+                                    Text(
+                                        text = "🏢",
+                                        fontSize = 20.sp
                                     )
-                                } else {
-                                    parentCias.forEach { parentCia ->
+
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    Text(
+                                        text = parentCiaSeleccionada?.name
+                                            ?: "Selecciona una CIA padre",
+                                        fontSize = 14.sp,
+                                        color = Color.Black,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1
+                                    )
+
+                                    Text(
+                                        text = "⌄",
+                                        fontSize = 20.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.Black
+                                    )
+                                }
+
+                                DropdownMenu(
+                                    expanded = expandedParentCia,
+                                    onDismissRequest = { expandedParentCia = false }
+                                ) {
+                                    if (parentCias.isEmpty()) {
                                         DropdownMenuItem(
-                                            text = { Text(parentCia.name) },
-                                            onClick = {
-                                                onParentCiaChange(parentCia)
-                                                expandedParentCia = false
-                                            }
+                                            text = { Text("No hay CIAS padre asignadas") },
+                                            onClick = { expandedParentCia = false }
                                         )
+                                    } else {
+                                        parentCias.forEach { parentCia ->
+                                            DropdownMenuItem(
+                                                text = { Text(parentCia.name) },
+                                                onClick = {
+                                                    onParentCiaChange(parentCia)
+                                                    expandedParentCia = false
+                                                }
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
 
                 Card(
                     modifier = Modifier
@@ -226,7 +244,11 @@ fun SeleccionCiaScreen(
                             .padding(14.dp)
                     ) {
                         Text(
-                            text = "2. Selecciona una CIA hija",
+                            text = if (esSupervisor) {
+                                "1. Selecciona una CIA hija asignada"
+                            } else {
+                                "2. Selecciona una CIA hija"
+                            },
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF253A25)
@@ -234,76 +256,133 @@ fun SeleccionCiaScreen(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        if (parentCiaSeleccionada == null) {
-                            CajaMensajeSeleccion(
-                                texto = "Selecciona una CIA padre para mostrar sus CIAS hijas."
-                            )
-                        } else if (cias.isEmpty()) {
-                            CajaMensajeSeleccion(
-                                texto = "Esta CIA padre no tiene CIAS hijas asignadas."
-                            )
-                        } else {
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = Color.White
-                                ),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier.fillMaxWidth()
+                        when {
+                            esSupervisor && cias.isEmpty() -> {
+                                CajaMensajeSeleccion(
+                                    texto = "No tienes CIAS hijas asignadas."
+                                )
+                            }
+
+                            esSupervisor -> {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = Color.White
+                                    ),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                                 ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .background(Color(0xFFEAF5E4))
-                                            .padding(horizontal = 12.dp, vertical = 12.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        Text(
-                                            text = "🏢",
-                                            fontSize = 22.sp
-                                        )
-
-                                        Spacer(modifier = Modifier.width(10.dp))
-
-                                        Text(
-                                            text = parentCiaSeleccionada.name,
-                                            fontSize = 15.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color(0xFF2E4A27),
-                                            modifier = Modifier.weight(1f)
-                                        )
-
-                                        Box(
+                                        Row(
                                             modifier = Modifier
-                                                .size(24.dp)
-                                                .border(
-                                                    width = 2.dp,
-                                                    color = Color(0xFF4A8F2A),
-                                                    shape = CircleShape
-                                                ),
-                                            contentAlignment = Alignment.Center
+                                                .fillMaxWidth()
+                                                .background(Color(0xFFEAF5E4))
+                                                .padding(horizontal = 12.dp, vertical = 12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Text(
-                                                text = "−",
-                                                fontSize = 18.sp,
+                                                text = "🌱",
+                                                fontSize = 22.sp
+                                            )
+
+                                            Spacer(modifier = Modifier.width(10.dp))
+
+                                            Text(
+                                                text = "CIAS hijas disponibles",
+                                                fontSize = 15.sp,
                                                 fontWeight = FontWeight.Bold,
-                                                color = Color(0xFF4A8F2A)
+                                                color = Color(0xFF2E4A27),
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+
+                                        cias.forEachIndexed { index, cia ->
+                                            CiaHijaTreeItem(
+                                                cia = cia,
+                                                seleccionada = ciaSeleccionada?.idLocalCia == cia.idLocalCia,
+                                                esUltima = index == cias.lastIndex,
+                                                onClick = { onCiaChange(cia) }
                                             )
                                         }
                                     }
+                                }
+                            }
 
-                                    cias.forEachIndexed { index, cia ->
-                                        CiaHijaTreeItem(
-                                            cia = cia,
-                                            seleccionada = ciaSeleccionada?.idLocalCia == cia.idLocalCia,
-                                            esUltima = index == cias.lastIndex,
-                                            onClick = {
-                                                onCiaChange(cia)
+                            parentCiaSeleccionada == null -> {
+                                CajaMensajeSeleccion(
+                                    texto = "Selecciona una CIA padre para mostrar sus CIAS hijas."
+                                )
+                            }
+
+                            cias.isEmpty() -> {
+                                CajaMensajeSeleccion(
+                                    texto = "Esta CIA padre no tiene CIAS hijas asignadas."
+                                )
+                            }
+
+                            else -> {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = Color.White
+                                    ),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(Color(0xFFEAF5E4))
+                                                .padding(horizontal = 12.dp, vertical = 12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "🏢",
+                                                fontSize = 22.sp
+                                            )
+
+                                            Spacer(modifier = Modifier.width(10.dp))
+
+                                            Text(
+                                                text = parentCiaSeleccionada.name,
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF2E4A27),
+                                                modifier = Modifier.weight(1f)
+                                            )
+
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(24.dp)
+                                                    .border(
+                                                        width = 2.dp,
+                                                        color = Color(0xFF4A8F2A),
+                                                        shape = CircleShape
+                                                    ),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "−",
+                                                    fontSize = 18.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFF4A8F2A)
+                                                )
                                             }
-                                        )
+                                        }
+
+                                        cias.forEachIndexed { index, cia ->
+                                            CiaHijaTreeItem(
+                                                cia = cia,
+                                                seleccionada = ciaSeleccionada?.idLocalCia == cia.idLocalCia,
+                                                esUltima = index == cias.lastIndex,
+                                                onClick = { onCiaChange(cia) }
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -337,10 +416,22 @@ fun SeleccionCiaScreen(
                         Spacer(modifier = Modifier.width(10.dp))
 
                         Text(
-                            text = if (ciaSeleccionada == null) {
-                                "Selecciona una CIA hija del árbol para continuar."
-                            } else {
-                                "CIA hija seleccionada: ${ciaSeleccionada.nombre}"
+                            text = when {
+                                esSupervisor && ciaSeleccionada == null -> {
+                                    "Selecciona una CIA hija asignada para continuar."
+                                }
+
+                                !esSupervisor && parentCiaSeleccionada == null -> {
+                                    "Primero selecciona una CIA padre."
+                                }
+
+                                ciaSeleccionada == null -> {
+                                    "Selecciona una CIA hija del árbol para continuar."
+                                }
+
+                                else -> {
+                                    "CIA hija seleccionada: ${ciaSeleccionada.nombre}"
+                                }
                             },
                             fontSize = 13.sp,
                             color = Color(0xFF3F5F35),
@@ -424,7 +515,7 @@ fun SeleccionCiaScreen(
 
                     Button(
                         onClick = onSeleccionarClick,
-                        enabled = parentCiaSeleccionada != null && ciaSeleccionada != null,
+                        enabled = puedeContinuar,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Color(0xFF2F7D20),
                             disabledContainerColor = Color(0xFFE0E0E0)
@@ -565,5 +656,28 @@ private fun CajaMensajeSeleccion(
             color = Color(0xFF4E5D45),
             textAlign = TextAlign.Center
         )
+    }
+}
+
+private fun normalizarRolSeleccionCia(rol: String): String {
+    val limpio = rol
+        .trim()
+        .lowercase(Locale.getDefault())
+        .replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
+        .replace(".", "")
+        .replace("_", " ")
+        .replace(Regex("\\s+"), " ")
+
+    return when (limpio) {
+        "super admin", "admin", "administrador" -> "admin"
+        "gerente" -> "gerente"
+        "ingy supervision", "ing y supervision", "supervisor" -> "supervisor"
+        "tecnico", "tecnicos", "técnico", "técnicos" -> "tecnico"
+        "invitado" -> "invitado"
+        else -> limpio
     }
 }

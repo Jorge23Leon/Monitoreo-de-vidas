@@ -43,7 +43,7 @@ import com.example.myapplication.local.dao.UserLocalParentCiaDao
         LocalPhytomonitoringCheckpointEntity::class,
         LocalCiaAgroUnitCrossRef::class
     ],
-    version = 26,
+    version = 27,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

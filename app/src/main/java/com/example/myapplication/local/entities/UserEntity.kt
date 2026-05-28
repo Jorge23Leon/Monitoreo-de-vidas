@@ -14,6 +14,7 @@ import androidx.room.PrimaryKey
             parentColumns = ["idRole"],
             childColumns = ["idRole"],
             onDelete = ForeignKey.RESTRICT
+
         )
     ],
     indices = [
@@ -41,4 +42,5 @@ data class UserEntity(
     val password: String,
 
     val idRole: Long
+
 )

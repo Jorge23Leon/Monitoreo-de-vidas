@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -27,6 +29,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -41,7 +45,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.myapplication.local.common.EncabezadoApp
+import com.example.myapplication.local.common.ImageUriBox
 import com.example.myapplication.local.entities.LocalAgroUnitEntity
+import com.example.myapplication.local.entities.LocalCropCatalogEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
 import com.example.myapplication.local.entities.LocalPlotEntity
 import com.example.myapplication.local.entities.LocalProgramEntity
@@ -62,6 +68,7 @@ fun MonitoreoListaScreen(
     ranchos: List<LocalRanchEntity>,
     parcelas: List<LocalPlotEntity>,
     programas: List<LocalProgramEntity>,
+    cultivos: List<LocalCropCatalogEntity> = emptyList(),
 
     onAbrirMapaClick: (LocalPhytomonitoringHeaderEntity) -> Unit,
     onAbrirReporteClick: (LocalPhytomonitoringHeaderEntity) -> Unit,
@@ -69,21 +76,19 @@ fun MonitoreoListaScreen(
     onMonitoreosClick: () -> Unit = {},
     onAdminClick: () -> Unit = {}
 ) {
-    val productoresMap = remember(productores) {
-        productores.associateBy { it.idLocalAgroUnit }
-    }
+    val rolNormalizado = remember(rolUsuario) { normalizarRolLista(rolUsuario) }
+    val esAdmin = rolNormalizado == "admin"
+    val esGerente = rolNormalizado == "gerente"
+    val esSupervisor = rolNormalizado == "supervisor"
+    val esTecnico = rolNormalizado == "tecnico"
+    val esInvitado = rolNormalizado == "invitado"
+    val soloConsulta = esGerente || esSupervisor
 
-    val ranchosMap = remember(ranchos) {
-        ranchos.associateBy { it.idLocalRanch }
-    }
-
-    val parcelasMap = remember(parcelas) {
-        parcelas.associateBy { it.idLocalPlot }
-    }
-
-    val programasMap = remember(programas) {
-        programas.associateBy { it.idProgram }
-    }
+    val productoresMap = remember(productores) { productores.associateBy { it.idLocalAgroUnit } }
+    val ranchosMap = remember(ranchos) { ranchos.associateBy { it.idLocalRanch } }
+    val parcelasMap = remember(parcelas) { parcelas.associateBy { it.idLocalPlot } }
+    val programasMap = remember(programas) { programas.associateBy { it.idProgram } }
+    val cultivosMap = remember(cultivos) { cultivos.associateBy { it.idCrop } }
 
     val idsParcelasConMonitoreo = remember(monitoreos) {
         monitoreos.map { it.idLocalPlot }.distinct().toSet()
@@ -96,23 +101,16 @@ fun MonitoreoListaScreen(
             .sortedBy { obtenerNombreParcelaLista(it) }
     }
 
-    var idParcelaSeleccionada by remember(parcelasDisponibles) {
-        mutableStateOf(parcelasDisponibles.firstOrNull()?.idLocalPlot)
+    var idParcelaSeleccionada by remember(parcelasDisponibles, rolNormalizado) {
+        mutableStateOf<Long?>(null)
     }
 
     val parcelaSeleccionada = remember(parcelasDisponibles, idParcelaSeleccionada) {
-        parcelasDisponibles.firstOrNull { it.idLocalPlot == idParcelaSeleccionada }
-            ?: parcelasDisponibles.firstOrNull()
+        idParcelaSeleccionada?.let { id -> parcelasDisponibles.firstOrNull { it.idLocalPlot == id } }
     }
 
-    val idParcelaFiltro = parcelaSeleccionada?.idLocalPlot
-
-    val monitoreosPorParcela = remember(monitoreos, idParcelaFiltro) {
-        if (idParcelaFiltro == null) {
-            monitoreos
-        } else {
-            monitoreos.filter { it.idLocalPlot == idParcelaFiltro }
-        }
+    val monitoreosPorParcela = remember(monitoreos, idParcelaSeleccionada) {
+        idParcelaSeleccionada?.let { id -> monitoreos.filter { it.idLocalPlot == id } } ?: monitoreos
     }
 
     val idsProgramasPorParcela = remember(monitoreosPorParcela) {
@@ -123,69 +121,56 @@ fun MonitoreoListaScreen(
         programas
             .filter { it.idProgram in idsProgramasPorParcela }
             .distinctBy { it.idProgram }
+            .sortedByDescending { it.estStartDate }
     }
 
-    var cicloFiltro by remember(idParcelaFiltro) {
-        mutableStateOf<LocalProgramEntity?>(null)
-    }
-
-    var fechaInicioTexto by remember {
-        mutableStateOf("")
-    }
-
-    var fechaFinTexto by remember {
-        mutableStateOf("")
-    }
-
-    var estadoFiltro by remember {
-        mutableStateOf("Todos")
-    }
+    var cicloFiltro by remember(idParcelaSeleccionada) { mutableStateOf<LocalProgramEntity?>(null) }
+    var fechaInicioTexto by remember { mutableStateOf("") }
+    var fechaFinTexto by remember { mutableStateOf("") }
+    var estadoFiltro by remember { mutableStateOf("Todos") }
 
     val fechaInicioMillis = parseFechaInicioLista(fechaInicioTexto)
     val fechaFinMillis = parseFechaFinLista(fechaFinTexto)
 
-    val monitoreosFiltrados = monitoreosPorParcela.filter { header ->
-        val cumpleCiclo = cicloFiltro == null ||
-                header.idProgram == cicloFiltro?.idProgram
+    val monitoreosFiltrados = remember(
+        monitoreosPorParcela,
+        cicloFiltro,
+        fechaInicioMillis,
+        fechaFinMillis,
+        estadoFiltro
+    ) {
+        monitoreosPorParcela.filter { header ->
+            val cumpleCiclo = cicloFiltro == null || header.idProgram == cicloFiltro?.idProgram
+            val inicioHeader = header.estStartDate ?: 0L
+            val cumpleFechaInicio = fechaInicioMillis == null || inicioHeader >= fechaInicioMillis
+            val cumpleFechaFin = fechaFinMillis == null || inicioHeader <= fechaFinMillis
+            val estado = header.status.lowercase(Locale.getDefault()).trim()
+            val cumpleEstado = when (estadoFiltro) {
+                "Pendiente" -> estado == "pending" || estado == "pendiente"
+                "En proceso" -> estado == "in_progress" || estado == "en proceso" || estado == "vigente"
+                "Completado" -> estado == "completed" || estado == "completado" || estado == "finalizado"
+                "Cancelado" -> estado == "cancelled" || estado == "cancelado" || estado == "canceled"
+                else -> true
+            }
 
-        val inicioHeader = header.estStartDate ?: 0L
-
-        val cumpleFechaInicio = fechaInicioMillis == null ||
-                inicioHeader >= fechaInicioMillis
-
-        val cumpleFechaFin = fechaFinMillis == null ||
-                inicioHeader <= fechaFinMillis
-
-        val statusNormalizado = header.status.lowercase().trim()
-
-        val cumpleEstado = when (estadoFiltro) {
-            "Pendiente" -> statusNormalizado == "pending" ||
-                    statusNormalizado == "pendiente"
-
-            "En proceso" -> statusNormalizado == "in_progress" ||
-                    statusNormalizado == "en proceso" ||
-                    statusNormalizado == "vigente"
-
-            "Completado" -> statusNormalizado == "completed" ||
-                    statusNormalizado == "completado" ||
-                    statusNormalizado == "finalizado"
-
-            "Cancelado" -> statusNormalizado == "cancelled" ||
-                    statusNormalizado == "cancelado"
-
-            else -> true
+            cumpleCiclo && cumpleFechaInicio && cumpleFechaFin && cumpleEstado
         }
-
-        cumpleCiclo && cumpleFechaInicio && cumpleFechaFin && cumpleEstado
     }
 
-    val headerReferencia = monitoreosPorParcela.firstOrNull()
-        ?: monitoreosFiltrados.firstOrNull()
-        ?: monitoreos.firstOrNull()
+    val tituloPantalla = when {
+        esInvitado -> "Mis monitoreos"
+        esTecnico -> "Mis parcelas asignadas"
+        soloConsulta -> "Monitoreos para consulta"
+        else -> "Monitoreos"
+    }
 
-    val programaReferencia = headerReferencia?.let { programasMap[it.idProgram] }
-    val ranchoReferencia = parcelaSeleccionada?.let { ranchosMap[it.idLocalRanch] }
-    val productorReferencia = programaReferencia?.let { productoresMap[it.idLocalAgroUnit] }
+    val subtituloPantalla = when {
+        esInvitado -> "Consulta los monitoreos asignados a tu usuario."
+        esTecnico -> "Abre y captura los monitoreos de tus parcelas asignadas."
+        esGerente -> "Consulta los monitoreos de tus CIAS asignadas."
+        esSupervisor -> "Revisa información de los monitoreos de tus CIAS hijas."
+        else -> "Accede, revisa y administra los monitoreos disponibles."
+    }
 
     Box(
         modifier = Modifier
@@ -209,62 +194,43 @@ fun MonitoreoListaScreen(
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFFF8FAF7)
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp)
-                ) {
-                    if (!busquedaFueConSaltoFiltros) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            DatoUbicacionMini(
-                                titulo = "Productor",
-                                valor = productorReferencia?.commercial_name ?: "-",
-                                modifier = Modifier.weight(1f)
-                            )
-
-                            DatoUbicacionMini(
-                                titulo = "Rancho",
-                                valor = ranchoReferencia?.name ?: "-",
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        SelectorParcelaMonitoreo(
-                            parcelaSeleccionada = parcelaSeleccionada,
-                            parcelas = parcelasDisponibles,
-                            onParcelaSeleccionada = { parcela ->
-                                idParcelaSeleccionada = parcela.idLocalPlot
-                                cicloFiltro = null
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else {
-                        Text(
-                            text = "Mostrando monitoreos disponibles",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.Black,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
+            EncabezadoListaMonitoreos(
+                titulo = tituloPantalla,
+                subtitulo = subtituloPantalla,
+                rolEtiqueta = when {
+                    esInvitado -> "Rol: Invitado"
+                    esTecnico -> "Rol: Técnico"
+                    esGerente -> "Rol: Gerente"
+                    esSupervisor -> "Rol: Supervisor"
+                    esAdmin -> "Rol: Administrador"
+                    else -> rolUsuario
                 }
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (esInvitado) {
+                CajaAvisoMonitoreos(
+                    icono = "🔒",
+                    textoTitulo = "Usuario invitado",
+                    textoDescripcion = "Solo puedes ver monitoreos asignados o consultables para tu usuario."
+                )
+                Spacer(modifier = Modifier.height(12.dp))
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            if (esTecnico && parcelasDisponibles.isNotEmpty()) {
+                SelectorParcelaOpcionalMonitoreo(
+                    parcelaSeleccionada = parcelaSeleccionada,
+                    parcelas = parcelasDisponibles,
+                    onParcelaSeleccionada = { parcela ->
+                        idParcelaSeleccionada = parcela?.idLocalPlot
+                        cicloFiltro = null
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+            }
 
             FiltrosCompactosBarra(
                 cicloFiltro = cicloFiltro,
@@ -284,168 +250,230 @@ fun MonitoreoListaScreen(
                 }
             )
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "Monitoreos disponibles: ${monitoreosFiltrados.size}",
+                text = if (esInvitado) {
+                    "Monitoreos asignados: ${monitoreosFiltrados.size}"
+                } else {
+                    "Monitoreos disponibles: ${monitoreosFiltrados.size}"
+                },
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.Black
+                color = Color(0xFF173B1A),
+                modifier = Modifier.fillMaxWidth()
             )
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(
-                        width = 1.dp,
-                        color = Color.Black,
-                        shape = RoundedCornerShape(4.dp)
-                    ),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        HeaderTabla("Ciclo", Modifier.weight(1.2f))
-                        HeaderTabla("Estado", Modifier.weight(1f))
-                        HeaderTabla("Inicio", Modifier.weight(1f))
-                        HeaderTabla("Fin", Modifier.weight(1f))
-                        HeaderTabla("Acción", Modifier.weight(0.8f))
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    if (monitoreosFiltrados.isEmpty()) {
-                        Text(
-                            text = "No se encontraron monitoreos con esos filtros.",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            color = Color.Gray,
-                            textAlign = TextAlign.Center
-                        )
+            if (monitoreosFiltrados.isEmpty()) {
+                CajaAvisoMonitoreos(
+                    icono = "ⓘ",
+                    textoTitulo = "Sin monitoreos",
+                    textoDescripcion = if (esInvitado) {
+                        "No tienes monitoreos asignados con los filtros actuales."
                     } else {
-                        monitoreosFiltrados.forEach { header ->
-
-                            val programa = programasMap[header.idProgram]
-                            val nombreMonitoreo = programa?.cycle ?: "M-${header.idHeader}"
-
-                            val esFinalizado = esEstadoFinalizadoLista(header.status)
-                            val esCancelado = esEstadoCanceladoLista(header.status)
-
-                            val accionTexto = when {
-                                esFinalizado -> "Info"
-                                esCancelado -> "Cerrado"
-                                else -> "Monitoreo"
-                            }
-
-                            FilaMonitoreo(
-                                nombreMonitoreo = nombreMonitoreo,
-                                status = header.status,
-                                fechaInicio = header.estStartDate,
-                                fechaFin = header.estFinishDate,
-                                accionTexto = accionTexto,
-                                enabled = !esCancelado,
-                                onAccionClick = {
-                                    when {
-                                        esFinalizado -> onAbrirReporteClick(header)
-                                        esCancelado -> Unit
-                                        else -> onAbrirMapaClick(header)
-                                    }
-                                }
-                            )
-
-                            Spacer(modifier = Modifier.height(10.dp))
-                        }
+                        "No se encontraron monitoreos con la selección actual."
                     }
+                )
+            } else {
+                monitoreosFiltrados.forEach { header ->
+                    val programa = programasMap[header.idProgram]
+                    val parcela = parcelasMap[header.idLocalPlot]
+                    val rancho = parcela?.let { ranchosMap[it.idLocalRanch] }
+                    val productor = programa?.let { productoresMap[it.idLocalAgroUnit] }
+                    val cultivo = cultivosMap[header.idCrop] ?: programa?.let { cultivosMap[it.idCrop] }
+                    val monitoreoCerrado = esEstadoCerradoLista(header.status)
+
+                    TarjetaMonitoreoUsuario(
+                        parcelaNombre = parcela?.let { obtenerNombreParcelaLista(it) } ?: "Parcela ${header.idLocalPlot}",
+                        productorNombre = productor?.commercial_name,
+                        ranchoNombre = rancho?.name,
+                        ciclo = programa?.cycle ?: header.cycle,
+                        codigo = header.extId ?: programa?.extId ?: "MON-${header.idHeader}",
+                        fotoCultivo = cultivo?.photo,
+                        nombreCultivo = cultivo?.name,
+                        status = header.status,
+                        fechaInicio = header.estStartDate,
+                        fechaFin = header.estFinishDate,
+                        puedeAbrir = (esAdmin || esTecnico || esInvitado) && !monitoreoCerrado,
+                        soloConsulta = soloConsulta,
+                        onAbrirClick = {
+                            if (soloConsulta || monitoreoCerrado) {
+                                onAbrirReporteClick(header)
+                            } else {
+                                onAbrirMapaClick(header)
+                            }
+                        },
+                        onReporteClick = { onAbrirReporteClick(header) }
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun EncabezadoListaMonitoreos(
+    titulo: String,
+    subtitulo: String,
+    rolEtiqueta: String
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAF7)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFE8F5E9)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "▣", fontSize = 22.sp, color = Color(0xFF0B6B20))
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = titulo,
+                        fontSize = 23.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color(0xFF173B1A)
+                    )
+
+                    Text(
+                        text = subtitulo,
+                        fontSize = 12.sp,
+                        color = Color(0xFF5E6B5B)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = rolEtiqueta,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF0B6B20),
+                modifier = Modifier
+                    .background(Color(0xFFE8F5E9), RoundedCornerShape(30.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun CajaAvisoMonitoreos(
+    icono: String,
+    textoTitulo: String,
+    textoDescripcion: String
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F8EE)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = icono, fontSize = 22.sp, color = Color(0xFF0B6B20))
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = textoTitulo,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF173B1A)
+                )
+                Text(
+                    text = textoDescripcion,
+                    fontSize = 12.sp,
+                    color = Color(0xFF4E5D45)
+                )
             }
         }
     }
 }
 
 @Composable
-private fun SelectorParcelaMonitoreo(
+private fun SelectorParcelaOpcionalMonitoreo(
     parcelaSeleccionada: LocalPlotEntity?,
     parcelas: List<LocalPlotEntity>,
-    onParcelaSeleccionada: (LocalPlotEntity) -> Unit,
+    onParcelaSeleccionada: (LocalPlotEntity?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val puedeCambiar = parcelas.size > 1
+    val textoParcela = parcelaSeleccionada?.let { obtenerNombreParcelaLista(it) } ?: "Todas las parcelas"
 
     Box(modifier = modifier) {
-        Card(
+        OutlinedButton(
+            onClick = { expanded = true },
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(enabled = puedeCambiar) { expanded = true },
+                .height(56.dp),
             shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            contentPadding = PaddingValues(horizontal = 12.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = if (puedeCambiar) "Parcela  ▼" else "Parcela",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF5F6F5A),
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(5.dp))
-
-                Text(
-                    text = parcelaSeleccionada?.let { obtenerNombreParcelaLista(it) } ?: "-",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.Black,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1
-                )
-
-                if (puedeCambiar) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Toca para cambiar de parcela",
-                        fontSize = 9.sp,
-                        color = Color(0xFF2E7D32),
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
+            Text(text = "▦", fontSize = 16.sp, color = Color(0xFF0B6B20))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Parcela",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF5F6F5A)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = textoParcela,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.Black,
+                maxLines = 1,
+                modifier = Modifier.weight(1f)
+            )
+            Text(text = "⌄", fontSize = 18.sp, color = Color.Black)
         }
 
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.fillMaxWidth(0.90f)
-        ) {
-            if (parcelas.isEmpty()) {
-                DropdownMenuItem(
-                    text = { Text("Sin parcelas disponibles") },
-                    onClick = { expanded = false }
-                )
-            } else {
-                parcelas.forEach { parcela ->
-                    DropdownMenuItem(
-                        text = { Text(obtenerNombreParcelaLista(parcela)) },
-                        onClick = {
-                            onParcelaSeleccionada(parcela)
-                            expanded = false
-                        }
-                    )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Todas las parcelas") },
+                onClick = {
+                    onParcelaSeleccionada(null)
+                    expanded = false
                 }
+            )
+
+            parcelas.forEach { parcela ->
+                DropdownMenuItem(
+                    text = { Text(obtenerNombreParcelaLista(parcela)) },
+                    onClick = {
+                        onParcelaSeleccionada(parcela)
+                        expanded = false
+                    }
+                )
             }
         }
     }
@@ -466,57 +494,57 @@ private fun FiltrosCompactosBarra(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                .padding(10.dp)
         ) {
-            FiltroCompactoCiclo(
-                cicloFiltro = cicloFiltro,
-                programas = programas,
-                onSelected = onCicloChange
-            )
-
-            FiltroCompactoFecha(
-                titulo = "Inicio",
-                value = fechaInicioTexto,
-                onValueChange = onFechaInicioChange
-            )
-
-            FiltroCompactoFecha(
-                titulo = "Fin",
-                value = fechaFinTexto,
-                onValueChange = onFechaFinChange
-            )
-
-            FiltroCompactoEstado(
-                estadoFiltro = estadoFiltro,
-                onSelected = onEstadoChange
-            )
-
-            Button(
-                onClick = onLimpiarClick,
+            Row(
                 modifier = Modifier
-                    .width(92.dp)
-                    .height(56.dp),
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFE9E0FA)
-                ),
-                contentPadding = PaddingValues(horizontal = 6.dp)
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FiltroCompactoCiclo(
+                    cicloFiltro = cicloFiltro,
+                    programas = programas,
+                    onSelected = onCicloChange
+                )
+
+                FiltroCompactoFecha(
+                    titulo = "Inicio",
+                    value = fechaInicioTexto,
+                    onValueChange = onFechaInicioChange
+                )
+
+                FiltroCompactoFecha(
+                    titulo = "Fin",
+                    value = fechaFinTexto,
+                    onValueChange = onFechaFinChange
+                )
+
+                FiltroCompactoEstado(
+                    estadoFiltro = estadoFiltro,
+                    onSelected = onEstadoChange
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            TextButton(
+                onClick = onLimpiarClick,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
             ) {
                 Text(
-                    text = "Limpiar",
-                    fontSize = 11.sp,
+                    text = "↻  Limpiar filtros",
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF5E35B1),
+                    color = Color(0xFF1F6D2A),
                     textAlign = TextAlign.Center
                 )
             }
@@ -536,29 +564,15 @@ private fun FiltroCompactoCiclo(
         OutlinedButton(
             onClick = { expanded = true },
             modifier = Modifier
-                .width(130.dp)
-                .height(56.dp),
-            shape = RoundedCornerShape(10.dp),
-            contentPadding = PaddingValues(horizontal = 8.dp)
+                .width(142.dp)
+                .height(62.dp),
+            shape = RoundedCornerShape(12.dp),
+            contentPadding = PaddingValues(horizontal = 10.dp)
         ) {
-            Text(
-                text = "↻",
-                fontSize = 18.sp,
-                color = Color.Black
-            )
-
-            Spacer(modifier = Modifier.width(6.dp))
-
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = "Ciclo",
-                    fontSize = 10.sp,
-                    color = Color.DarkGray,
-                    maxLines = 1
-                )
-
+            Text(text = "↻", fontSize = 18.sp, color = Color.Black)
+            Spacer(modifier = Modifier.width(7.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = "Ciclo", fontSize = 10.sp, color = Color.DarkGray, maxLines = 1)
                 Text(
                     text = cicloFiltro?.cycle ?: "Todos",
                     fontSize = 12.sp,
@@ -567,18 +581,10 @@ private fun FiltroCompactoCiclo(
                     maxLines = 1
                 )
             }
-
-            Text(
-                text = "⌄",
-                fontSize = 14.sp,
-                color = Color.Black
-            )
+            Text(text = "⌄", fontSize = 14.sp, color = Color.Black)
         }
 
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(
                 text = { Text("Todos") },
                 onClick = {
@@ -586,7 +592,6 @@ private fun FiltroCompactoCiclo(
                     expanded = false
                 }
             )
-
             programas.forEach { programa ->
                 DropdownMenuItem(
                     text = { Text(programa.cycle) },
@@ -607,25 +612,13 @@ private fun FiltroCompactoFecha(
     onValueChange: (String) -> Unit
 ) {
     val context = LocalContext.current
-
     val formatoFecha = remember {
-        SimpleDateFormat("dd-MM-yyyy", Locale.getDefault()).apply {
-            isLenient = false
-        }
+        SimpleDateFormat("dd-MM-yyyy", Locale.getDefault()).apply { isLenient = false }
     }
 
     fun abrirCalendario() {
         val calendario = Calendar.getInstance()
-
-        if (value.isNotBlank()) {
-            try {
-                val fechaGuardada = formatoFecha.parse(value)
-                if (fechaGuardada != null) {
-                    calendario.time = fechaGuardada
-                }
-            } catch (_: Exception) {
-            }
-        }
+        parseFechaInicioLista(value)?.let { calendario.timeInMillis = it }
 
         DatePickerDialog(
             context,
@@ -639,7 +632,6 @@ private fun FiltroCompactoFecha(
                     set(Calendar.SECOND, 0)
                     set(Calendar.MILLISECOND, 0)
                 }
-
                 onValueChange(formatoFecha.format(fechaSeleccionada.time))
             },
             calendario.get(Calendar.YEAR),
@@ -651,28 +643,15 @@ private fun FiltroCompactoFecha(
     OutlinedButton(
         onClick = { abrirCalendario() },
         modifier = Modifier
-            .width(128.dp)
-            .height(56.dp),
-        shape = RoundedCornerShape(10.dp),
-        contentPadding = PaddingValues(horizontal = 8.dp)
+            .width(142.dp)
+            .height(62.dp),
+        shape = RoundedCornerShape(12.dp),
+        contentPadding = PaddingValues(horizontal = 10.dp)
     ) {
-        Text(
-            text = "📅",
-            fontSize = 16.sp
-        )
-
-        Spacer(modifier = Modifier.width(6.dp))
-
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
-            Text(
-                text = titulo,
-                fontSize = 10.sp,
-                color = Color.DarkGray,
-                maxLines = 1
-            )
-
+        Text(text = "📅", fontSize = 16.sp)
+        Spacer(modifier = Modifier.width(7.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = titulo, fontSize = 10.sp, color = Color.DarkGray, maxLines = 1)
             Text(
                 text = value.ifBlank { "Fecha" },
                 fontSize = 12.sp,
@@ -681,12 +660,7 @@ private fun FiltroCompactoFecha(
                 maxLines = 1
             )
         }
-
-        Text(
-            text = "⌄",
-            fontSize = 14.sp,
-            color = Color.Black
-        )
+        Text(text = "⌄", fontSize = 14.sp, color = Color.Black)
     }
 }
 
@@ -696,42 +670,21 @@ private fun FiltroCompactoEstado(
     onSelected: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-
-    val estados = listOf(
-        "Todos",
-        "Pendiente",
-        "En proceso",
-        "Completado",
-        "Cancelado"
-    )
+    val estados = listOf("Todos", "Pendiente", "En proceso", "Completado", "Cancelado")
 
     Box {
         OutlinedButton(
             onClick = { expanded = true },
             modifier = Modifier
-                .width(130.dp)
-                .height(56.dp),
-            shape = RoundedCornerShape(10.dp),
-            contentPadding = PaddingValues(horizontal = 8.dp)
+                .width(142.dp)
+                .height(62.dp),
+            shape = RoundedCornerShape(12.dp),
+            contentPadding = PaddingValues(horizontal = 10.dp)
         ) {
-            Text(
-                text = "⚑",
-                fontSize = 17.sp,
-                color = Color.Black
-            )
-
-            Spacer(modifier = Modifier.width(6.dp))
-
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = "Estado",
-                    fontSize = 10.sp,
-                    color = Color.DarkGray,
-                    maxLines = 1
-                )
-
+            Text(text = "⚑", fontSize = 17.sp, color = Color.Black)
+            Spacer(modifier = Modifier.width(7.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = "Estado", fontSize = 10.sp, color = Color.DarkGray, maxLines = 1)
                 Text(
                     text = estadoFiltro,
                     fontSize = 12.sp,
@@ -740,18 +693,10 @@ private fun FiltroCompactoEstado(
                     maxLines = 1
                 )
             }
-
-            Text(
-                text = "⌄",
-                fontSize = 14.sp,
-                color = Color.Black
-            )
+            Text(text = "⌄", fontSize = 14.sp, color = Color.Black)
         }
 
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             estados.forEach { estado ->
                 DropdownMenuItem(
                     text = { Text(estado) },
@@ -766,167 +711,256 @@ private fun FiltroCompactoEstado(
 }
 
 @Composable
-private fun DatoUbicacionMini(
-    titulo: String,
-    valor: String,
-    modifier: Modifier = Modifier
+private fun TarjetaMonitoreoUsuario(
+    parcelaNombre: String,
+    productorNombre: String?,
+    ranchoNombre: String?,
+    ciclo: String,
+    codigo: String,
+    fotoCultivo: String?,
+    nombreCultivo: String?,
+    status: String,
+    fechaInicio: Long?,
+    fechaFin: Long?,
+    puedeAbrir: Boolean,
+    soloConsulta: Boolean,
+    onAbrirClick: () -> Unit,
+    onReporteClick: () -> Unit
 ) {
+    val monitoreoCerrado = esEstadoCerradoLista(status)
+
     Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, Color(0xFFDCE8D8), RoundedCornerShape(18.dp)),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 9.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(10.dp)
         ) {
-            Text(
-                text = titulo,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF5F6F5A),
-                textAlign = TextAlign.Center
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        if (puedeAbrir) onAbrirClick() else onReporteClick()
+                    },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ImageUriBox(
+                    photo = fotoCultivo,
+                    fallbackIcon = iconoCultivoFallbackLista(nombreCultivo),
+                    sizeDp = 82,
+                    modifier = Modifier
+                        .size(width = 92.dp, height = 82.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(colorFondoImagenLista(status))
+                )
 
-            Spacer(modifier = Modifier.height(3.dp))
+                Spacer(modifier = Modifier.width(10.dp))
 
-            Text(
-                text = valor,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.Black,
-                textAlign = TextAlign.Center,
-                maxLines = 1
-            )
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        EstadoChip(status = status)
+                        Spacer(modifier = Modifier.weight(1f))
+                        Text(
+                            text = formatearFechaResumen(fechaInicio),
+                            fontSize = 10.sp,
+                            color = Color.DarkGray
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = parcelaNombre,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color(0xFF173B1A),
+                        maxLines = 1
+                    )
+
+                    Spacer(modifier = Modifier.height(7.dp))
+
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        DatoTarjetaUsuario(label = "Ciclo", value = ciclo, modifier = Modifier.weight(1f))
+                        DatoTarjetaUsuario(label = "Código", value = codigo, modifier = Modifier.weight(1f))
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = "⌂ ${ranchoNombre ?: "Sin rancho"}  ·  ${productorNombre ?: "Sin productor"}",
+                        fontSize = 10.sp,
+                        color = Color.DarkGray,
+                        maxLines = 1
+                    )
+
+                    Text(
+                        text = "📅 ${formatearFechaCorta(fechaInicio)}  al  ${formatearFechaCorta(fechaFin)}",
+                        fontSize = 10.sp,
+                        color = Color.DarkGray,
+                        maxLines = 1
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (puedeAbrir && !soloConsulta && !monitoreoCerrado) {
+                Button(
+                    onClick = onAbrirClick,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(42.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0B6B20))
+                ) {
+                    Text(
+                        text = "Abrir monitoreo",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                }
+            } else {
+                OutlinedButton(
+                    onClick = onReporteClick,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(42.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = if (monitoreoCerrado) "Ver reporte" else "Ver información",
+                        color = Color(0xFF0B6B20),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun HeaderTabla(
-    texto: String,
-    modifier: Modifier = Modifier
-) {
+private fun DatoTarjetaUsuario(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.padding(end = 4.dp)) {
+        Text(text = label, fontSize = 9.sp, color = Color.Gray)
+        Text(
+            text = value,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.Black,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
+private fun EstadoChip(status: String) {
     Text(
-        text = texto,
-        modifier = modifier,
-        fontSize = 11.sp,
+        text = textoEstado(status),
+        fontSize = 10.sp,
         fontWeight = FontWeight.Bold,
-        color = Color.Black,
+        color = colorEstado(status),
+        modifier = Modifier
+            .background(colorFondoEstado(status), RoundedCornerShape(30.dp))
+            .padding(horizontal = 10.dp, vertical = 5.dp),
         textAlign = TextAlign.Center
     )
 }
 
-@Composable
-private fun FilaMonitoreo(
-    nombreMonitoreo: String,
-    status: String,
-    fechaInicio: Long?,
-    fechaFin: Long?,
-    accionTexto: String,
-    enabled: Boolean,
-    onAccionClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = enabled) {
-                onAccionClick()
-            },
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = nombreMonitoreo,
-            modifier = Modifier.weight(1.2f),
-            fontSize = 10.sp,
-            textAlign = TextAlign.Center,
-            maxLines = 2
-        )
-
-        Text(
-            text = textoEstado(status),
-            modifier = Modifier.weight(1f),
-            fontSize = 10.sp,
-            color = colorEstado(status),
-            textAlign = TextAlign.Center,
-            maxLines = 2
-        )
-
-        Text(
-            text = formatearFechaCorta(fechaInicio),
-            modifier = Modifier.weight(1f),
-            fontSize = 9.sp,
-            textAlign = TextAlign.Center
-        )
-
-        Text(
-            text = formatearFechaCorta(fechaFin),
-            modifier = Modifier.weight(1f),
-            fontSize = 9.sp,
-            textAlign = TextAlign.Center
-        )
-
-        Button(
-            onClick = onAccionClick,
-            enabled = enabled,
-            modifier = Modifier
-                .weight(0.8f)
-                .height(32.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = when (accionTexto) {
-                    "Info" -> Color(0xFF1976D2)
-                    "Cerrado" -> Color(0xFFBDBDBD)
-                    else -> Color(0xFF7ED957)
-                },
-                disabledContainerColor = Color(0xFFBDBDBD)
-            ),
-            shape = RoundedCornerShape(20.dp),
-            contentPadding = PaddingValues(0.dp)
-        ) {
-            Text(
-                text = accionTexto,
-                color = if (accionTexto == "Info") Color.White else Color.Black,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
-
 private fun obtenerNombreParcelaLista(parcela: LocalPlotEntity): String {
-    return parcela.code
-        ?.takeIf { it.isNotBlank() }
-        ?: parcela.name
+    return parcela.code?.takeIf { it.isNotBlank() } ?: parcela.name
 }
 
 private fun textoEstado(status: String): String {
-    return when (status.lowercase().trim()) {
+    return when (status.lowercase(Locale.getDefault()).trim()) {
         "pending", "pendiente" -> "Pendiente"
         "in_progress", "en proceso", "vigente" -> "En proceso"
         "completed", "completado", "finalizado" -> "Completado"
-        "cancelled", "cancelado" -> "Cancelado"
-        else -> status
+        "cancelled", "cancelado", "canceled" -> "Cancelado"
+        else -> status.ifBlank { "Pendiente" }
     }
 }
 
 private fun colorEstado(status: String): Color {
-    return when (status.lowercase().trim()) {
-        "pending", "pendiente" -> Color(0xFFC9B800)
-        "in_progress", "en proceso", "vigente" -> Color(0xFF4CAF50)
-        "completed", "completado", "finalizado" -> Color(0xFF1976D2)
-        "cancelled", "cancelado" -> Color(0xFFE53935)
+    return when (status.lowercase(Locale.getDefault()).trim()) {
+        "pending", "pendiente" -> Color(0xFF9A6A00)
+        "in_progress", "en proceso", "vigente" -> Color(0xFF255EA8)
+        "completed", "completado", "finalizado" -> Color(0xFF1F6D2A)
+        "cancelled", "cancelado", "canceled" -> Color(0xFFB3261E)
         else -> Color.Black
+    }
+}
+
+private fun colorFondoEstado(status: String): Color {
+    return when (status.lowercase(Locale.getDefault()).trim()) {
+        "pending", "pendiente" -> Color(0xFFFFF4CC)
+        "in_progress", "en proceso", "vigente" -> Color(0xFFE2F0FF)
+        "completed", "completado", "finalizado" -> Color(0xFFE4F4DF)
+        "cancelled", "cancelado", "canceled" -> Color(0xFFFFE1E1)
+        else -> Color(0xFFEDEDED)
+    }
+}
+
+private fun colorFondoImagenLista(status: String): Color {
+    return when (status.lowercase(Locale.getDefault()).trim()) {
+        "completed", "completado", "finalizado" -> Color(0xFFE5F4DF)
+        "cancelled", "cancelado", "canceled" -> Color(0xFFFFE1E1)
+        "in_progress", "en proceso", "vigente" -> Color(0xFFE7F0FF)
+        else -> Color(0xFFFFF4CC)
+    }
+}
+
+private fun iconoCultivoFallbackLista(nombreCultivo: String?): String {
+    val cultivo = nombreCultivo
+        ?.trim()
+        ?.lowercase(Locale.getDefault())
+        ?: return "🌱"
+
+    return when {
+        cultivo.contains("maiz") || cultivo.contains("maíz") -> "🌽"
+        cultivo.contains("papa") -> "🥔"
+        cultivo.contains("trigo") -> "🌾"
+        cultivo.contains("cebolla") -> "🧅"
+        cultivo.contains("chile") -> "🌶️"
+        cultivo.contains("tomate") || cultivo.contains("jitomate") -> "🍅"
+        cultivo.contains("lechuga") -> "🥬"
+        cultivo.contains("zanahoria") -> "🥕"
+        else -> "🌱"
+    }
+}
+
+private fun normalizarRolLista(rol: String): String {
+    val limpio = rol
+        .trim()
+        .lowercase(Locale.getDefault())
+        .replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
+        .replace(".", "")
+        .replace("_", " ")
+        .replace(Regex("\\s+"), " ")
+
+    return when (limpio) {
+        "super admin", "admin", "administrador" -> "admin"
+        "gerente" -> "gerente"
+        "ingy supervision", "ing y supervision", "supervisor" -> "supervisor"
+        "tecnico", "tecnicos", "técnico", "técnicos" -> "tecnico"
+        "invitado" -> "invitado"
+        else -> limpio
     }
 }
 
 private fun formatearFechaCorta(fecha: Long?): String {
     if (fecha == null) return "-"
-
     return try {
         val sdf = SimpleDateFormat("dd-MM-yyyy", Locale.getDefault())
         sdf.format(Date(fecha))
@@ -935,54 +969,55 @@ private fun formatearFechaCorta(fecha: Long?): String {
     }
 }
 
+private fun formatearFechaResumen(fecha: Long?): String {
+    if (fecha == null) return "-"
+    return try {
+        val sdf = SimpleDateFormat("dd MMM yyyy", Locale("es", "MX"))
+        sdf.format(Date(fecha)).replace(".", "")
+    } catch (e: Exception) {
+        "-"
+    }
+}
+
 private fun parseFechaInicioLista(fechaTexto: String): Long? {
     if (fechaTexto.isBlank()) return null
-
-    return try {
-        val sdf = SimpleDateFormat("dd-MM-yyyy", Locale.getDefault())
-        sdf.isLenient = false
-        sdf.parse(fechaTexto)?.time
-    } catch (e: Exception) {
-        null
-    }
+    return parseFechaListaFlexible(fechaTexto)
 }
 
 private fun parseFechaFinLista(fechaTexto: String): Long? {
     if (fechaTexto.isBlank()) return null
-
-    return try {
-        val sdf = SimpleDateFormat("dd-MM-yyyy", Locale.getDefault())
-        sdf.isLenient = false
-
-        val fecha = sdf.parse(fechaTexto) ?: return null
-
-        val calendar = Calendar.getInstance()
-        calendar.time = fecha
-        calendar.set(Calendar.HOUR_OF_DAY, 23)
-        calendar.set(Calendar.MINUTE, 59)
-        calendar.set(Calendar.SECOND, 59)
-        calendar.set(Calendar.MILLISECOND, 999)
-
-        calendar.timeInMillis
-
-    } catch (e: Exception) {
-        null
-    }
+    val time = parseFechaListaFlexible(fechaTexto) ?: return null
+    return Calendar.getInstance().apply {
+        timeInMillis = time
+        set(Calendar.HOUR_OF_DAY, 23)
+        set(Calendar.MINUTE, 59)
+        set(Calendar.SECOND, 59)
+        set(Calendar.MILLISECOND, 999)
+    }.timeInMillis
 }
 
-private fun esEstadoFinalizadoLista(status: String): Boolean {
-    return when (status.lowercase().trim()) {
+private fun parseFechaListaFlexible(texto: String): Long? {
+    val formatos = listOf("dd-MM-yyyy", "dd/MM/yyyy")
+    formatos.forEach { patron ->
+        try {
+            val sdf = SimpleDateFormat(patron, Locale.getDefault()).apply { isLenient = false }
+            return sdf.parse(texto)?.time
+        } catch (_: Exception) {
+        }
+    }
+    return null
+}
+
+private fun esEstadoCerradoLista(status: String): Boolean {
+    return when (status.trim().lowercase(Locale.getDefault())) {
         "completed",
         "completado",
-        "finalizado" -> true
-        else -> false
-    }
-}
-
-private fun esEstadoCanceladoLista(status: String): Boolean {
-    return when (status.lowercase().trim()) {
+        "finalizado",
+        "terminado",
+        "cerrado",
+        "cancelado",
         "cancelled",
-        "cancelado" -> true
+        "canceled" -> true
         else -> false
     }
 }

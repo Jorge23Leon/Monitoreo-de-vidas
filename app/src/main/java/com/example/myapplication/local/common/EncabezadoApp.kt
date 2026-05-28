@@ -52,12 +52,7 @@ fun EncabezadoApp(
     }
 
     val puedeVerPanelTrabajo = remember(rolUsuario) {
-        rolNormalizado in listOf(
-            "admin",
-            "gerente",
-            "supervisor",
-            "tecnico"
-        )
+        rolNormalizado == "admin"
     }
 
     val puedeVerMonitoreos = remember(rolUsuario) {

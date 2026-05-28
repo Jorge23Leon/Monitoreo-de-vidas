@@ -203,6 +203,13 @@ class MainActivity : ComponentActivity() {
                             ranchoSeleccionado = uiState.ranchoSeleccionado,
                             parcelaSeleccionada = uiState.parcelaSeleccionada,
 
+                            monitoreos = uiState.monitoreosEncontrados,
+                            productoresResultado = uiState.productoresResultado,
+                            ranchosResultado = uiState.ranchosResultado,
+                            parcelasResultado = uiState.parcelasResultado,
+                            programasResultado = uiState.programasResultado,
+                            cultivosResultado = uiState.cultivosResultado,
+
                             onProductorChange = { productor ->
                                 mainViewModel.onProductorChange(productor)
                             },
@@ -215,8 +222,12 @@ class MainActivity : ComponentActivity() {
                                 mainViewModel.onParcelaChange(parcela)
                             },
 
-                            onBuscarClick = {
-                                mainViewModel.buscarMonitoreos(saltarFiltros = false)
+                            onAbrirMapaClick = { header ->
+                                mainViewModel.abrirMapa(header)
+                            },
+
+                            onAbrirReporteClick = { header ->
+                                mainViewModel.abrirReporte(header)
                             },
 
                             onPerfilClick = {
@@ -244,9 +255,12 @@ class MainActivity : ComponentActivity() {
                             ranchos = uiState.ranchosResultado,
                             parcelas = uiState.parcelasResultado,
                             programas = uiState.programasResultado,
+                            cultivos = uiState.cultivosResultado,
 
                             onAbrirMapaClick = { header ->
-                                if (esEstadoFinalizadoVm(header.status)) {
+                                val rolNormalizado = normalizarRolVm(uiState.rolUsuarioActual)
+
+                                if (rolNormalizado == "gerente" || rolNormalizado == "supervisor") {
                                     mainViewModel.abrirReporte(header)
                                 } else {
                                     mainViewModel.abrirMapa(header)

@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.LocalAgroUnitEntity
 import com.example.myapplication.local.entities.LocalCiaEntity
+import com.example.myapplication.local.entities.LocalCropCatalogEntity
 import com.example.myapplication.local.entities.LocalParentCiaEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringTargetPointEntity
@@ -57,7 +58,7 @@ data class MainUiState(
 
     val fechaInicioTexto: String = "",
     val fechaFinTexto: String = "",
-    val finalizadosChecked: Boolean = false,
+    val finalizadosChecked: Boolean = true,
     val vigentesChecked: Boolean = true,
     val canceladosChecked: Boolean = false,
 
@@ -66,6 +67,7 @@ data class MainUiState(
     val ranchosResultado: List<LocalRanchEntity> = emptyList(),
     val parcelasResultado: List<LocalPlotEntity> = emptyList(),
     val programasResultado: List<LocalProgramEntity> = emptyList(),
+    val cultivosResultado: List<LocalCropCatalogEntity> = emptyList(),
 
     val monitoreoSeleccionadoParaMapa: LocalPhytomonitoringHeaderEntity? = null,
     val monitoreoSeleccionadoParaReporte: LocalPhytomonitoringHeaderEntity? = null,
@@ -79,7 +81,8 @@ private data class MainResultadoMonitoreoTemp(
     val productores: List<LocalAgroUnitEntity>,
     val ranchos: List<LocalRanchEntity>,
     val parcelas: List<LocalPlotEntity>,
-    val programas: List<LocalProgramEntity>
+    val programas: List<LocalProgramEntity>,
+    val cultivos: List<LocalCropCatalogEntity>
 )
 
 class MainViewModel(
@@ -101,6 +104,24 @@ class MainViewModel(
 
     private fun mostrarMensaje(mensaje: String) {
         actualizarEstado { it.copy(mensaje = mensaje) }
+    }
+
+
+
+    private suspend fun cargarCultivosRelacionados(
+        headers: List<LocalPhytomonitoringHeaderEntity>,
+        programas: List<LocalProgramEntity>
+    ): List<LocalCropCatalogEntity> {
+        val idsCultivos = (headers.map { it.idCrop } + programas.map { it.idCrop })
+            .distinct()
+            .toSet()
+
+        if (idsCultivos.isEmpty()) return emptyList()
+
+        return database.localCropCatalogDao()
+            .getAllCrops()
+            .filter { cultivo -> cultivo.idCrop in idsCultivos }
+            .sortedBy { cultivo -> cultivo.name }
     }
 
     fun limpiarMensaje() {
@@ -127,7 +148,7 @@ class MainViewModel(
                 fechaInicioTexto = "",
                 fechaFinTexto = "",
 
-                finalizadosChecked = false,
+                finalizadosChecked = true,
                 vigentesChecked = true,
                 canceladosChecked = false,
 
@@ -141,7 +162,8 @@ class MainViewModel(
                 productoresResultado = emptyList(),
                 ranchosResultado = emptyList(),
                 parcelasResultado = emptyList(),
-                programasResultado = emptyList()
+                programasResultado = emptyList(),
+                cultivosResultado = emptyList()
             )
         }
     }
@@ -228,7 +250,13 @@ class MainViewModel(
                             database.userLocalParentCiaDao().getParentCiasByUser(sesion.idUser)
                         }
 
-                        Pair(sesion, parentCias)
+                        val ciasHijasUsuario = if (sesion.esSupervisor || sesion.esTecnico) {
+                            database.userLocalParentCiaDao().getCiasHijasByUser(sesion.idUser)
+                        } else {
+                            emptyList()
+                        }
+
+                        Triple(sesion, parentCias, ciasHijasUsuario)
                     }
                 }
 
@@ -237,6 +265,7 @@ class MainViewModel(
                 } else {
                     val sesion = resultado.first
                     val parentCias = resultado.second
+                    val ciasHijasUsuario = resultado.third
 
                     actualizarEstado {
                         it.copy(
@@ -248,7 +277,7 @@ class MainViewModel(
 
                             parentCiasUsuario = parentCias,
                             parentCiaSeleccionada = null,
-                            ciasUsuario = emptyList(),
+                            ciasUsuario = if (sesion.esSupervisor || sesion.esTecnico) ciasHijasUsuario else emptyList(),
                             ciaSeleccionada = null,
                             productores = emptyList(),
                             ranchos = emptyList(),
@@ -265,6 +294,7 @@ class MainViewModel(
                             ranchosResultado = emptyList(),
                             parcelasResultado = emptyList(),
                             programasResultado = emptyList(),
+                            cultivosResultado = emptyList(),
 
                             pantallaActual = obtenerPantallaInicialPorRol(sesion)
                         )
@@ -275,6 +305,14 @@ class MainViewModel(
                         cargarMonitoreosDirectoPorUsuario(sesion)
                     } else {
                         when {
+                            sesion.esSupervisor && ciasHijasUsuario.isEmpty() -> {
+                                mostrarMensaje("Bienvenido ${sesion.firstName}. No tienes CIAS hijas asignadas")
+                            }
+
+                            sesion.esSupervisor -> {
+                                mostrarMensaje("Bienvenido ${sesion.firstName}. Selecciona una CIA hija")
+                            }
+
                             parentCias.isEmpty() -> {
                                 mostrarMensaje("Bienvenido ${sesion.firstName}. No tienes CIAS padre asignadas")
                             }
@@ -388,7 +426,8 @@ class MainViewModel(
                 productoresResultado = emptyList(),
                 ranchosResultado = emptyList(),
                 parcelasResultado = emptyList(),
-                programasResultado = emptyList()
+                programasResultado = emptyList(),
+                cultivosResultado = emptyList()
             )
         }
 
@@ -436,7 +475,8 @@ class MainViewModel(
                             productoresResultado = emptyList(),
                             ranchosResultado = emptyList(),
                             parcelasResultado = emptyList(),
-                            programasResultado = emptyList()
+                            programasResultado = emptyList(),
+                            cultivosResultado = emptyList()
                         )
                     }
                 }
@@ -549,6 +589,7 @@ class MainViewModel(
         }
 
         cargarRanchos(productor.idLocalAgroUnit)
+        cargarMonitoreosPorFiltrosProgresivos()
     }
 
     fun cargarRanchos(idProductor: Long) {
@@ -580,7 +621,21 @@ class MainViewModel(
         }
     }
 
-    fun onRanchoChange(rancho: LocalRanchEntity) {
+    fun onRanchoChange(rancho: LocalRanchEntity?) {
+        if (rancho == null) {
+            actualizarEstado {
+                it.copy(
+                    ranchoSeleccionado = null,
+                    parcelaSeleccionada = null,
+                    cicloSeleccionado = null,
+                    parcelas = emptyList(),
+                    ciclos = emptyList()
+                )
+            }
+            cargarMonitoreosPorFiltrosProgresivos()
+            return
+        }
+
         actualizarEstado {
             it.copy(
                 ranchoSeleccionado = rancho,
@@ -592,6 +647,7 @@ class MainViewModel(
         }
 
         cargarParcelas(rancho.idLocalRanch)
+        cargarMonitoreosPorFiltrosProgresivos()
     }
 
     fun cargarParcelas(idRanch: Long) {
@@ -636,8 +692,20 @@ class MainViewModel(
         }
     }
 
-    fun onParcelaChange(parcela: LocalPlotEntity) {
+    fun onParcelaChange(parcela: LocalPlotEntity?) {
         val productor = uiState.productorSeleccionado
+
+        if (parcela == null) {
+            actualizarEstado {
+                it.copy(
+                    parcelaSeleccionada = null,
+                    cicloSeleccionado = null,
+                    ciclos = emptyList()
+                )
+            }
+            cargarMonitoreosPorFiltrosProgresivos()
+            return
+        }
 
         actualizarEstado {
             it.copy(
@@ -653,6 +721,8 @@ class MainViewModel(
                 idPlot = parcela.idLocalPlot
             )
         }
+
+        cargarMonitoreosPorFiltrosProgresivos()
     }
 
     fun cargarCiclos(idProductor: Long, idPlot: Long) {
@@ -871,12 +941,18 @@ class MainViewModel(
                             .getProductoresByIds(idsProductoresResultado)
                     }
 
+                    val cultivosRel = cargarCultivosRelacionados(
+                        headers = headersFiltradosPorRol,
+                        programas = programasRel
+                    )
+
                     MainResultadoMonitoreoTemp(
                         headers = headersFiltradosPorRol,
                         productores = productoresRel,
                         ranchos = ranchosRel,
                         parcelas = parcelasRel,
-                        programas = programasRel
+                        programas = programasRel,
+                        cultivos = cultivosRel
                     )
                 }
 
@@ -887,12 +963,198 @@ class MainViewModel(
                         ranchosResultado = resultado.ranchos,
                         parcelasResultado = resultado.parcelas,
                         programasResultado = resultado.programas,
+                        cultivosResultado = resultado.cultivos,
                         pantallaActual = PantallaActual.LISTA_MONITOREOS
                     )
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 mostrarMensaje("Error al buscar monitoreos: ${e.message}")
+            }
+        }
+    }
+
+
+    fun cargarMonitoreosPorFiltrosProgresivos() {
+        val estado = uiState
+        val sesion = estado.usuarioSesion
+        val cia = estado.ciaSeleccionada
+
+        if (sesion == null || cia == null) {
+            actualizarEstado {
+                it.copy(
+                    monitoreosEncontrados = emptyList(),
+                    productoresResultado = emptyList(),
+                    ranchosResultado = emptyList(),
+                    parcelasResultado = emptyList(),
+                    programasResultado = emptyList(),
+                    cultivosResultado = emptyList()
+                )
+            }
+            return
+        }
+
+        // Este flujo progresivo aplica solo para administrador, gerente y supervisor.
+        // Técnico e invitado conservan su flujo limitado/asignado.
+        if (!(sesion.esAdmin || sesion.esGerente || sesion.esSupervisor)) {
+            return
+        }
+
+        val productor = estado.productorSeleccionado
+        if (productor == null) {
+            actualizarEstado {
+                it.copy(
+                    monitoreosEncontrados = emptyList(),
+                    productoresResultado = emptyList(),
+                    ranchosResultado = emptyList(),
+                    parcelasResultado = emptyList(),
+                    programasResultado = emptyList(),
+                    cultivosResultado = emptyList()
+                )
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                val resultado = withContext(Dispatchers.IO) {
+                    val estadoActual = uiState
+                    val productorActual = estadoActual.productorSeleccionado
+                    val ranchoActual = estadoActual.ranchoSeleccionado
+                    val parcelaActual = estadoActual.parcelaSeleccionada
+
+                    if (productorActual == null) {
+                        MainResultadoMonitoreoTemp(
+                            headers = emptyList(),
+                            productores = emptyList(),
+                            ranchos = emptyList(),
+                            parcelas = emptyList(),
+                            programas = emptyList(),
+                            cultivos = emptyList()
+                        )
+                    } else {
+                        val programasCia = database.localprogramDao()
+                            .getProgramasByCia(cia.idLocalCia)
+
+                        var programasFiltrados = programasCia.filter { programa ->
+                            programa.idLocalAgroUnit == productorActual.idLocalAgroUnit
+                        }
+
+                        ranchoActual?.let { rancho ->
+                            programasFiltrados = programasFiltrados.filter { programa ->
+                                programa.idLocalRanch == rancho.idLocalRanch
+                            }
+                        }
+
+                        parcelaActual?.let { parcela ->
+                            programasFiltrados = programasFiltrados.filter { programa ->
+                                programa.idLocalPlot == parcela.idLocalPlot
+                            }
+                        }
+
+                        val idsProgramas = programasFiltrados
+                            .map { programa -> programa.idProgram }
+                            .distinct()
+
+                        val headers = if (idsProgramas.isEmpty()) {
+                            emptyList()
+                        } else {
+                            database.localphytomonitoringheaderDao()
+                                .filtrarHeadersMonitoreo(
+                                    programIds = idsProgramas,
+                                    idProgram = null,
+                                    idPlot = parcelaActual?.idLocalPlot,
+                                    startDate = null,
+                                    endDate = null,
+                                    statuses = listOf(
+                                        "Pendiente",
+                                        "pending",
+                                        "En proceso",
+                                        "in_progress",
+                                        "vigente",
+                                        "Completado",
+                                        "completed",
+                                        "finalizado",
+                                        "Cancelado",
+                                        "cancelled"
+                                    )
+                                )
+                        }
+
+                        val idsProgramasResultado = headers
+                            .map { header -> header.idProgram }
+                            .distinct()
+
+                        val idsParcelasResultado = headers
+                            .map { header -> header.idLocalPlot }
+                            .distinct()
+
+                        val programasRel = if (idsProgramasResultado.isEmpty()) {
+                            emptyList()
+                        } else {
+                            database.localprogramDao()
+                                .getProgramasByIds(idsProgramasResultado)
+                        }
+
+                        val parcelasRel = if (idsParcelasResultado.isEmpty()) {
+                            emptyList()
+                        } else {
+                            database.localPlotDao()
+                                .getParcelasByIds(idsParcelasResultado)
+                        }
+
+                        val idsRanchosResultado = parcelasRel
+                            .map { parcela -> parcela.idLocalRanch }
+                            .distinct()
+
+                        val ranchosRel = if (idsRanchosResultado.isEmpty()) {
+                            emptyList()
+                        } else {
+                            database.localRanchDao()
+                                .getRanchosByIds(idsRanchosResultado)
+                        }
+
+                        val idsProductoresResultado = programasRel
+                            .map { programa -> programa.idLocalAgroUnit }
+                            .distinct()
+
+                        val productoresRel = if (idsProductoresResultado.isEmpty()) {
+                            emptyList()
+                        } else {
+                            database.localAgroUnitDao()
+                                .getProductoresByIds(idsProductoresResultado)
+                        }
+
+                        val cultivosRel = cargarCultivosRelacionados(
+                            headers = headers,
+                            programas = programasRel
+                        )
+
+                        MainResultadoMonitoreoTemp(
+                            headers = headers,
+                            productores = productoresRel,
+                            ranchos = ranchosRel,
+                            parcelas = parcelasRel,
+                            programas = programasRel,
+                            cultivos = cultivosRel
+                        )
+                    }
+                }
+
+                actualizarEstado {
+                    it.copy(
+                        busquedaFueConSaltoFiltros = false,
+                        monitoreosEncontrados = resultado.headers,
+                        productoresResultado = resultado.productores,
+                        ranchosResultado = resultado.ranchos,
+                        parcelasResultado = resultado.parcelas,
+                        programasResultado = resultado.programas,
+                        cultivosResultado = resultado.cultivos
+                    )
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                mostrarMensaje("Error al cargar monitoreos: ${e.message}")
             }
         }
     }
@@ -920,6 +1182,25 @@ class MainViewModel(
                 }
 
                 val resultado = withContext(Dispatchers.IO) {
+                    val ciasPermitidasTecnico = if (sesion.esTecnico) {
+                        database.userLocalParentCiaDao().getCiasHijasByUser(sesion.idUser)
+                    } else {
+                        emptyList()
+                    }
+
+                    val idsProgramasPermitidosTecnico = if (sesion.esTecnico) {
+                        ciasPermitidasTecnico
+                            .flatMap { cia ->
+                                database.localprogramDao()
+                                    .getProgramasByCia(cia.idLocalCia)
+                            }
+                            .map { programa -> programa.idProgram }
+                            .distinct()
+                            .toSet()
+                    } else {
+                        emptySet()
+                    }
+
                     val headersTodos = database.localphytomonitoringheaderDao()
                         .getAllHeaders()
 
@@ -942,26 +1223,46 @@ class MainViewModel(
                         .filter { header ->
                             val parcelaHeader = parcelasTodosMap[header.idLocalPlot]
 
+                            /*
+                             * Para técnico:
+                             * - Si tiene CIAS hijas cargadas, se limita a esas CIAS.
+                             * - Si NO tiene CIAS hijas cargadas, no se bloquean sus monitoreos
+                             *   asignados directamente, sus parcelas asignadas o sus capturas.
+                             *
+                             * Esto corrige el caso donde la consulta SQL sí muestra monitoreos
+                             * del técnico, pero la app quedaba en cero porque no encontraba
+                             * registros en user_local_parent_cias.
+                             */
+                            val headerPerteneceACiaPermitida = !sesion.esTecnico ||
+                                    idsProgramasPermitidosTecnico.isEmpty() ||
+                                    header.idProgram in idsProgramasPermitidosTecnico
+
                             val capturasUsuario = database.localphytomonitoringcheckpointDao()
                                 .countCheckpointsByHeaderAndUser(
                                     idHeader = header.idHeader,
                                     idUser = sesion.idUser
                                 )
 
+                            val monitoreoAsignadoAlUsuario = header.assignedUserId == sesion.idUser
+                            val parcelaAsignadaAlUsuario = parcelaHeader?.assignedUserId == sesion.idUser
+                            val usuarioTieneCapturas = capturasUsuario > 0
+
                             when {
-                                // Técnico: ve monitoreos de sus parcelas asignadas,
-                                // monitoreos asignados directo a él o los que ya capturó.
+                                // Técnico: ve solo lo relacionado con su usuario.
+                                // Además, si tiene CIAS cargadas, se respeta ese límite.
                                 sesion.esTecnico -> {
-                                    header.assignedUserId == sesion.idUser ||
-                                            parcelaHeader?.assignedUserId == sesion.idUser ||
-                                            capturasUsuario > 0
+                                    headerPerteneceACiaPermitida &&
+                                            (
+                                                    monitoreoAsignadoAlUsuario ||
+                                                            parcelaAsignadaAlUsuario ||
+                                                            usuarioTieneCapturas
+                                                    )
                                 }
 
-                                // Invitado: ve solo monitoreos asignados/capturados por él.
+                                // Invitado: solo consulta monitoreos asignados o donde ya tenga captura.
+                                // No usa filtro de parcelas en la interfaz.
                                 sesion.esInvitado -> {
-                                    header.assignedUserId == sesion.idUser ||
-                                            parcelaHeader?.assignedUserId == sesion.idUser ||
-                                            capturasUsuario > 0
+                                    monitoreoAsignadoAlUsuario || usuarioTieneCapturas
                                 }
 
                                 else -> false
@@ -1013,12 +1314,18 @@ class MainViewModel(
                             .getProductoresByIds(idsProductoresResultado)
                     }
 
+                    val cultivosRel = cargarCultivosRelacionados(
+                        headers = headersUsuario,
+                        programas = programasRel
+                    )
+
                     MainResultadoMonitoreoTemp(
                         headers = headersUsuario,
                         productores = productoresRel,
                         ranchos = ranchosRel,
                         parcelas = parcelasRel,
-                        programas = programasRel
+                        programas = programasRel,
+                        cultivos = cultivosRel
                     )
                 }
 
@@ -1029,6 +1336,7 @@ class MainViewModel(
                         ranchosResultado = resultado.ranchos,
                         parcelasResultado = resultado.parcelas,
                         programasResultado = resultado.programas,
+                        cultivosResultado = resultado.cultivos,
 
                         // Esto hace que en la interfaz aparezca Productor/Rancho/Parcela.
                         busquedaFueConSaltoFiltros = false,
@@ -1038,7 +1346,12 @@ class MainViewModel(
                 }
 
                 if (resultado.headers.isEmpty()) {
-                    mostrarMensaje("No tienes monitoreos asignados o capturados")
+                    val mensaje = if (sesion.esTecnico) {
+                        "No tienes monitoreos asignados dentro de tus CIAS cargadas"
+                    } else {
+                        "No tienes monitoreos asignados o capturados"
+                    }
+                    mostrarMensaje(mensaje)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -1060,20 +1373,164 @@ class MainViewModel(
         }
     }
 
-    fun abrirMapa(header: LocalPhytomonitoringHeaderEntity) {
-        actualizarEstado {
-            it.copy(
-                monitoreoSeleccionadoParaMapa = header,
-                monitoreoSeleccionadoParaReporte = null,
-                puntoSeleccionadoParaRegistro = null,
-                pantallaActual = PantallaActual.MAPA_MONITOREO
+    private suspend fun obtenerHeaderFrescoSeguro(
+        header: LocalPhytomonitoringHeaderEntity
+    ): LocalPhytomonitoringHeaderEntity {
+        return withContext(Dispatchers.IO) {
+            database.localphytomonitoringheaderDao()
+                .getAllHeaders()
+                .firstOrNull { headerDb ->
+                    headerDb.idHeader == header.idHeader
+                } ?: header
+        }
+    }
+
+    private fun actualizarHeaderEnLista(
+        headerActualizado: LocalPhytomonitoringHeaderEntity
+    ) {
+        actualizarEstado { estado ->
+            estado.copy(
+                monitoreosEncontrados = estado.monitoreosEncontrados.map { header ->
+                    if (header.idHeader == headerActualizado.idHeader) {
+                        headerActualizado
+                    } else {
+                        header
+                    }
+                },
+                monitoreoSeleccionadoParaMapa =
+                if (estado.monitoreoSeleccionadoParaMapa?.idHeader == headerActualizado.idHeader) {
+                    headerActualizado
+                } else {
+                    estado.monitoreoSeleccionadoParaMapa
+                },
+                monitoreoSeleccionadoParaReporte =
+                if (estado.monitoreoSeleccionadoParaReporte?.idHeader == headerActualizado.idHeader) {
+                    headerActualizado
+                } else {
+                    estado.monitoreoSeleccionadoParaReporte
+                }
             )
         }
     }
 
-    fun abrirPuntoParaRegistro(idTargetPoint: Long) {
+    private fun mandarAReportePorMonitoreoCerrado(
+        header: LocalPhytomonitoringHeaderEntity,
+        mensaje: String
+    ) {
+        actualizarEstado {
+            it.copy(
+                monitoreoSeleccionadoParaReporte = header,
+                monitoreoSeleccionadoParaMapa = null,
+                puntoSeleccionadoParaRegistro = null,
+                pantallaActual = PantallaActual.REPORTE_MONITOREO
+            )
+        }
+
+        mostrarMensaje(mensaje)
+    }
+
+    fun abrirMapa(header: LocalPhytomonitoringHeaderEntity) {
+        val sesion = uiState.usuarioSesion
+
+        if (sesion == null) {
+            mostrarMensaje("No hay sesión activa")
+            irA(PantallaActual.LOGIN)
+            return
+        }
+
+        if (uiState.cargando) return
+
         viewModelScope.launch {
             try {
+                actualizarEstado { it.copy(cargando = true) }
+
+                /*
+                 * IMPORTANTE:
+                 * No confiamos solo en el header que viene de la lista, porque puede
+                 * estar viejo en memoria. Primero se consulta el estado fresco en Room.
+                 */
+                val headerActualizado = obtenerHeaderFrescoSeguro(header)
+                actualizarHeaderEnLista(headerActualizado)
+
+                if (esEstadoCerradoVm(headerActualizado.status)) {
+                    mandarAReportePorMonitoreoCerrado(
+                        header = headerActualizado,
+                        mensaje = "Este monitoreo ya está cerrado. Solo puedes ver el reporte."
+                    )
+                    return@launch
+                }
+
+                if (sesion.esGerente || sesion.esSupervisor) {
+                    mandarAReportePorMonitoreoCerrado(
+                        header = headerActualizado,
+                        mensaje = "Tu rol solo puede consultar la información del monitoreo."
+                    )
+                    return@launch
+                }
+
+                actualizarEstado {
+                    it.copy(
+                        monitoreoSeleccionadoParaMapa = headerActualizado,
+                        monitoreoSeleccionadoParaReporte = null,
+                        puntoSeleccionadoParaRegistro = null,
+                        pantallaActual = PantallaActual.MAPA_MONITOREO
+                    )
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                mostrarMensaje("Error al abrir monitoreo: ${e.message}")
+            } finally {
+                actualizarEstado { it.copy(cargando = false) }
+            }
+        }
+    }
+
+    fun abrirPuntoParaRegistro(idTargetPoint: Long) {
+        val headerActual = uiState.monitoreoSeleccionadoParaMapa
+        val sesion = uiState.usuarioSesion
+
+        if (sesion == null) {
+            mostrarMensaje("No hay sesión activa")
+            irA(PantallaActual.LOGIN)
+            return
+        }
+
+        if (headerActual == null) {
+            mostrarMensaje("No hay monitoreo seleccionado")
+            irA(PantallaActual.LISTA_MONITOREOS)
+            return
+        }
+
+        if (uiState.cargando) return
+
+        viewModelScope.launch {
+            try {
+                actualizarEstado { it.copy(cargando = true) }
+
+                /*
+                 * Segunda barrera de seguridad:
+                 * aunque alguien haya alcanzado a entrar al mapa, antes de abrir
+                 * un punto volvemos a leer el estado actual desde Room.
+                 */
+                val headerActualizado = obtenerHeaderFrescoSeguro(headerActual)
+                actualizarHeaderEnLista(headerActualizado)
+
+                if (esEstadoCerradoVm(headerActualizado.status)) {
+                    mandarAReportePorMonitoreoCerrado(
+                        header = headerActualizado,
+                        mensaje = "Este monitoreo ya está cerrado. No se pueden registrar más puntos."
+                    )
+                    return@launch
+                }
+
+                if (sesion.esGerente || sesion.esSupervisor) {
+                    mandarAReportePorMonitoreoCerrado(
+                        header = headerActualizado,
+                        mensaje = "Tu rol solo puede consultar monitoreos."
+                    )
+                    return@launch
+                }
+
                 val punto = withContext(Dispatchers.IO) {
                     database.LocalPhytomonitoringTargetPointDao()
                         .getTargetPointById(idTargetPoint)
@@ -1084,6 +1541,7 @@ class MainViewModel(
                 } else {
                     actualizarEstado {
                         it.copy(
+                            monitoreoSeleccionadoParaMapa = headerActualizado,
                             puntoSeleccionadoParaRegistro = punto,
                             pantallaActual = PantallaActual.REGISTRO_PUNTO_MONITOREO
                         )
@@ -1092,6 +1550,8 @@ class MainViewModel(
             } catch (e: Exception) {
                 e.printStackTrace()
                 mostrarMensaje("Error al abrir punto: ${e.message}")
+            } finally {
+                actualizarEstado { it.copy(cargando = false) }
             }
         }
     }
@@ -1115,22 +1575,31 @@ class MainViewModel(
     }
 
     fun onMonitoreoActualizado(nuevoEstado: String) {
+        val esCompletado = esEstadoFinalizadoVm(nuevoEstado)
+
         mostrarMensaje(
-            if (nuevoEstado == "Completado") {
+            if (esCompletado) {
                 "Monitoreo terminado correctamente"
             } else {
                 "Monitoreo guardado en proceso"
             }
         )
 
+        val sesion = uiState.usuarioSesion
+
         actualizarEstado {
             it.copy(
                 monitoreoSeleccionadoParaMapa = null,
-                puntoSeleccionadoParaRegistro = null
+                puntoSeleccionadoParaRegistro = null,
+
+                /*
+                 * Si se terminó un monitoreo, activamos finalizados para que
+                 * no desaparezca al regresar a la lista.
+                 */
+                finalizadosChecked = if (esCompletado) true else it.finalizadosChecked
             )
         }
 
-        val sesion = uiState.usuarioSesion
         if (sesion != null && (sesion.esTecnico || sesion.esInvitado)) {
             cargarMonitoreosDirectoPorUsuario(sesion)
         } else {
@@ -1141,10 +1610,10 @@ class MainViewModel(
     }
 
     fun abrirPanelAdministrador() {
-        if (puedeVerPanelTrabajoVm(uiState.rolUsuarioActual)) {
+        if (esRolAdministradorVm(uiState.rolUsuarioActual)) {
             irA(PantallaActual.ADMIN_HOME)
         } else {
-            mostrarMensaje("Tu rol no tiene acceso al panel de trabajo")
+            mostrarMensaje("Tu rol no tiene acceso al panel administrador")
         }
     }
 
@@ -1152,13 +1621,10 @@ class MainViewModel(
         val estado = uiState
         val sesion = estado.usuarioSesion
 
+        // Técnico e invitado usan su pantalla propia de monitoreos asignados.
+        // Admin, gerente y supervisor usan la pantalla nueva de filtros progresivos.
         if (sesion != null && (sesion.esTecnico || sesion.esInvitado)) {
             cargarMonitoreosDirectoPorUsuario(sesion)
-            return
-        }
-
-        if (estado.monitoreosEncontrados.isNotEmpty()) {
-            irA(PantallaActual.LISTA_MONITOREOS)
             return
         }
 
@@ -1169,7 +1635,7 @@ class MainViewModel(
             return
         }
 
-        if (estado.parentCiasUsuario.isNotEmpty()) {
+        if (estado.ciasUsuario.isNotEmpty() || estado.parentCiasUsuario.isNotEmpty()) {
             irA(PantallaActual.SELECCION_CIA)
             return
         }
@@ -1222,10 +1688,23 @@ class MainViewModel(
             }
 
             PantallaActual.LISTA_MONITOREOS -> {
-                if (uiState.usuarioSesion?.let { it.esTecnico || it.esInvitado } == true) {
-                    cerrarSesion()
-                } else {
-                    abrirMonitoreosDesdeEncabezado()
+                val sesion = uiState.usuarioSesion
+                when {
+                    sesion != null && (sesion.esTecnico || sesion.esInvitado) -> {
+                        cerrarSesion()
+                    }
+
+                    uiState.ciaSeleccionada != null -> {
+                        irA(PantallaActual.FILTROS_MONITOREO)
+                    }
+
+                    uiState.parentCiaSeleccionada != null -> {
+                        irA(PantallaActual.SELECCION_CIA)
+                    }
+
+                    else -> {
+                        irA(PantallaActual.SELECCION_CIA)
+                    }
                 }
             }
 
@@ -1333,26 +1812,36 @@ class MainViewModel(
     }
 
     private fun obtenerEstadosSeleccionados(saltarFiltros: Boolean): List<String> {
-        if (saltarFiltros) {
-            return listOf(
-                "Pendiente",
-                "En proceso",
-                "Completado",
-                "Cancelado",
+        val todosLosEstados = listOf(
+            "Pendiente",
+            "En proceso",
+            "Completado",
+            "Cancelado",
 
-                "pending",
-                "in_progress",
-                "completed",
-                "cancelled",
+            "pending",
+            "in_progress",
+            "completed",
+            "cancelled",
 
-                "pendiente",
-                "en proceso",
-                "completado",
-                "cancelado",
+            "pendiente",
+            "en proceso",
+            "completado",
+            "cancelado",
 
-                "vigente",
-                "finalizado"
-            )
+            "vigente",
+            "finalizado"
+        )
+
+        val rol = normalizarRolParaDb(uiState.rolUsuarioActual)
+
+        /*
+         * IMPORTANTE:
+         * El ADMIN debe ver todos los monitoreos aunque un monitoreo cambie
+         * de "En proceso" a "Completado". Antes desaparecía porque el filtro
+         * no incluía finalizados.
+         */
+        if (saltarFiltros || rol == "admin") {
+            return todosLosEstados
         }
 
         val estados = mutableListOf<String>()
@@ -1393,15 +1882,7 @@ class MainViewModel(
         }
 
         return if (estados.isEmpty()) {
-            listOf(
-                "Pendiente",
-                "En proceso",
-                "pending",
-                "in_progress",
-                "pendiente",
-                "en proceso",
-                "vigente"
-            )
+            todosLosEstados
         } else {
             estados.distinct()
         }
@@ -1471,17 +1952,11 @@ fun esRolTecnicoVm(rol: String): Boolean = normalizarRolVm(rol) == "tecnico"
 fun esRolInvitadoVm(rol: String): Boolean = normalizarRolVm(rol) == "invitado"
 
 fun puedeVerPanelTrabajoVm(rol: String): Boolean {
-    return esRolAdministradorVm(rol) ||
-            esRolGerenteVm(rol) ||
-            esRolSupervisorVm(rol) ||
-            esRolTecnicoVm(rol)
+    return esRolAdministradorVm(rol)
 }
 
 fun puedeCrearMonitoreosVm(rol: String): Boolean {
-    return esRolAdministradorVm(rol) ||
-            esRolGerenteVm(rol) ||
-            esRolSupervisorVm(rol) ||
-            esRolTecnicoVm(rol)
+    return esRolAdministradorVm(rol)
 }
 
 fun puedeGestionCatalogosVm(rol: String): Boolean {
@@ -1492,11 +1967,42 @@ fun puedeGestionAgricolaVm(rol: String): Boolean {
     return esRolAdministradorVm(rol)
 }
 
-fun esEstadoFinalizadoVm(status: String): Boolean {
-    return when (status.lowercase().trim()) {
+fun normalizarEstadoMonitoreoVm(status: String): String {
+    return status
+        .trim()
+        .lowercase(Locale.getDefault())
+        .replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
+        .replace("_", " ")
+        .replace("-", " ")
+        .replace(".", "")
+        .replace(Regex("\\s+"), " ")
+}
+
+fun esEstadoCerradoVm(status: String): Boolean {
+    return when (normalizarEstadoMonitoreoVm(status)) {
         "completed",
         "completado",
-        "finalizado" -> true
+        "finalizado",
+        "finalizada",
+        "terminado",
+        "terminada",
+        "cerrado",
+        "cerrada",
+        "cancelado",
+        "cancelada",
+        "cancelled",
+        "canceled",
+        "done",
+        "finished" -> true
+
         else -> false
     }
+}
+
+fun esEstadoFinalizadoVm(status: String): Boolean {
+    return esEstadoCerradoVm(status)
 }
