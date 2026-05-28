@@ -25,18 +25,36 @@ fun normalizarRolVm(rol: String): String {
     }
 }
 
-fun esRolAdministradorVm(rol: String): Boolean = normalizarRolVm(rol) == "admin"
-fun esRolGerenteVm(rol: String): Boolean = normalizarRolVm(rol) == "gerente"
-fun esRolSupervisorVm(rol: String): Boolean = normalizarRolVm(rol) == "supervisor"
-fun esRolTecnicoVm(rol: String): Boolean = normalizarRolVm(rol) == "tecnico"
-fun esRolInvitadoVm(rol: String): Boolean = normalizarRolVm(rol) == "invitado"
+fun esRolAdministradorVm(rol: String): Boolean {
+    return normalizarRolVm(rol) == "admin"
+}
+
+fun esRolGerenteVm(rol: String): Boolean {
+    return normalizarRolVm(rol) == "gerente"
+}
+
+fun esRolSupervisorVm(rol: String): Boolean {
+    return normalizarRolVm(rol) == "supervisor"
+}
+
+fun esRolTecnicoVm(rol: String): Boolean {
+    return normalizarRolVm(rol) == "tecnico"
+}
+
+fun esRolInvitadoVm(rol: String): Boolean {
+    return normalizarRolVm(rol) == "invitado"
+}
 
 fun puedeVerPanelTrabajoVm(rol: String): Boolean {
-    return esRolAdministradorVm(rol)
+    return esRolAdministradorVm(rol) ||
+            esRolGerenteVm(rol) ||
+            esRolSupervisorVm(rol)
 }
 
 fun puedeCrearMonitoreosVm(rol: String): Boolean {
-    return esRolAdministradorVm(rol)
+    return esRolAdministradorVm(rol) ||
+            esRolGerenteVm(rol) ||
+            esRolSupervisorVm(rol)
 }
 
 fun puedeGestionCatalogosVm(rol: String): Boolean {
@@ -45,4 +63,21 @@ fun puedeGestionCatalogosVm(rol: String): Boolean {
 
 fun puedeGestionAgricolaVm(rol: String): Boolean {
     return esRolAdministradorVm(rol)
+}
+
+/*
+ * Roles de consulta:
+ * Gerente y supervisor pueden consultar monitoreos, pero no administrar datos.
+ */
+fun esRolConsultaVm(rol: String): Boolean {
+    return esRolGerenteVm(rol) || esRolSupervisorVm(rol)
+}
+
+/*
+ * Roles operativos:
+ * Técnico captura monitoreos asignados.
+ * Invitado solo consulta lo asignado o capturado por él.
+ */
+fun esRolOperativoVm(rol: String): Boolean {
+    return esRolTecnicoVm(rol) || esRolInvitadoVm(rol)
 }

@@ -52,36 +52,4 @@ data class UsuarioSesion(
 
     val esInvitado: Boolean
         get() = rolNormalizado == "invitado"
-
-    /** SUPER ADMIN puede entrar a todas las CIAS padre e hijas. */
-    val puedeEntrarATodasLasCias: Boolean
-        get() = esAdmin
-
-    /** Panel de trabajo: no entra INVITADO. */
-    val puedeVerPanelTrabajo: Boolean
-        get() = esAdmin || esGerente || esSupervisor || esTecnico
-
-    /** Solo SUPER ADMIN modifica productores, ranchos, parcelas y vértices. */
-    val puedeGestionAgricola: Boolean
-        get() = esAdmin
-
-    /** Solo SUPER ADMIN modifica catálogos. */
-    val puedeGestionCatalogos: Boolean
-        get() = esAdmin
-
-    /** Gerente, supervisor y técnico pueden crear / dar de alta monitoreos. */
-    val puedeCrearMonitoreos: Boolean
-        get() = esAdmin || esGerente || esSupervisor || esTecnico
-
-    /** Todos pueden capturar, pero el invitado solo verá lo asignado o lo hecho por él. */
-    val puedeCapturarMonitoreos: Boolean
-        get() = esAdmin || esGerente || esSupervisor || esTecnico || esInvitado
-
-    /** Técnico trabaja con parcelas asignadas. */
-    val soloParcelasAsignadas: Boolean
-        get() = esTecnico
-
-    /** Invitado solo ve monitoreos asignados o capturados por él. */
-    val soloSusMonitoreos: Boolean
-        get() = esInvitado
 }

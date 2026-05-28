@@ -1551,7 +1551,7 @@ class MainViewModel(
     }
 
     fun abrirPanelAdministrador() {
-        if (esRolAdministradorVm(uiState.rolUsuarioActual)) {
+        if (puedeVerPanelTrabajoVm(uiState.rolUsuarioActual)) {
             irA(PantallaActual.ADMIN_HOME)
         } else {
             mostrarMensaje("Tu rol no tiene acceso al panel administrador")
