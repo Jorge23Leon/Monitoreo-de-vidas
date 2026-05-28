@@ -6,7 +6,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -56,21 +55,6 @@ import java.io.InputStreamReader
 import java.text.Normalizer
 import java.util.Locale
 
-internal data class ImportedRanchCsv(
-    val productorRef: String?,
-    val name: String,
-    val code: String,
-    val lat: Double?,
-    val lon: Double?
-)
-
-internal data class ImportedPlotCsv(
-    val ranchoRef: String?,
-    val code: String,
-    val description: String?,
-    val lat: Double?,
-    val lon: Double?
-)
 
 @Composable
 internal fun DialogImportarRanchosCsvGestion(

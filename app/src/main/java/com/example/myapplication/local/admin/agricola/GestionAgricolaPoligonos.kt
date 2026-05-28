@@ -1,6 +1,5 @@
 package com.example.myapplication.local.admin.agricola
 
-
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -64,11 +63,6 @@ import java.util.Locale
 import java.util.zip.ZipInputStream
 import kotlin.math.max
 
-internal data class ImportedPolygonPoint(
-    val level: Int,
-    val lat: Double,
-    val lon: Double
-)
 
 @Composable
 internal fun DialogImportarPoligonoExcelGestion(
