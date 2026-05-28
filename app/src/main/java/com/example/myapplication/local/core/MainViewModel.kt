@@ -22,68 +22,7 @@ import com.example.myapplication.local.models.UsuarioSesion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Locale
-
-data class MainUiState(
-    val pantallaActual: PantallaActual = PantallaActual.LOGIN,
-    val cargando: Boolean = false,
-
-    val usuarioSesion: UsuarioSesion? = null,
-
-    val idUsuarioActual: Long = 0L,
-    val nombreUsuarioActual: String = "",
-    val rolUsuarioActual: String = "",
-    val nivelRolUsuarioActual: Int = 0,
-
-    val busquedaFueConSaltoFiltros: Boolean = false,
-
-    val parentCiasUsuario: List<LocalParentCiaEntity> = emptyList(),
-    val parentCiaSeleccionada: LocalParentCiaEntity? = null,
-
-    val ciasUsuario: List<LocalCiaEntity> = emptyList(),
-    val ciaSeleccionada: LocalCiaEntity? = null,
-    val seleccionarPreferente: Boolean = false,
-
-    val productores: List<LocalAgroUnitEntity> = emptyList(),
-    val ranchos: List<LocalRanchEntity> = emptyList(),
-    val parcelas: List<LocalPlotEntity> = emptyList(),
-    val ciclos: List<LocalProgramEntity> = emptyList(),
-
-    val productorSeleccionado: LocalAgroUnitEntity? = null,
-    val ranchoSeleccionado: LocalRanchEntity? = null,
-    val parcelaSeleccionada: LocalPlotEntity? = null,
-    val cicloSeleccionado: LocalProgramEntity? = null,
-
-    val fechaInicioTexto: String = "",
-    val fechaFinTexto: String = "",
-    val finalizadosChecked: Boolean = true,
-    val vigentesChecked: Boolean = true,
-    val canceladosChecked: Boolean = false,
-
-    val monitoreosEncontrados: List<LocalPhytomonitoringHeaderEntity> = emptyList(),
-    val productoresResultado: List<LocalAgroUnitEntity> = emptyList(),
-    val ranchosResultado: List<LocalRanchEntity> = emptyList(),
-    val parcelasResultado: List<LocalPlotEntity> = emptyList(),
-    val programasResultado: List<LocalProgramEntity> = emptyList(),
-    val cultivosResultado: List<LocalCropCatalogEntity> = emptyList(),
-
-    val monitoreoSeleccionadoParaMapa: LocalPhytomonitoringHeaderEntity? = null,
-    val monitoreoSeleccionadoParaReporte: LocalPhytomonitoringHeaderEntity? = null,
-    val puntoSeleccionadoParaRegistro: LocalPhytomonitoringTargetPointEntity? = null,
-
-    val mensaje: String? = null
-)
-
-private data class MainResultadoMonitoreoTemp(
-    val headers: List<LocalPhytomonitoringHeaderEntity>,
-    val productores: List<LocalAgroUnitEntity>,
-    val ranchos: List<LocalRanchEntity>,
-    val parcelas: List<LocalPlotEntity>,
-    val programas: List<LocalProgramEntity>,
-    val cultivos: List<LocalCropCatalogEntity>
-)
 
 class MainViewModel(
     application: Application
@@ -847,9 +786,15 @@ class MainViewModel(
                                 } else {
                                     estadoActual.parcelaSeleccionada?.idLocalPlot
                                 },
-                                startDate = parseFechaInicio(estadoActual.fechaInicioTexto),
-                                endDate = parseFechaFin(estadoActual.fechaFinTexto),
-                                statuses = obtenerEstadosSeleccionados(saltarFiltros)
+                                startDate = parseFechaInicioVm(estadoActual.fechaInicioTexto),
+                                endDate = parseFechaFinVm(estadoActual.fechaFinTexto),
+                                statuses = obtenerEstadosSeleccionadosVm(
+                                    saltarFiltros = saltarFiltros,
+                                    rolUsuarioActual = estadoActual.rolUsuarioActual,
+                                    vigentesChecked = estadoActual.vigentesChecked,
+                                    finalizadosChecked = estadoActual.finalizadosChecked,
+                                    canceladosChecked = estadoActual.canceladosChecked
+                                )
                             )
                     }
 
@@ -1507,11 +1452,7 @@ class MainViewModel(
             try {
                 actualizarEstado { it.copy(cargando = true) }
 
-                /*
-                 * Segunda barrera de seguridad:
-                 * aunque alguien haya alcanzado a entrar al mapa, antes de abrir
-                 * un punto volvemos a leer el estado actual desde Room.
-                 */
+
                 val headerActualizado = obtenerHeaderFrescoSeguro(headerActual)
                 actualizarHeaderEnLista(headerActualizado)
 
@@ -1783,12 +1724,6 @@ class MainViewModel(
                     )
                 }
 
-                /*
-                 * IMPORTANTE:
-                 * Aquí ya no se insertan CIAS padre ni CIAS hijas quemadas en código.
-                 * Las organizaciones y empresas deben darse de alta con SQL o desde
-                 * el futuro panel administrador.
-                 */
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -1811,198 +1746,5 @@ class MainViewModel(
         return prefs.getLong("cia_preferente_usuario_$idUser", 0L)
     }
 
-    private fun obtenerEstadosSeleccionados(saltarFiltros: Boolean): List<String> {
-        val todosLosEstados = listOf(
-            "Pendiente",
-            "En proceso",
-            "Completado",
-            "Cancelado",
 
-            "pending",
-            "in_progress",
-            "completed",
-            "cancelled",
-
-            "pendiente",
-            "en proceso",
-            "completado",
-            "cancelado",
-
-            "vigente",
-            "finalizado"
-        )
-
-        val rol = normalizarRolParaDb(uiState.rolUsuarioActual)
-
-        /*
-         * IMPORTANTE:
-         * El ADMIN debe ver todos los monitoreos aunque un monitoreo cambie
-         * de "En proceso" a "Completado". Antes desaparecía porque el filtro
-         * no incluía finalizados.
-         */
-        if (saltarFiltros || rol == "admin") {
-            return todosLosEstados
-        }
-
-        val estados = mutableListOf<String>()
-
-        if (uiState.vigentesChecked) {
-            estados.addAll(
-                listOf(
-                    "Pendiente",
-                    "En proceso",
-                    "pending",
-                    "in_progress",
-                    "pendiente",
-                    "en proceso",
-                    "vigente"
-                )
-            )
-        }
-
-        if (uiState.finalizadosChecked) {
-            estados.addAll(
-                listOf(
-                    "Completado",
-                    "completed",
-                    "completado",
-                    "finalizado"
-                )
-            )
-        }
-
-        if (uiState.canceladosChecked) {
-            estados.addAll(
-                listOf(
-                    "Cancelado",
-                    "cancelled",
-                    "cancelado"
-                )
-            )
-        }
-
-        return if (estados.isEmpty()) {
-            todosLosEstados
-        } else {
-            estados.distinct()
-        }
-    }
-
-    private fun parseFechaInicio(fechaTexto: String): Long? {
-        if (fechaTexto.isBlank()) return null
-
-        return try {
-            val sdf = SimpleDateFormat("dd-MM-yyyy", Locale.getDefault())
-            sdf.isLenient = false
-            sdf.parse(fechaTexto)?.time
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    private fun parseFechaFin(fechaTexto: String): Long? {
-        if (fechaTexto.isBlank()) return null
-
-        return try {
-            val sdf = SimpleDateFormat("dd-MM-yyyy", Locale.getDefault())
-            sdf.isLenient = false
-
-            val fecha = sdf.parse(fechaTexto) ?: return null
-
-            val calendar = Calendar.getInstance()
-            calendar.time = fecha
-            calendar.set(Calendar.HOUR_OF_DAY, 23)
-            calendar.set(Calendar.MINUTE, 59)
-            calendar.set(Calendar.SECOND, 59)
-            calendar.set(Calendar.MILLISECOND, 999)
-
-            calendar.timeInMillis
-        } catch (e: Exception) {
-            null
-        }
-    }
-}
-fun normalizarRolVm(rol: String): String {
-    val limpio = rol
-        .trim()
-        .lowercase(Locale.getDefault())
-        .replace("á", "a")
-        .replace("é", "e")
-        .replace("í", "i")
-        .replace("ó", "o")
-        .replace("ú", "u")
-        .replace(".", "")
-        .replace("_", " ")
-        .replace(Regex("\\s+"), " ")
-
-    return when (limpio) {
-        "super admin", "admin", "administrador" -> "admin"
-        "gerente" -> "gerente"
-        "ingy supervision", "ing y supervision", "supervisor" -> "supervisor"
-        "tecnico", "tecnicos", "técnico", "técnicos" -> "tecnico"
-        "invitado" -> "invitado"
-        else -> limpio
-    }
-}
-
-fun esRolAdministradorVm(rol: String): Boolean = normalizarRolVm(rol) == "admin"
-fun esRolGerenteVm(rol: String): Boolean = normalizarRolVm(rol) == "gerente"
-fun esRolSupervisorVm(rol: String): Boolean = normalizarRolVm(rol) == "supervisor"
-fun esRolTecnicoVm(rol: String): Boolean = normalizarRolVm(rol) == "tecnico"
-fun esRolInvitadoVm(rol: String): Boolean = normalizarRolVm(rol) == "invitado"
-
-fun puedeVerPanelTrabajoVm(rol: String): Boolean {
-    return esRolAdministradorVm(rol)
-}
-
-fun puedeCrearMonitoreosVm(rol: String): Boolean {
-    return esRolAdministradorVm(rol)
-}
-
-fun puedeGestionCatalogosVm(rol: String): Boolean {
-    return esRolAdministradorVm(rol)
-}
-
-fun puedeGestionAgricolaVm(rol: String): Boolean {
-    return esRolAdministradorVm(rol)
-}
-
-fun normalizarEstadoMonitoreoVm(status: String): String {
-    return status
-        .trim()
-        .lowercase(Locale.getDefault())
-        .replace("á", "a")
-        .replace("é", "e")
-        .replace("í", "i")
-        .replace("ó", "o")
-        .replace("ú", "u")
-        .replace("_", " ")
-        .replace("-", " ")
-        .replace(".", "")
-        .replace(Regex("\\s+"), " ")
-}
-
-fun esEstadoCerradoVm(status: String): Boolean {
-    return when (normalizarEstadoMonitoreoVm(status)) {
-        "completed",
-        "completado",
-        "finalizado",
-        "finalizada",
-        "terminado",
-        "terminada",
-        "cerrado",
-        "cerrada",
-        "cancelado",
-        "cancelada",
-        "cancelled",
-        "canceled",
-        "done",
-        "finished" -> true
-
-        else -> false
-    }
-}
-
-fun esEstadoFinalizadoVm(status: String): Boolean {
-    return esEstadoCerradoVm(status)
 }
