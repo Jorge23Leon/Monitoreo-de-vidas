@@ -80,7 +80,8 @@ fun SeleccionCiaScreen(
                 rolUsuario = rolUsuario,
                 onPerfilClick = onPerfilClick,
                 onMonitoreosClick = onMonitoreosClick,
-                onAdminClick = onAdminClick
+                onAdminClick = onAdminClick,
+                onCerrarSesionClick = onCerrarSesionClick
             )
 
             Spacer(modifier = Modifier.height(18.dp))
@@ -133,7 +134,6 @@ fun SeleccionCiaScreen(
 
                 BotonesSeleccionCia(
                     puedeContinuar = puedeContinuar,
-                    onCerrarSesionClick = onCerrarSesionClick,
                     onSeleccionarClick = onSeleccionarClick
                 )
 
@@ -272,50 +272,26 @@ private fun TarjetaCiaPreferente(
 @Composable
 private fun BotonesSeleccionCia(
     puedeContinuar: Boolean,
-    onCerrarSesionClick: () -> Unit,
     onSeleccionarClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
+)  {
+    Button(
+        onClick = onSeleccionarClick,
+        enabled = puedeContinuar,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color(0xFF2F7D20),
+            disabledContainerColor = Color(0xFFE0E0E0)
+        ),
+        shape = RoundedCornerShape(30.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
     ) {
-        Button(
-            onClick = onCerrarSesionClick,
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF5A3A3)),
-            shape = RoundedCornerShape(30.dp),
-            modifier = Modifier
-                .weight(1f)
-                .height(48.dp)
-        ) {
-            Text(
-                text = "Salir",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.Black
-            )
-        }
-
-        Spacer(modifier = Modifier.width(14.dp))
-
-        Button(
-            onClick = onSeleccionarClick,
-            enabled = puedeContinuar,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF2F7D20),
-                disabledContainerColor = Color(0xFFE0E0E0)
-            ),
-            shape = RoundedCornerShape(30.dp),
-            modifier = Modifier
-                .weight(1f)
-                .height(48.dp)
-        ) {
-            Text(
-                text = "Continuar",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-        }
+        Text(
+            text = "Continuar",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White
+        )
     }
 }
 

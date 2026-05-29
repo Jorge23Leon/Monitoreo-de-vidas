@@ -55,6 +55,7 @@ fun AdminGestionAgricolaScreen(
     nombreCia: String,
     onBackClick: () -> Unit,
     onPerfilClick: () -> Unit,
+    onCerrarSesionClick: () -> Unit,
     onMonitoreosClick: () -> Unit,
     onAdminClick: () -> Unit,
     onMensaje: (String) -> Unit
@@ -810,7 +811,8 @@ fun AdminGestionAgricolaScreen(
                 rolUsuario = rolUsuario,
                 onPerfilClick = onPerfilClick,
                 onMonitoreosClick = onMonitoreosClick,
-                onAdminClick = onAdminClick
+                onAdminClick = onAdminClick,
+                onCerrarSesionClick = onCerrarSesionClick
             )
 
             Spacer(modifier = Modifier.height(14.dp))

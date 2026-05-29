@@ -13,9 +13,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,11 +41,15 @@ fun EncabezadoApp(
     rolUsuario: String = "",
     onPerfilClick: (() -> Unit)? = null,
     onMonitoreosClick: (() -> Unit)? = null,
-    onAdminClick: (() -> Unit)? = null
-) {
+    onAdminClick: (() -> Unit)? = null,
+    onCerrarSesionClick: () -> Unit
+)  {
     val context = LocalContext.current
 
     var menuAbierto by remember {
+        mutableStateOf(false)
+    }
+    var mostrarDialogCerrarSesion by remember {
         mutableStateOf(false)
     }
 
@@ -236,11 +242,69 @@ fun EncabezadoApp(
                         }
                     )
                 }
+
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = "🚪 Cerrar sesión",
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFB3261E)
+                        )
+                    },
+                    onClick = {
+                        menuAbierto = false
+                        mostrarDialogCerrarSesion = true
+                    }
+                )
             }
         }
     }
-}
 
+    if (mostrarDialogCerrarSesion) {
+        AlertDialog(
+            onDismissRequest = {
+                mostrarDialogCerrarSesion = false
+            },
+            title = {
+                Text(
+                    text = "Cerrar sesión",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "¿Estás seguro de que quieres cerrar sesión?"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        mostrarDialogCerrarSesion = false
+                        onCerrarSesionClick()
+                    }
+                ) {
+                    Text(
+                        text = "Sí, cerrar sesión",
+                        color = Color(0xFFB3261E),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        mostrarDialogCerrarSesion = false
+                    }
+                ) {
+                    Text(
+                        text = "Cancelar",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        )
+    }
+}
 private fun normalizarRolHeader(rol: String): String {
     val limpio = rol
         .trim()
@@ -262,7 +326,6 @@ private fun normalizarRolHeader(rol: String): String {
         "ingy supervision",
         "ing y supervision",
         "supervisor" -> "supervisor"
-
         "tecnico",
         "tecnicos",
         "técnico",

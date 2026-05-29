@@ -50,6 +50,7 @@ fun MonitoreoMapaScreen(
     onPuntoValidoClick: (Long) -> Unit,
     onMonitoreoActualizado: (String) -> Unit,
     onPerfilClick: () -> Unit = {},
+    onCerrarSesionClick: () -> Unit,
     onMonitoreosClick: () -> Unit = {},
     onAdminClick: () -> Unit = {}
 ) {
@@ -180,7 +181,8 @@ fun MonitoreoMapaScreen(
                 rolUsuario = rolUsuario,
                 onPerfilClick = onPerfilClick,
                 onMonitoreosClick = onMonitoreosClick,
-                onAdminClick = onAdminClick
+                onAdminClick = onAdminClick,
+                onCerrarSesionClick = onCerrarSesionClick
             )
 
             BarraMapaMonitoreo(nombreMonitoreo = nombreMonitoreo)

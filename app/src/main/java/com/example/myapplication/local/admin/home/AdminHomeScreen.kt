@@ -43,6 +43,7 @@ fun AdminHomeScreen(
     onCatalogosClick: () -> Unit,
     onGestionAgricolaClick: () -> Unit,
     onPerfilClick: () -> Unit,
+    onCerrarSesionClick: () -> Unit,
     onMonitoreosClick: () -> Unit,
     onAdminClick: () -> Unit
 ) {
@@ -63,7 +64,8 @@ fun AdminHomeScreen(
                 rolUsuario = rolUsuario,
                 onPerfilClick = onPerfilClick,
                 onMonitoreosClick = onMonitoreosClick,
-                onAdminClick = onAdminClick
+                onAdminClick = onAdminClick,
+                onCerrarSesionClick = onCerrarSesionClick
             )
 
             Spacer(modifier = Modifier.height(16.dp))

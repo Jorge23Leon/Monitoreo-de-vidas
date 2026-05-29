@@ -47,7 +47,9 @@ fun AdminMonitoreoScreen(
     onMonitoreosClick: () -> Unit,
     onAdminClick: () -> Unit,
     onMensaje: (String) -> Unit,
+    onCerrarSesionClick: () -> Unit,
     onMonitoreoCreado: () -> Unit
+
 ) {
     val coroutineScope = rememberCoroutineScope()
 
@@ -304,7 +306,8 @@ fun AdminMonitoreoScreen(
                 rolUsuario = rolUsuario,
                 onPerfilClick = onPerfilClick,
                 onMonitoreosClick = onMonitoreosClick,
-                onAdminClick = onAdminClick
+                onAdminClick = onAdminClick,
+                onCerrarSesionClick = onCerrarSesionClick
             )
 
             Spacer(modifier = Modifier.height(14.dp))

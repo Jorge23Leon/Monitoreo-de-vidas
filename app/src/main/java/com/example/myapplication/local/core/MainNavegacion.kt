@@ -28,6 +28,9 @@ fun MainNavegacion(
     uiState: MainUiState
 ) {
     val context = LocalContext.current
+    val cerrarSesionClick = {
+        mainViewModel.cerrarSesion()
+    }
 
     when (uiState.pantallaActual) {
 
@@ -189,7 +192,8 @@ fun MainNavegacion(
 
                 onAdminClick = {
                     mainViewModel.abrirPanelAdministrador()
-                }
+                },
+                onCerrarSesionClick = cerrarSesionClick
             )
         }
 
@@ -230,7 +234,8 @@ fun MainNavegacion(
 
                 onAdminClick = {
                     mainViewModel.abrirPanelAdministrador()
-                }
+                },
+                onCerrarSesionClick = cerrarSesionClick
             )
         }
 
@@ -273,7 +278,8 @@ fun MainNavegacion(
 
                     onAdminClick = {
                         mainViewModel.abrirPanelAdministrador()
-                    }
+                    },
+                    onCerrarSesionClick = cerrarSesionClick
                 )
             }
         }
@@ -313,7 +319,8 @@ fun MainNavegacion(
 
                     onAdminClick = {
                         mainViewModel.abrirPanelAdministrador()
-                    }
+                    },
+                    onCerrarSesionClick = cerrarSesionClick
                 )
             }
         }
@@ -371,7 +378,8 @@ fun MainNavegacion(
 
                     onAdminClick = {
                         mainViewModel.abrirPanelAdministrador()
-                    }
+                    },
+                    onCerrarSesionClick = cerrarSesionClick
                 )
             }
         }
@@ -418,7 +426,8 @@ fun MainNavegacion(
 
                     onAdminClick = {
                         mainViewModel.abrirPanelAdministrador()
-                    }
+                    },
+                    onCerrarSesionClick = cerrarSesionClick
                 )
             }
         }
@@ -463,7 +472,8 @@ fun MainNavegacion(
 
                     onMonitoreoCreado = {
                         mainViewModel.onMonitoreoCreadoDesdeAdmin()
-                    }
+                    },
+                    onCerrarSesionClick = cerrarSesionClick
                 )
             }
         }
@@ -502,7 +512,9 @@ fun MainNavegacion(
                             mensaje,
                             Toast.LENGTH_SHORT
                         ).show()
-                    }
+                    },
+
+                    onCerrarSesionClick = cerrarSesionClick
                 )
             }
         }
@@ -542,7 +554,9 @@ fun MainNavegacion(
                             mensaje,
                             Toast.LENGTH_SHORT
                         ).show()
-                    }
+                    },
+
+                    onCerrarSesionClick = cerrarSesionClick
                 )
             }
         }
@@ -584,7 +598,10 @@ fun MainNavegacion(
 
                     onAdminClick = {
                         mainViewModel.abrirPanelAdministrador()
-                    }
+
+                    },
+
+                    onCerrarSesionClick = cerrarSesionClick
                 )
             }
         }

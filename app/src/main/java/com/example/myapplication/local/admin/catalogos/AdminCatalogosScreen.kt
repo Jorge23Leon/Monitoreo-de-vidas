@@ -51,6 +51,7 @@ fun AdminCatalogosScreen(
     onPerfilClick: () -> Unit,
     onMonitoreosClick: () -> Unit,
     onAdminClick: () -> Unit,
+    onCerrarSesionClick: () -> Unit,
     onMensaje: (String) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -259,7 +260,8 @@ fun AdminCatalogosScreen(
                 rolUsuario = rolUsuario,
                 onPerfilClick = onPerfilClick,
                 onMonitoreosClick = onMonitoreosClick,
-                onAdminClick = onAdminClick
+                onAdminClick = onAdminClick,
+                onCerrarSesionClick = onCerrarSesionClick
             )
 
             Spacer(modifier = Modifier.height(14.dp))

@@ -48,6 +48,7 @@ fun PerfilUsuarioScreen(
     nombreUsuario: String,
     rolUsuario: String = "",
     onBackClick: () -> Unit,
+    onCerrarSesionClick: () -> Unit,
     onPerfilActualizado: (UserEntity) -> Unit,
     onPerfilClick: () -> Unit,
     onMonitoreosClick: () -> Unit,
@@ -133,7 +134,8 @@ fun PerfilUsuarioScreen(
             rolUsuario = rolUsuario,
             onPerfilClick = onPerfilClick,
             onMonitoreosClick = onMonitoreosClick,
-            onAdminClick = onAdminClick
+            onAdminClick = onAdminClick,
+            onCerrarSesionClick = onCerrarSesionClick
         )
 
         when {

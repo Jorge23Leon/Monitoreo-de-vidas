@@ -46,6 +46,7 @@ fun RegistroPuntoMonitoreoScreen(
     header: LocalPhytomonitoringHeaderEntity,
     punto: LocalPhytomonitoringTargetPointEntity,
     onCancelar: () -> Unit,
+    onCerrarSesionClick: () -> Unit,
     onGuardado: () -> Unit,
     onPerfilClick: () -> Unit = {},
     onMonitoreosClick: () -> Unit = {},
@@ -321,7 +322,8 @@ fun RegistroPuntoMonitoreoScreen(
             rolUsuario = rolUsuario,
             onPerfilClick = onPerfilClick,
             onMonitoreosClick = onMonitoreosClick,
-            onAdminClick = onAdminClick
+            onAdminClick = onAdminClick,
+            onCerrarSesionClick = onCerrarSesionClick
         )
 
         Box(modifier = Modifier.fillMaxSize()) {

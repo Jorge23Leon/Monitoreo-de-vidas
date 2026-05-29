@@ -41,6 +41,7 @@ fun MonitoreoListaScreen(
     productores: List<LocalAgroUnitEntity>,
     ranchos: List<LocalRanchEntity>,
     parcelas: List<LocalPlotEntity>,
+    onCerrarSesionClick: () -> Unit,
     programas: List<LocalProgramEntity>,
     cultivos: List<LocalCropCatalogEntity> = emptyList(),
     onAbrirMapaClick: (LocalPhytomonitoringHeaderEntity) -> Unit,
@@ -154,7 +155,8 @@ fun MonitoreoListaScreen(
                 rolUsuario = rolUsuario,
                 onPerfilClick = onPerfilClick,
                 onMonitoreosClick = onMonitoreosClick,
-                onAdminClick = onAdminClick
+                onAdminClick = onAdminClick,
+                onCerrarSesionClick = onCerrarSesionClick
             )
 
             Spacer(modifier = Modifier.height(18.dp))

@@ -60,6 +60,7 @@ fun ReporteMonitoreoScreen(
     rancho: LocalRanchEntity?,
     parcela: LocalPlotEntity?,
     onBackClick: () -> Unit,
+    onCerrarSesionClick: () -> Unit,
     onPerfilClick: () -> Unit = {},
     onMonitoreosClick: () -> Unit = {},
     onAdminClick: () -> Unit = {}
@@ -209,7 +210,8 @@ fun ReporteMonitoreoScreen(
             rolUsuario = rolUsuario,
             onPerfilClick = onPerfilClick,
             onMonitoreosClick = onMonitoreosClick,
-            onAdminClick = onAdminClick
+            onAdminClick = onAdminClick,
+            onCerrarSesionClick = onCerrarSesionClick
         )
 
         when {
