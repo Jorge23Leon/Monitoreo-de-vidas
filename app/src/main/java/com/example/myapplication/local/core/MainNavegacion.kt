@@ -239,9 +239,9 @@ fun MainNavegacion(
 
             if (header == null) {
                 LaunchedEffect(Unit) {
-                    mainViewModel.irA(PantallaActual.LISTA_MONITOREOS)
+                    mainViewModel.volverAConsultaMonitoreos()
                 }
-            } else {
+            }else {
                 val nombreMonitoreo = uiState.programasResultado
                     .firstOrNull { programa ->
                         programa.idProgram == header.idProgram
@@ -358,7 +358,7 @@ fun MainNavegacion(
                     parcela = parcela,
 
                     onBackClick = {
-                        mainViewModel.irA(PantallaActual.LISTA_MONITOREOS)
+                        mainViewModel.volverAConsultaMonitoreos()
                     },
 
                     onPerfilClick = {

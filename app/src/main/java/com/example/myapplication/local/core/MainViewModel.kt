@@ -70,6 +70,47 @@ class MainViewModel(
     fun irA(pantalla: PantallaActual) {
         actualizarEstado { it.copy(pantallaActual = pantalla) }
     }
+    fun volverAConsultaMonitoreos() {
+        val sesion = uiState.usuarioSesion
+
+        when {
+            sesion == null -> {
+                irA(PantallaActual.LOGIN)
+            }
+
+            sesion.esTecnico || sesion.esInvitado -> {
+                actualizarEstado {
+                    it.copy(
+                        monitoreoSeleccionadoParaMapa = null,
+                        monitoreoSeleccionadoParaReporte = null,
+                        puntoSeleccionadoParaRegistro = null,
+                        pantallaActual = PantallaActual.LISTA_MONITOREOS
+                    )
+                }
+            }
+
+            uiState.ciaSeleccionada != null -> {
+                actualizarEstado {
+                    it.copy(
+                        monitoreoSeleccionadoParaMapa = null,
+                        monitoreoSeleccionadoParaReporte = null,
+                        puntoSeleccionadoParaRegistro = null,
+                        pantallaActual = PantallaActual.FILTROS_MONITOREO
+                    )
+                }
+
+                cargarMonitoreosPorFiltrosProgresivos()
+            }
+
+            uiState.parentCiaSeleccionada != null -> {
+                irA(PantallaActual.SELECCION_CIA)
+            }
+
+            else -> {
+                irA(PantallaActual.SELECCION_CIA)
+            }
+        }
+    }
 
     fun limpiarFiltros() {
         actualizarEstado {
@@ -1544,9 +1585,13 @@ class MainViewModel(
         if (sesion != null && (sesion.esTecnico || sesion.esInvitado)) {
             cargarMonitoreosDirectoPorUsuario(sesion)
         } else {
-            buscarMonitoreos(
-                saltarFiltros = uiState.busquedaFueConSaltoFiltros
-            )
+            actualizarEstado {
+                it.copy(
+                    pantallaActual = PantallaActual.FILTROS_MONITOREO
+                )
+            }
+
+            cargarMonitoreosPorFiltrosProgresivos()
         }
     }
 
@@ -1649,16 +1694,17 @@ class MainViewModel(
                 }
             }
 
-            PantallaActual.MAPA_MONITOREO -> {
-                irA(PantallaActual.LISTA_MONITOREOS)
-            }
 
             PantallaActual.REGISTRO_PUNTO_MONITOREO -> {
                 irA(PantallaActual.MAPA_MONITOREO)
             }
 
+            PantallaActual.MAPA_MONITOREO -> {
+                volverAConsultaMonitoreos()
+            }
+
             PantallaActual.REPORTE_MONITOREO -> {
-                irA(PantallaActual.LISTA_MONITOREOS)
+                volverAConsultaMonitoreos()
             }
 
             PantallaActual.PERFIL_USUARIO -> {
@@ -1700,6 +1746,7 @@ class MainViewModel(
 
         database.localRoleDao().insertRoles(rolesBase)
     }
+
 
     private fun insertarDatosInicialesSeguros() {
         viewModelScope.launch(Dispatchers.IO) {

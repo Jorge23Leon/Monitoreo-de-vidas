@@ -42,6 +42,7 @@ class MainActivity : ComponentActivity() {
                     mainViewModel.manejarBack()
                 }
 
+
                 MainNavegacion(
                     database = database,
                     mainViewModel = mainViewModel,
