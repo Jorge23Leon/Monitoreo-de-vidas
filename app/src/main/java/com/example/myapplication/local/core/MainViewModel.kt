@@ -24,6 +24,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
+private data class MainSesionRestauradaTemp(
+    val sesion: UsuarioSesion,
+    val parentCias: List<LocalParentCiaEntity>,
+    val ciasHijasUsuario: List<LocalCiaEntity>,
+    val parentCiaGuardada: LocalParentCiaEntity?,
+    val ciasHijasGuardadas: List<LocalCiaEntity>,
+    val ciaGuardada: LocalCiaEntity?
+)
+
+
 class MainViewModel(
     application: Application
 ) : AndroidViewModel(application) {
@@ -59,6 +69,75 @@ class MainViewModel(
             .apply()
     }
 
+    private fun guardarParentCiaSesion(idParentCia: Long) {
+        obtenerPrefsSesion()
+            .edit()
+            .putLong("id_parent_cia", idParentCia)
+            .remove("id_local_cia")
+            .remove("id_productor")
+            .remove("id_rancho")
+            .remove("id_parcela")
+            .apply()
+    }
+
+    private fun guardarCiaSesion(
+        idParentCia: Long?,
+        idLocalCia: Long
+    ) {
+        obtenerPrefsSesion()
+            .edit()
+            .putLong("id_parent_cia", idParentCia ?: 0L)
+            .putLong("id_local_cia", idLocalCia)
+
+            /*
+             * Si cambia la CIA hija, limpiamos filtros anteriores.
+             */
+            .remove("id_productor")
+            .remove("id_rancho")
+            .remove("id_parcela")
+            .apply()
+    }
+
+    private fun guardarProductorSesion(idProductor: Long) {
+        obtenerPrefsSesion()
+            .edit()
+            .putLong("id_productor", idProductor)
+            .remove("id_rancho")
+            .remove("id_parcela")
+            .apply()
+    }
+
+    private fun obtenerProductorSesion(): Long {
+        return obtenerPrefsSesion()
+            .getLong("id_productor", 0L)
+    }
+
+    private fun guardarRanchoSesion(idRancho: Long?) {
+        val editor = obtenerPrefsSesion().edit()
+
+        if (idRancho == null || idRancho <= 0L) {
+            editor.remove("id_rancho")
+            editor.remove("id_parcela")
+        } else {
+            editor.putLong("id_rancho", idRancho)
+            editor.remove("id_parcela")
+        }
+
+        editor.apply()
+    }
+
+    private fun guardarParcelaSesion(idParcela: Long?) {
+        val editor = obtenerPrefsSesion().edit()
+
+        if (idParcela == null || idParcela <= 0L) {
+            editor.remove("id_parcela")
+        } else {
+            editor.putLong("id_parcela", idParcela)
+        }
+
+        editor.apply()
+    }
+
     private fun borrarSesionGuardada() {
         obtenerPrefsSesion()
             .edit()
@@ -80,6 +159,8 @@ class MainViewModel(
 
                     val sesionActiva = prefs.getBoolean("sesion_activa", false)
                     val idUserGuardado = prefs.getLong("id_user", 0L)
+                    val idParentCiaGuardada = prefs.getLong("id_parent_cia", 0L)
+                    val idLocalCiaGuardada = prefs.getLong("id_local_cia", 0L)
 
                     if (!sesionActiva || idUserGuardado <= 0L) {
                         null
@@ -102,7 +183,56 @@ class MainViewModel(
                                 emptyList()
                             }
 
-                            Triple(sesion, parentCias, ciasHijasUsuario)
+                            /*
+                             * Restauración de CIA:
+                             * - Supervisor: usa sus CIAS hijas asignadas directamente.
+                             * - Admin/Gerente: usa CIA padre guardada y busca sus CIAS hijas.
+                             * - Técnico/Invitado: no necesitan CIA guardada, entran directo a monitoreos.
+                             */
+                            val parentCiaGuardada = if (
+                                idParentCiaGuardada > 0L &&
+                                !sesion.esSupervisor &&
+                                !sesion.esTecnico &&
+                                !sesion.esInvitado
+                            ) {
+                                parentCias.firstOrNull { parentCia ->
+                                    parentCia.idParentCia == idParentCiaGuardada
+                                }
+                            } else {
+                                null
+                            }
+
+                            val ciasHijasGuardadas = when {
+                                sesion.esSupervisor -> {
+                                    ciasHijasUsuario
+                                }
+
+                                parentCiaGuardada != null -> {
+                                    database.localCiaDao()
+                                        .getCiasByParentCia(parentCiaGuardada.idParentCia)
+                                }
+
+                                else -> {
+                                    emptyList()
+                                }
+                            }
+
+                            val ciaGuardada = if (idLocalCiaGuardada > 0L) {
+                                ciasHijasGuardadas.firstOrNull { cia ->
+                                    cia.idLocalCia == idLocalCiaGuardada
+                                }
+                            } else {
+                                null
+                            }
+
+                            MainSesionRestauradaTemp(
+                                sesion = sesion,
+                                parentCias = parentCias,
+                                ciasHijasUsuario = ciasHijasUsuario,
+                                parentCiaGuardada = parentCiaGuardada,
+                                ciasHijasGuardadas = ciasHijasGuardadas,
+                                ciaGuardada = ciaGuardada
+                            )
                         }
                     }
                 }
@@ -120,9 +250,7 @@ class MainViewModel(
                     return@launch
                 }
 
-                val sesion = resultado.first
-                val parentCias = resultado.second
-                val ciasHijasUsuario = resultado.third
+                val sesion = resultado.sesion
 
                 actualizarEstado {
                     it.copy(
@@ -132,15 +260,16 @@ class MainViewModel(
                         rolUsuarioActual = sesion.roleName,
                         nivelRolUsuarioActual = sesion.level,
 
-                        parentCiasUsuario = parentCias,
-                        parentCiaSeleccionada = null,
+                        parentCiasUsuario = resultado.parentCias,
+                        parentCiaSeleccionada = resultado.parentCiaGuardada,
 
-                        ciasUsuario = if (sesion.esSupervisor || sesion.esTecnico) {
-                            ciasHijasUsuario
-                        } else {
-                            emptyList()
+                        ciasUsuario = when {
+                            resultado.ciasHijasGuardadas.isNotEmpty() -> resultado.ciasHijasGuardadas
+                            sesion.esSupervisor || sesion.esTecnico -> resultado.ciasHijasUsuario
+                            else -> emptyList()
                         },
-                        ciaSeleccionada = null,
+
+                        ciaSeleccionada = resultado.ciaGuardada,
 
                         productores = emptyList(),
                         ranchos = emptyList(),
@@ -159,15 +288,33 @@ class MainViewModel(
                         programasResultado = emptyList(),
                         cultivosResultado = emptyList(),
 
-                        pantallaActual = obtenerPantallaInicialPorRol(sesion),
                         cargando = false
                     )
                 }
 
-                if (sesion.esTecnico || sesion.esInvitado) {
-                    cargarMonitoreosDirectoPorUsuario(sesion)
-                } else {
-                    mostrarMensaje("Sesión restaurada: ${sesion.firstName}")
+                when {
+                    sesion.esTecnico || sesion.esInvitado -> {
+                        cargarMonitoreosDirectoPorUsuario(sesion)
+                    }
+
+                    resultado.ciaGuardada != null -> {
+                        abrirFiltrosMonitoreoConCia(
+                            cia = resultado.ciaGuardada,
+                            idProductorRestaurar = obtenerProductorSesion()
+                        )
+
+                        mostrarMensaje("Sesión restaurada: ${sesion.firstName} - CIA: ${resultado.ciaGuardada.nombre}")
+                    }
+
+                    else -> {
+                        actualizarEstado {
+                            it.copy(
+                                pantallaActual = PantallaActual.SELECCION_CIA
+                            )
+                        }
+
+                        mostrarMensaje("Sesión restaurada: ${sesion.firstName}. Selecciona una CIA")
+                    }
                 }
 
             } catch (e: Exception) {
@@ -185,7 +332,6 @@ class MainViewModel(
             }
         }
     }
-
 
     private suspend fun cargarCultivosRelacionados(
         headers: List<LocalPhytomonitoringHeaderEntity>,
@@ -526,6 +672,7 @@ class MainViewModel(
     }
 
     fun onParentCiaChange(parentCia: LocalParentCiaEntity) {
+        guardarParentCiaSesion(parentCia.idParentCia)
         actualizarEstado {
             it.copy(
                 parentCiaSeleccionada = parentCia,
@@ -554,6 +701,7 @@ class MainViewModel(
 
         cargarCiasHijasDeParent(parentCia)
     }
+
 
     private fun cargarCiasHijasDeParent(parentCia: LocalParentCiaEntity) {
         val sesion = uiState.usuarioSesion
@@ -628,7 +776,10 @@ class MainViewModel(
         actualizarEstado { it.copy(ciaSeleccionada = cia) }
     }
 
-    private fun abrirFiltrosMonitoreoConCia(cia: LocalCiaEntity) {
+    private fun abrirFiltrosMonitoreoConCia(
+        cia: LocalCiaEntity,
+        idProductorRestaurar: Long? = null
+    ) {
         limpiarFiltros()
 
         actualizarEstado {
@@ -638,7 +789,10 @@ class MainViewModel(
             )
         }
 
-        cargarProductores(cia.idLocalCia)
+        cargarProductores(
+            idLocalCia = cia.idLocalCia,
+            idProductorRestaurar = idProductorRestaurar
+        )
     }
 
     fun seleccionarCiaActual() {
@@ -649,7 +803,6 @@ class MainViewModel(
             mostrarMensaje("Este usuario no tiene CIAS hijas asignadas")
             return
         }
-
         if (estado.seleccionarPreferente) {
             guardarCiaPreferente(
                 idUser = estado.idUsuarioActual,
@@ -657,12 +810,24 @@ class MainViewModel(
             )
         }
 
+        /*
+         * Guardamos siempre la CIA seleccionada para restaurarla
+         * después si el usuario no cierra sesión.
+         */
+        guardarCiaSesion(
+            idParentCia = estado.parentCiaSeleccionada?.idParentCia,
+            idLocalCia = cia.idLocalCia
+        )
+
         abrirFiltrosMonitoreoConCia(cia)
 
         mostrarMensaje("CIA seleccionada: ${cia.nombre}")
     }
 
-    fun cargarProductores(idLocalCia: Long) {
+    fun cargarProductores(
+        idLocalCia: Long,
+        idProductorRestaurar: Long? = null
+    ) {
         viewModelScope.launch {
             try {
                 val lista = withContext(Dispatchers.IO) {
@@ -670,10 +835,18 @@ class MainViewModel(
                         .getProductoresByCia(idLocalCia)
                 }
 
+                val productorRestaurado = idProductorRestaurar
+                    ?.takeIf { id -> id > 0L }
+                    ?.let { id ->
+                        lista.firstOrNull { productor ->
+                            productor.idLocalAgroUnit == id
+                        }
+                    }
+
                 actualizarEstado {
                     it.copy(
                         productores = lista,
-                        productorSeleccionado = null,
+                        productorSeleccionado = productorRestaurado,
 
                         ranchos = emptyList(),
                         ranchoSeleccionado = null,
@@ -686,8 +859,15 @@ class MainViewModel(
                     )
                 }
 
-                if (lista.isEmpty()) {
-                    mostrarMensaje("La CIA seleccionada no tiene productores asignados")
+                when {
+                    lista.isEmpty() -> {
+                        mostrarMensaje("La CIA seleccionada no tiene productores asignados")
+                    }
+
+                    productorRestaurado != null -> {
+                        cargarRanchos(productorRestaurado.idLocalAgroUnit)
+                        cargarMonitoreosPorFiltrosProgresivos()
+                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -697,6 +877,9 @@ class MainViewModel(
     }
 
     fun onProductorChange(productor: LocalAgroUnitEntity) {
+        guardarProductorSesion(productor.idLocalAgroUnit)
+
+
         actualizarEstado {
             it.copy(
                 productorSeleccionado = productor,
@@ -743,6 +926,8 @@ class MainViewModel(
     }
 
     fun onRanchoChange(rancho: LocalRanchEntity?) {
+        guardarRanchoSesion(rancho?.idLocalRanch)
+
         if (rancho == null) {
             actualizarEstado {
                 it.copy(
@@ -814,6 +999,8 @@ class MainViewModel(
     }
 
     fun onParcelaChange(parcela: LocalPlotEntity?) {
+        guardarParcelaSesion(parcela?.idLocalPlot)
+
         val productor = uiState.productorSeleccionado
 
         if (parcela == null) {
