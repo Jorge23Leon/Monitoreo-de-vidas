@@ -20,6 +20,13 @@ import com.example.myapplication.local.monitoreo.lista.MonitoreoListaScreen
 import com.example.myapplication.local.monitoreo.mapa.MonitoreoMapaScreen
 import com.example.myapplication.local.monitoreo.registro.RegistroPuntoMonitoreoScreen
 import com.example.myapplication.local.monitoreo.reporte.ReporteMonitoreoScreen
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 
 @Composable
 fun MainNavegacion(
@@ -33,6 +40,19 @@ fun MainNavegacion(
     }
 
     when (uiState.pantallaActual) {
+        PantallaActual.CARGANDO_SESION -> {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                CircularProgressIndicator()
+
+                Text(
+                    text = "Cargando sesión..."
+                )
+            }
+        }
 
         PantallaActual.LOGIN -> {
             LoginScreen(

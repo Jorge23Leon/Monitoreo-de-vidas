@@ -35,6 +35,7 @@ class MainViewModel(
 
     init {
         insertarDatosInicialesSeguros()
+        cargarSesionGuardadaAlIniciar()
     }
 
     private fun actualizarEstado(transform: (MainUiState) -> MainUiState) {
@@ -44,7 +45,146 @@ class MainViewModel(
     private fun mostrarMensaje(mensaje: String) {
         actualizarEstado { it.copy(mensaje = mensaje) }
     }
+    private fun obtenerPrefsSesion() =
+        getApplication<Application>().getSharedPreferences(
+            "sesion_app",
+            android.content.Context.MODE_PRIVATE
+        )
 
+    private fun guardarSesionBasica(idUser: Long) {
+        obtenerPrefsSesion()
+            .edit()
+            .putBoolean("sesion_activa", true)
+            .putLong("id_user", idUser)
+            .apply()
+    }
+
+    private fun borrarSesionGuardada() {
+        obtenerPrefsSesion()
+            .edit()
+            .clear()
+            .apply()
+    }
+    private fun cargarSesionGuardadaAlIniciar() {
+        viewModelScope.launch {
+            try {
+                actualizarEstado {
+                    it.copy(
+                        cargando = true,
+                        pantallaActual = PantallaActual.CARGANDO_SESION
+                    )
+                }
+
+                val resultado = withContext(Dispatchers.IO) {
+                    val prefs = obtenerPrefsSesion()
+
+                    val sesionActiva = prefs.getBoolean("sesion_activa", false)
+                    val idUserGuardado = prefs.getLong("id_user", 0L)
+
+                    if (!sesionActiva || idUserGuardado <= 0L) {
+                        null
+                    } else {
+                        val sesion = database.userDao()
+                            .getSesionByIdUser(idUserGuardado)
+
+                        if (sesion == null) {
+                            null
+                        } else {
+                            val parentCias = if (sesion.esAdmin) {
+                                database.localParentCiaDao().getAllParentCiasActivas()
+                            } else {
+                                database.userLocalParentCiaDao().getParentCiasByUser(sesion.idUser)
+                            }
+
+                            val ciasHijasUsuario = if (sesion.esSupervisor || sesion.esTecnico) {
+                                database.userLocalParentCiaDao().getCiasHijasByUser(sesion.idUser)
+                            } else {
+                                emptyList()
+                            }
+
+                            Triple(sesion, parentCias, ciasHijasUsuario)
+                        }
+                    }
+                }
+
+                if (resultado == null) {
+                    borrarSesionGuardada()
+
+                    actualizarEstado {
+                        it.copy(
+                            cargando = false,
+                            pantallaActual = PantallaActual.LOGIN
+                        )
+                    }
+
+                    return@launch
+                }
+
+                val sesion = resultado.first
+                val parentCias = resultado.second
+                val ciasHijasUsuario = resultado.third
+
+                actualizarEstado {
+                    it.copy(
+                        usuarioSesion = sesion,
+                        idUsuarioActual = sesion.idUser,
+                        nombreUsuarioActual = sesion.firstName,
+                        rolUsuarioActual = sesion.roleName,
+                        nivelRolUsuarioActual = sesion.level,
+
+                        parentCiasUsuario = parentCias,
+                        parentCiaSeleccionada = null,
+
+                        ciasUsuario = if (sesion.esSupervisor || sesion.esTecnico) {
+                            ciasHijasUsuario
+                        } else {
+                            emptyList()
+                        },
+                        ciaSeleccionada = null,
+
+                        productores = emptyList(),
+                        ranchos = emptyList(),
+                        parcelas = emptyList(),
+                        ciclos = emptyList(),
+
+                        productorSeleccionado = null,
+                        ranchoSeleccionado = null,
+                        parcelaSeleccionada = null,
+                        cicloSeleccionado = null,
+
+                        monitoreosEncontrados = emptyList(),
+                        productoresResultado = emptyList(),
+                        ranchosResultado = emptyList(),
+                        parcelasResultado = emptyList(),
+                        programasResultado = emptyList(),
+                        cultivosResultado = emptyList(),
+
+                        pantallaActual = obtenerPantallaInicialPorRol(sesion),
+                        cargando = false
+                    )
+                }
+
+                if (sesion.esTecnico || sesion.esInvitado) {
+                    cargarMonitoreosDirectoPorUsuario(sesion)
+                } else {
+                    mostrarMensaje("Sesión restaurada: ${sesion.firstName}")
+                }
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+
+                borrarSesionGuardada()
+
+                actualizarEstado {
+                    it.copy(
+                        cargando = false,
+                        pantallaActual = PantallaActual.LOGIN,
+                        mensaje = "No se pudo restaurar la sesión"
+                    )
+                }
+            }
+        }
+    }
 
 
     private suspend fun cargarCultivosRelacionados(
@@ -246,6 +386,7 @@ class MainViewModel(
                     val sesion = resultado.first
                     val parentCias = resultado.second
                     val ciasHijasUsuario = resultado.third
+                    guardarSesionBasica(sesion.idUser)
 
                     actualizarEstado {
                         it.copy(
@@ -1657,8 +1798,9 @@ class MainViewModel(
 
         mostrarMensaje("Perfil actualizado")
     }
-
     fun cerrarSesion() {
+        borrarSesionGuardada()
+
         uiState = MainUiState(
             pantallaActual = PantallaActual.LOGIN,
             mensaje = "Sesión cerrada"

@@ -12,7 +12,7 @@ import com.example.myapplication.local.entities.LocalRanchEntity
 import com.example.myapplication.local.models.UsuarioSesion
 
 data class MainUiState(
-    val pantallaActual: PantallaActual = PantallaActual.LOGIN,
+    val pantallaActual: PantallaActual = PantallaActual.CARGANDO_SESION,
     val cargando: Boolean = false,
 
     val usuarioSesion: UsuarioSesion? = null,

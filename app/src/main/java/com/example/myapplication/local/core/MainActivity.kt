@@ -49,7 +49,8 @@ class MainActivity : ComponentActivity() {
                 }
 
                 BackHandler(
-                    enabled = uiState.pantallaActual != PantallaActual.LOGIN
+                    enabled = uiState.pantallaActual != PantallaActual.LOGIN &&
+                            uiState.pantallaActual != PantallaActual.CARGANDO_SESION
                 ) {
                     when (uiState.pantallaActual) {
                         PantallaActual.SELECCION_PARENT_CIA,

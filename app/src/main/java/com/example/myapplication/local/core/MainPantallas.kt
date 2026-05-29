@@ -2,6 +2,7 @@ package com.example.myapplication.local.core
 
 enum class PantallaActual {
     LOGIN,
+    CARGANDO_SESION,
     REGISTRO,
     INFORMACION,
     CONTACTO,

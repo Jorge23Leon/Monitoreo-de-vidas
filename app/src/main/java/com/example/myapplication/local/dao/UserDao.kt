@@ -72,6 +72,30 @@ interface UserDao {
         password: String
     ): UsuarioSesion?
 
+    @Query(
+        """
+    SELECT 
+        u.idUser AS idUser,
+        u.ext_id AS extId,
+        u.first_name AS firstName,
+        u.last_name AS lastName,
+        u.username AS username,
+        u.email AS email,
+
+        r.idRole AS idRole,
+        r.role_name AS roleName,
+        r.level AS level
+    FROM users u
+    INNER JOIN local_roles r
+        ON r.idRole = u.idRole
+    WHERE u.idUser = :idUser
+    LIMIT 1
+    """
+    )
+    suspend fun getSesionByIdUser(
+        idUser: Long
+    ): UsuarioSesion?
+
     @Query("SELECT COUNT(*) FROM users")
     suspend fun countUsers(): Int
 
