@@ -870,13 +870,21 @@ class MainViewModel(
 
                         sesion.esInvitado -> {
                             headersBase.filter { header ->
+                                val parcelaHeader = parcelasBaseMap[header.idLocalPlot]
+
                                 val capturasUsuario = database.localphytomonitoringcheckpointDao()
                                     .countCheckpointsByHeaderAndUser(
                                         idHeader = header.idHeader,
                                         idUser = sesion.idUser
                                     )
 
-                                header.assignedUserId == sesion.idUser || capturasUsuario > 0
+                                val monitoreoAsignadoAlUsuario = header.assignedUserId == sesion.idUser
+                                val parcelaAsignadaAlUsuario = parcelaHeader?.assignedUserId == sesion.idUser
+                                val usuarioTieneCapturas = capturasUsuario > 0
+
+                                monitoreoAsignadoAlUsuario ||
+                                        parcelaAsignadaAlUsuario ||
+                                        usuarioTieneCapturas
                             }
                         }
 
@@ -1248,9 +1256,10 @@ class MainViewModel(
                                 // Invitado: solo consulta monitoreos asignados o donde ya tenga captura.
                                 // No usa filtro de parcelas en la interfaz.
                                 sesion.esInvitado -> {
-                                    monitoreoAsignadoAlUsuario || usuarioTieneCapturas
+                                    monitoreoAsignadoAlUsuario ||
+                                            parcelaAsignadaAlUsuario ||
+                                            usuarioTieneCapturas
                                 }
-
                                 else -> false
                             }
                         }
