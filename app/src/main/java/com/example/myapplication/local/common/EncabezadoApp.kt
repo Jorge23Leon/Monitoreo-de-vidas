@@ -210,7 +210,7 @@ fun EncabezadoApp(
                 }
 
 
-               
+
                 if (puedeVerPanelTrabajo) {
                     DropdownMenuItem(
                         text = {

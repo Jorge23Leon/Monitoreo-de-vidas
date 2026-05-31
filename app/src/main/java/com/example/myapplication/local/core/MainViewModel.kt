@@ -23,6 +23,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
+import com.example.myapplication.local.security.PasswordHasher
 
 private data class MainSesionRestauradaTemp(
     val sesion: UsuarioSesion,
@@ -51,6 +52,7 @@ class MainViewModel(
     private fun actualizarEstado(transform: (MainUiState) -> MainUiState) {
         uiState = transform(uiState)
     }
+
 
     private fun mostrarMensaje(mensaje: String) {
         actualizarEstado { it.copy(mensaje = mensaje) }
@@ -107,7 +109,48 @@ class MainViewModel(
         return obtenerPrefsSesion()
             .getLong("id_productor", 0L)
     }
+    fun abrirPerfilDesdePantallaActual() {
+        actualizarEstado {
+            it.copy(
+                pantallaAntesPerfil = it.pantallaActual,
+                pantallaActual = PantallaActual.PERFIL_USUARIO
+            )
+        }
+    }
+    fun volverDesdePerfil() {
+        val pantallaDestino = uiState.pantallaAntesPerfil
+        val pantallaFallback = when {
+            uiState.usuarioSesion?.esTecnico == true || uiState.usuarioSesion?.esInvitado == true -> {
+                PantallaActual.LISTA_MONITOREOS
+            }
 
+            uiState.ciaSeleccionada != null -> {
+                PantallaActual.FILTROS_MONITOREO
+            }
+
+            uiState.parentCiaSeleccionada != null -> {
+                PantallaActual.SELECCION_CIA
+            }
+
+            else -> {
+                PantallaActual.LOGIN
+            }
+        }
+
+        actualizarEstado {
+            it.copy(
+                pantallaAntesPerfil = null,
+                pantallaActual = if (
+                    pantallaDestino != null &&
+                    pantallaDestino != PantallaActual.PERFIL_USUARIO
+                ) {
+                    pantallaDestino
+                } else {
+                    pantallaFallback
+                }
+            )
+        }
+    }
     private fun guardarRanchoSesion(idRancho: Long?) {
         val editor = obtenerPrefsSesion().edit()
 
@@ -506,14 +549,29 @@ class MainViewModel(
         viewModelScope.launch {
             try {
                 val resultado = withContext(Dispatchers.IO) {
-                    val sesion = database.userDao().loginConRol(
-                        username = username,
-                        password = password
-                    )
+                    val usuario = database.userDao().getUserByUsername(username)
 
-                    if (sesion == null) {
+                    if (usuario == null) {
+                        null
+                    } else if (!PasswordHasher.verificarPassword(password, usuario.password)) {
                         null
                     } else {
+                        /*
+                         * Si el usuario todavía tenía contraseña en texto plano,
+                         * aquí se migra automáticamente a hash al iniciar sesión.
+                         */
+                        if (PasswordHasher.necesitaRehash(usuario.password)) {
+                            database.userDao().updateUser(
+                                usuario.copy(
+                                    password = PasswordHasher.generarHash(password)
+                                )
+                            )
+                        }
+
+                        val sesion = database.userDao()
+                            .getSesionByIdUser(usuario.idUser)
+                            ?: return@withContext null
+
                         val parentCias = if (sesion.esAdmin) {
                             database.localParentCiaDao().getAllParentCiasActivas()
                         } else {
@@ -652,7 +710,7 @@ class MainViewModel(
                                     lastName = lastname.ifBlank { null },
                                     username = username,
                                     email = email,
-                                    password = password,
+                                    password = PasswordHasher.generarHash(password),
                                     idRole = rol.idRole
                                 )
                             )
@@ -2107,13 +2165,7 @@ class MainViewModel(
             }
 
             PantallaActual.PERFIL_USUARIO -> {
-                val sesion = uiState.usuarioSesion
-                when {
-                    sesion != null && (sesion.esTecnico || sesion.esInvitado) -> cargarMonitoreosDirectoPorUsuario(sesion)
-                    uiState.ciaSeleccionada != null -> abrirFiltrosMonitoreoConCia(uiState.ciaSeleccionada!!)
-                    uiState.parentCiaSeleccionada != null -> irA(PantallaActual.SELECCION_PARENT_CIA)
-                    else -> irA(PantallaActual.LOGIN)
-                }
+                volverDesdePerfil()
             }
 
             PantallaActual.ADMIN_HOME -> {
@@ -2164,10 +2216,21 @@ class MainViewModel(
                             lastName = "Sandoval",
                             username = "jorge",
                             email = "jorge@test.com",
-                            password = "1234",
+                            password = PasswordHasher.generarHash("1234"),
                             idRole = rolAdmin.idRole
                         )
                     )
+                }
+                val usuarios = database.userDao().getAllUsers()
+
+                usuarios.forEach { usuario ->
+                    if (PasswordHasher.necesitaRehash(usuario.password)) {
+                        database.userDao().updateUser(
+                            usuario.copy(
+                                password = PasswordHasher.generarHash(usuario.password)
+                            )
+                        )
+                    }
                 }
 
             } catch (e: Exception) {

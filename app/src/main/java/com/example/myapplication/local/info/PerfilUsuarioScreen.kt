@@ -1,6 +1,5 @@
 package com.example.myapplication.local.info
 
-
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -11,12 +10,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,9 +35,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.myapplication.local.common.EncabezadoApp
-
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.UserEntity
+import com.example.myapplication.local.security.PasswordHasher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -78,10 +79,6 @@ fun PerfilUsuarioScreen(
         mutableStateOf("")
     }
 
-    var password by remember {
-        mutableStateOf("")
-    }
-
     var role by remember {
         mutableStateOf("")
     }
@@ -96,6 +93,26 @@ fun PerfilUsuarioScreen(
 
     var error by remember {
         mutableStateOf<String?>(null)
+    }
+
+    var mostrarDialogCambiarPassword by remember {
+        mutableStateOf(false)
+    }
+
+    var passwordActual by remember {
+        mutableStateOf("")
+    }
+
+    var nuevaPassword by remember {
+        mutableStateOf("")
+    }
+
+    var confirmarPassword by remember {
+        mutableStateOf("")
+    }
+
+    var guardandoPassword by remember {
+        mutableStateOf(false)
     }
 
     LaunchedEffect(idUser) {
@@ -115,7 +132,6 @@ fun PerfilUsuarioScreen(
                 lastName = usuarioDb.lastName ?: ""
                 username = usuarioDb.username
                 email = usuarioDb.email
-                password = usuarioDb.password
                 role = rolUsuario
             }
         } catch (e: Exception) {
@@ -123,6 +139,184 @@ fun PerfilUsuarioScreen(
         } finally {
             cargando = false
         }
+    }
+
+    if (mostrarDialogCambiarPassword) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!guardandoPassword) {
+                    mostrarDialogCambiarPassword = false
+                }
+            },
+            title = {
+                Text(
+                    text = "Cambiar contraseña",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = passwordActual,
+                        onValueChange = {
+                            passwordActual = it
+                        },
+                        label = {
+                            Text("Contraseña actual")
+                        },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = nuevaPassword,
+                        onValueChange = {
+                            nuevaPassword = it
+                        },
+                        label = {
+                            Text("Nueva contraseña")
+                        },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = confirmarPassword,
+                        onValueChange = {
+                            confirmarPassword = it
+                        },
+                        label = {
+                            Text("Confirmar nueva contraseña")
+                        },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val usuarioBase = usuarioActual
+                        val actualLimpia = passwordActual.trim()
+                        val nuevaLimpia = nuevaPassword.trim()
+                        val confirmarLimpia = confirmarPassword.trim()
+
+                        when {
+                            usuarioBase == null -> {
+                                Toast.makeText(
+                                    context,
+                                    "No hay usuario cargado",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+
+                            actualLimpia.isBlank() ||
+                                    nuevaLimpia.isBlank() ||
+                                    confirmarLimpia.isBlank() -> {
+                                Toast.makeText(
+                                    context,
+                                    "Completa todos los campos",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+
+                            nuevaLimpia.length < 6 -> {
+                                Toast.makeText(
+                                    context,
+                                    "La nueva contraseña debe tener mínimo 6 caracteres",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+
+                            nuevaLimpia != confirmarLimpia -> {
+                                Toast.makeText(
+                                    context,
+                                    "Las contraseñas nuevas no coinciden",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+
+                            !PasswordHasher.verificarPassword(
+                                passwordIngresado = actualLimpia,
+                                passwordGuardado = usuarioBase.password
+                            ) -> {
+                                Toast.makeText(
+                                    context,
+                                    "La contraseña actual no es correcta",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+
+                            else -> {
+                                guardandoPassword = true
+
+                                coroutineScope.launch {
+                                    try {
+                                        val usuarioConPasswordNueva = usuarioBase.copy(
+                                            password = PasswordHasher.generarHash(nuevaLimpia)
+                                        )
+
+                                        withContext(Dispatchers.IO) {
+                                            database.userDao().updateUser(usuarioConPasswordNueva)
+                                        }
+
+                                        usuarioActual = usuarioConPasswordNueva
+
+                                        passwordActual = ""
+                                        nuevaPassword = ""
+                                        confirmarPassword = ""
+                                        mostrarDialogCambiarPassword = false
+
+                                        Toast.makeText(
+                                            context,
+                                            "Contraseña actualizada correctamente",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    } catch (e: Exception) {
+                                        Toast.makeText(
+                                            context,
+                                            "Error al cambiar contraseña: ${e.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    } finally {
+                                        guardandoPassword = false
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    enabled = !guardandoPassword
+                ) {
+                    Text(
+                        text = if (guardandoPassword) "Guardando..." else "Guardar",
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1B5E20)
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        if (!guardandoPassword) {
+                            passwordActual = ""
+                            nuevaPassword = ""
+                            confirmarPassword = ""
+                            mostrarDialogCambiarPassword = false
+                        }
+                    },
+                    enabled = !guardandoPassword
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 
     Column(
@@ -245,20 +439,30 @@ fun PerfilUsuarioScreen(
                                 modifier = Modifier.fillMaxWidth()
                             )
 
-                            Spacer(modifier = Modifier.height(8.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
 
-                            OutlinedTextField(
-                                value = password,
-                                onValueChange = {
-                                    password = it
+                            Button(
+                                onClick = {
+                                    passwordActual = ""
+                                    nuevaPassword = ""
+                                    confirmarPassword = ""
+                                    mostrarDialogCambiarPassword = true
                                 },
-                                label = {
-                                    Text("Password")
-                                },
-                                singleLine = true,
-                                visualTransformation = PasswordVisualTransformation(),
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                                enabled = !guardando,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(50.dp),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF2E7D32)
+                                )
+                            ) {
+                                Text(
+                                    text = "Cambiar contraseña",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
 
                             Spacer(modifier = Modifier.height(12.dp))
 
@@ -308,7 +512,6 @@ fun PerfilUsuarioScreen(
                             val lastNameLimpio = lastName.trim()
                             val usernameLimpio = username.trim()
                             val emailLimpio = email.trim()
-                            val passwordLimpio = password.trim()
 
                             if (usuarioBase == null) {
                                 Toast.makeText(
@@ -321,14 +524,12 @@ fun PerfilUsuarioScreen(
 
                             if (
                                 firstNameLimpio.isBlank() ||
-                                lastNameLimpio.isBlank() ||
                                 usernameLimpio.isBlank() ||
-                                emailLimpio.isBlank() ||
-                                passwordLimpio.isBlank()
+                                emailLimpio.isBlank()
                             ) {
                                 Toast.makeText(
                                     context,
-                                    "Completa todos los campos",
+                                    "Completa nombre, usuario y correo",
                                     Toast.LENGTH_SHORT
                                 ).show()
                                 return@Button
@@ -377,7 +578,7 @@ fun PerfilUsuarioScreen(
                                             lastName = lastNameLimpio,
                                             username = usernameLimpio,
                                             email = emailLimpio,
-                                            password = passwordLimpio
+                                            password = usuarioBase.password
                                         )
                                     }
 

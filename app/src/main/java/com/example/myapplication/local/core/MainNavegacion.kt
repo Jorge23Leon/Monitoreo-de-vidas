@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 
+
 @Composable
 fun MainNavegacion(
     database: AppDatabase,
@@ -151,7 +152,7 @@ fun MainNavegacion(
                 },
 
                 onPerfilClick = {
-                    mainViewModel.irA(PantallaActual.PERFIL_USUARIO)
+                    mainViewModel.abrirPerfilDesdePantallaActual()
                 },
 
                 onMonitoreosClick = {
@@ -206,7 +207,7 @@ fun MainNavegacion(
                 },
 
                 onPerfilClick = {
-                    mainViewModel.irA(PantallaActual.PERFIL_USUARIO)
+                    mainViewModel.abrirPerfilDesdePantallaActual()
                 },
 
                 onMonitoreosClick = {
@@ -250,7 +251,7 @@ fun MainNavegacion(
                 },
 
                 onPerfilClick = {
-                    mainViewModel.irA(PantallaActual.PERFIL_USUARIO)
+                    mainViewModel.abrirPerfilDesdePantallaActual()
                 },
 
                 onMonitoreosClick = {
@@ -296,7 +297,7 @@ fun MainNavegacion(
                     },
 
                     onPerfilClick = {
-                        mainViewModel.irA(PantallaActual.PERFIL_USUARIO)
+                        mainViewModel.abrirPerfilDesdePantallaActual()
                     },
 
                     onMonitoreosClick = {
@@ -339,7 +340,7 @@ fun MainNavegacion(
                     },
 
                     onPerfilClick = {
-                        mainViewModel.irA(PantallaActual.PERFIL_USUARIO)
+                        mainViewModel.abrirPerfilDesdePantallaActual()
                     },
 
                     onMonitoreosClick = {
@@ -400,7 +401,7 @@ fun MainNavegacion(
                     },
 
                     onPerfilClick = {
-                        mainViewModel.irA(PantallaActual.PERFIL_USUARIO)
+                        mainViewModel.abrirPerfilDesdePantallaActual()
                     },
 
                     onMonitoreosClick = {
@@ -450,7 +451,7 @@ fun MainNavegacion(
                     },
 
                     onPerfilClick = {
-                        mainViewModel.irA(PantallaActual.PERFIL_USUARIO)
+                        mainViewModel.abrirPerfilDesdePantallaActual()
                     },
 
                     onMonitoreosClick = {
@@ -486,7 +487,7 @@ fun MainNavegacion(
                     },
 
                     onPerfilClick = {
-                        mainViewModel.irA(PantallaActual.PERFIL_USUARIO)
+                        mainViewModel.abrirPerfilDesdePantallaActual()
                     },
 
                     onMonitoreosClick = {
@@ -532,7 +533,7 @@ fun MainNavegacion(
                     },
 
                     onPerfilClick = {
-                        mainViewModel.irA(PantallaActual.PERFIL_USUARIO)
+                        mainViewModel.abrirPerfilDesdePantallaActual()
                     },
 
                     onMonitoreosClick = {
@@ -576,7 +577,7 @@ fun MainNavegacion(
                     },
 
                     onPerfilClick = {
-                        mainViewModel.irA(PantallaActual.PERFIL_USUARIO)
+                        mainViewModel.abrirPerfilDesdePantallaActual()
                     },
 
                     onMonitoreosClick = {
@@ -616,13 +617,7 @@ fun MainNavegacion(
                     rolUsuario = uiState.rolUsuarioActual,
 
                     onBackClick = {
-                        mainViewModel.irA(
-                            when {
-                                uiState.ciaSeleccionada != null -> PantallaActual.FILTROS_MONITOREO
-                                uiState.parentCiaSeleccionada != null -> PantallaActual.SELECCION_CIA
-                                else -> PantallaActual.LOGIN
-                            }
-                        )
+                        mainViewModel.volverDesdePerfil()
                     },
 
                     onPerfilActualizado = { usuario ->
@@ -630,7 +625,7 @@ fun MainNavegacion(
                     },
 
                     onPerfilClick = {
-                        mainViewModel.irA(PantallaActual.PERFIL_USUARIO)
+                        // Ya está en perfil; no se modifica pantallaAntesPerfil.
                     },
 
                     onMonitoreosClick = {
