@@ -52,6 +52,7 @@ fun MonitoreoMapaScreen(
     onPerfilClick: () -> Unit = {},
     onCerrarSesionClick: () -> Unit,
     onMonitoreosClick: () -> Unit = {},
+    onCambiarCiaClick: (() -> Unit)? = null,
     onAdminClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -182,6 +183,7 @@ fun MonitoreoMapaScreen(
                 onPerfilClick = onPerfilClick,
                 onMonitoreosClick = onMonitoreosClick,
                 onAdminClick = onAdminClick,
+                onCambiarCiaClick = onCambiarCiaClick,
                 onCerrarSesionClick = onCerrarSesionClick
             )
 

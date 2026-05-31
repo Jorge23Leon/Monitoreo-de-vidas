@@ -40,6 +40,7 @@ fun EncabezadoApp(
     nombreUsuario: String,
     rolUsuario: String = "",
     onPerfilClick: (() -> Unit)? = null,
+    onCambiarCiaClick: (() -> Unit)? = null,
     onMonitoreosClick: (() -> Unit)? = null,
     onAdminClick: (() -> Unit)? = null,
     onCerrarSesionClick: () -> Unit
@@ -64,16 +65,13 @@ fun EncabezadoApp(
             "supervisor"
         )
     }
+    val puedeCambiarCia = onCambiarCiaClick != null && rolNormalizado in listOf(
+        "admin",
+        "gerente",
+        "supervisor"
+    )
 
-    val puedeVerMonitoreos = remember(rolUsuario) {
-        rolNormalizado in listOf(
-            "admin",
-            "gerente",
-            "supervisor",
-            "tecnico",
-            "invitado"
-        )
-    }
+
 
     val fechaActual = remember {
         SimpleDateFormat(
@@ -193,31 +191,26 @@ fun EncabezadoApp(
                     }
                 )
 
-                if (puedeVerMonitoreos) {
+
+
+                if (puedeCambiarCia) {
                     DropdownMenuItem(
                         text = {
                             Text(
-                                text = "📋 Monitoreos",
+                                text = "🏢 Cambiar de CIA",
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF1B5E20)
                             )
                         },
                         onClick = {
                             menuAbierto = false
-
-                            if (onMonitoreosClick != null) {
-                                onMonitoreosClick()
-                            } else {
-                                Toast.makeText(
-                                    context,
-                                    "Apartado de monitoreos",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
+                            onCambiarCiaClick?.invoke()
                         }
                     )
                 }
 
+
+               
                 if (puedeVerPanelTrabajo) {
                     DropdownMenuItem(
                         text = {
@@ -305,6 +298,7 @@ fun EncabezadoApp(
         )
     }
 }
+
 private fun normalizarRolHeader(rol: String): String {
     val limpio = rol
         .trim()

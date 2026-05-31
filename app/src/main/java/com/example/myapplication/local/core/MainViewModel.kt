@@ -88,10 +88,6 @@ class MainViewModel(
             .edit()
             .putLong("id_parent_cia", idParentCia ?: 0L)
             .putLong("id_local_cia", idLocalCia)
-
-            /*
-             * Si cambia la CIA hija, limpiamos filtros anteriores.
-             */
             .remove("id_productor")
             .remove("id_rancho")
             .remove("id_parcela")
@@ -136,6 +132,14 @@ class MainViewModel(
         }
 
         editor.apply()
+    }
+    private fun limpiarCiaYFiltrosGuardados() {
+        obtenerPrefsSesion()
+            .edit()
+            .remove("id_productor")
+            .remove("id_rancho")
+            .remove("id_parcela")
+            .apply()
     }
 
     private fun borrarSesionGuardada() {
@@ -1967,6 +1971,63 @@ class MainViewModel(
         irA(PantallaActual.SELECCION_CIA)
     }
 
+    fun cambiarCiaDesdeMenu() {
+        val sesion = uiState.usuarioSesion
+
+        if (sesion == null) {
+            mostrarMensaje("No hay sesión activa")
+            irA(PantallaActual.LOGIN)
+            return
+        }
+
+        if (!(sesion.esAdmin || sesion.esGerente || sesion.esSupervisor)) {
+            mostrarMensaje("Tu rol no tiene permitido cambiar de CIA")
+            return
+        }
+
+        /*
+         * Conservamos la CIA padre y la CIA hija actual.
+         * Solo limpiamos filtros de monitoreo.
+         */
+        limpiarCiaYFiltrosGuardados()
+
+        actualizarEstado {
+            it.copy(
+                // NO borramos ciaSeleccionada para que quede marcada
+                // cuando regrese a la pantalla de selección de CIA.
+
+                productores = emptyList(),
+                ranchos = emptyList(),
+                parcelas = emptyList(),
+                ciclos = emptyList(),
+
+                productorSeleccionado = null,
+                ranchoSeleccionado = null,
+                parcelaSeleccionada = null,
+                cicloSeleccionado = null,
+
+                fechaInicioTexto = "",
+                fechaFinTexto = "",
+
+                busquedaFueConSaltoFiltros = false,
+
+                monitoreoSeleccionadoParaMapa = null,
+                monitoreoSeleccionadoParaReporte = null,
+                puntoSeleccionadoParaRegistro = null,
+
+                monitoreosEncontrados = emptyList(),
+                productoresResultado = emptyList(),
+                ranchosResultado = emptyList(),
+                parcelasResultado = emptyList(),
+                programasResultado = emptyList(),
+                cultivosResultado = emptyList(),
+
+                pantallaActual = PantallaActual.SELECCION_CIA
+            )
+        }
+
+        mostrarMensaje("Selecciona la CIA con la que quieres trabajar")
+    }
     fun onMonitoreoCreadoDesdeAdmin() {
         uiState.ciaSeleccionada?.let { cia ->
             cargarProductores(cia.idLocalCia)
@@ -2004,18 +2065,18 @@ class MainViewModel(
 
             PantallaActual.SELECCION_PARENT_CIA,
             PantallaActual.SELECCION_CIA -> {
-                cerrarSesion()
+                mostrarMensaje("Presiona atrás otra vez para salir de la app")
             }
 
             PantallaActual.FILTROS_MONITOREO -> {
-                irA(PantallaActual.SELECCION_CIA)
+                mostrarMensaje("Para cambiar de CIA usa el menú: Cambiar de CIA")
             }
 
             PantallaActual.LISTA_MONITOREOS -> {
                 val sesion = uiState.usuarioSesion
                 when {
                     sesion != null && (sesion.esTecnico || sesion.esInvitado) -> {
-                        cerrarSesion()
+                        mostrarMensaje("Presiona atrás otra vez para salir de la app")
                     }
 
                     uiState.ciaSeleccionada != null -> {

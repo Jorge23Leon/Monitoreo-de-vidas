@@ -47,6 +47,7 @@ fun AdminMonitoreoScreen(
     onMonitoreosClick: () -> Unit,
     onAdminClick: () -> Unit,
     onMensaje: (String) -> Unit,
+    onCambiarCiaClick: (() -> Unit)? = null,
     onCerrarSesionClick: () -> Unit,
     onMonitoreoCreado: () -> Unit
 
@@ -307,6 +308,7 @@ fun AdminMonitoreoScreen(
                 onPerfilClick = onPerfilClick,
                 onMonitoreosClick = onMonitoreosClick,
                 onAdminClick = onAdminClick,
+                onCambiarCiaClick = onCambiarCiaClick,
                 onCerrarSesionClick = onCerrarSesionClick
             )
 

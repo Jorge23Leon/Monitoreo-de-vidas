@@ -38,6 +38,9 @@ fun MainNavegacion(
     val cerrarSesionClick = {
         mainViewModel.cerrarSesion()
     }
+    val cambiarCiaClick = {
+        mainViewModel.cambiarCiaDesdeMenu()
+    }
 
     when (uiState.pantallaActual) {
         PantallaActual.CARGANDO_SESION -> {
@@ -213,6 +216,8 @@ fun MainNavegacion(
                 onAdminClick = {
                     mainViewModel.abrirPanelAdministrador()
                 },
+                onCambiarCiaClick = cambiarCiaClick,
+
                 onCerrarSesionClick = cerrarSesionClick
             )
         }
@@ -255,6 +260,8 @@ fun MainNavegacion(
                 onAdminClick = {
                     mainViewModel.abrirPanelAdministrador()
                 },
+                onCambiarCiaClick = cambiarCiaClick,
+
                 onCerrarSesionClick = cerrarSesionClick
             )
         }
@@ -299,6 +306,8 @@ fun MainNavegacion(
                     onAdminClick = {
                         mainViewModel.abrirPanelAdministrador()
                     },
+                    onCambiarCiaClick = cambiarCiaClick,
+
                     onCerrarSesionClick = cerrarSesionClick
                 )
             }
@@ -340,6 +349,8 @@ fun MainNavegacion(
                     onAdminClick = {
                         mainViewModel.abrirPanelAdministrador()
                     },
+                    onCambiarCiaClick = cambiarCiaClick,
+
                     onCerrarSesionClick = cerrarSesionClick
                 )
             }
@@ -399,6 +410,8 @@ fun MainNavegacion(
                     onAdminClick = {
                         mainViewModel.abrirPanelAdministrador()
                     },
+                    onCambiarCiaClick = cambiarCiaClick,
+
                     onCerrarSesionClick = cerrarSesionClick
                 )
             }
@@ -447,6 +460,8 @@ fun MainNavegacion(
                     onAdminClick = {
                         mainViewModel.abrirPanelAdministrador()
                     },
+                    onCambiarCiaClick = cambiarCiaClick,
+
                     onCerrarSesionClick = cerrarSesionClick
                 )
             }
@@ -493,6 +508,8 @@ fun MainNavegacion(
                     onMonitoreoCreado = {
                         mainViewModel.onMonitoreoCreadoDesdeAdmin()
                     },
+                    onCambiarCiaClick = cambiarCiaClick,
+
                     onCerrarSesionClick = cerrarSesionClick
                 )
             }
@@ -533,6 +550,8 @@ fun MainNavegacion(
                             Toast.LENGTH_SHORT
                         ).show()
                     },
+
+                    onCambiarCiaClick = cambiarCiaClick,
 
                     onCerrarSesionClick = cerrarSesionClick
                 )
@@ -575,6 +594,8 @@ fun MainNavegacion(
                             Toast.LENGTH_SHORT
                         ).show()
                     },
+
+                    onCambiarCiaClick = cambiarCiaClick,
 
                     onCerrarSesionClick = cerrarSesionClick
                 )
@@ -620,6 +641,8 @@ fun MainNavegacion(
                         mainViewModel.abrirPanelAdministrador()
 
                     },
+
+                    onCambiarCiaClick = cambiarCiaClick,
 
                     onCerrarSesionClick = cerrarSesionClick
                 )

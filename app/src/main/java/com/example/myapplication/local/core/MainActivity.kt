@@ -5,19 +5,19 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.myapplication.local.entities.AppDatabase
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.myapplication.local.entities.AppDatabase
 
 class MainActivity : ComponentActivity() {
 
@@ -32,7 +32,8 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 val mainViewModel: MainViewModel = viewModel()
                 val uiState = mainViewModel.uiState
-                var mostrarDialogCerrarSesionBack by remember {
+
+                var mostrarDialogSalirApp by remember {
                     mutableStateOf(false)
                 }
 
@@ -54,15 +55,16 @@ class MainActivity : ComponentActivity() {
                 ) {
                     when (uiState.pantallaActual) {
                         PantallaActual.SELECCION_PARENT_CIA,
-                        PantallaActual.SELECCION_CIA -> {
-                            mostrarDialogCerrarSesionBack = true
+                        PantallaActual.SELECCION_CIA,
+                        PantallaActual.FILTROS_MONITOREO -> {
+                            mostrarDialogSalirApp = true
                         }
 
                         PantallaActual.LISTA_MONITOREOS -> {
                             val sesion = uiState.usuarioSesion
 
                             if (sesion != null && (sesion.esTecnico || sesion.esInvitado)) {
-                                mostrarDialogCerrarSesionBack = true
+                                mostrarDialogSalirApp = true
                             } else {
                                 mainViewModel.manejarBack()
                             }
@@ -73,31 +75,32 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                if (mostrarDialogCerrarSesionBack) {
+
+                if (mostrarDialogSalirApp) {
                     AlertDialog(
                         onDismissRequest = {
-                            mostrarDialogCerrarSesionBack = false
+                            mostrarDialogSalirApp = false
                         },
                         title = {
                             Text(
-                                text = "Cerrar sesión",
+                                text = "Salir de la app",
                                 fontWeight = FontWeight.Bold
                             )
                         },
                         text = {
                             Text(
-                                text = "¿Estás seguro de que quieres cerrar sesión?"
+                                text = "¿Estás seguro de que quieres salir de la app?"
                             )
                         },
                         confirmButton = {
                             TextButton(
                                 onClick = {
-                                    mostrarDialogCerrarSesionBack = false
-                                    mainViewModel.cerrarSesion()
+                                    mostrarDialogSalirApp = false
+                                    finish()
                                 }
                             ) {
                                 Text(
-                                    text = "Sí, cerrar sesión",
+                                    text = "Sí, salir",
                                     color = Color(0xFFB3261E),
                                     fontWeight = FontWeight.Bold
                                 )
@@ -106,7 +109,7 @@ class MainActivity : ComponentActivity() {
                         dismissButton = {
                             TextButton(
                                 onClick = {
-                                    mostrarDialogCerrarSesionBack = false
+                                    mostrarDialogSalirApp = false
                                 }
                             ) {
                                 Text(

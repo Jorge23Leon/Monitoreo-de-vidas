@@ -49,6 +49,7 @@ fun RegistroPuntoMonitoreoScreen(
     onCerrarSesionClick: () -> Unit,
     onGuardado: () -> Unit,
     onPerfilClick: () -> Unit = {},
+    onCambiarCiaClick: (() -> Unit)? = null,
     onMonitoreosClick: () -> Unit = {},
     onAdminClick: () -> Unit = {}
 ) {
@@ -323,6 +324,7 @@ fun RegistroPuntoMonitoreoScreen(
             onPerfilClick = onPerfilClick,
             onMonitoreosClick = onMonitoreosClick,
             onAdminClick = onAdminClick,
+            onCambiarCiaClick = onCambiarCiaClick,
             onCerrarSesionClick = onCerrarSesionClick
         )
 

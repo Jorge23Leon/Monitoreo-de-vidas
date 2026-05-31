@@ -47,6 +47,7 @@ fun MonitoreoListaScreen(
     onAbrirMapaClick: (LocalPhytomonitoringHeaderEntity) -> Unit,
     onAbrirReporteClick: (LocalPhytomonitoringHeaderEntity) -> Unit,
     onPerfilClick: () -> Unit = {},
+    onCambiarCiaClick: (() -> Unit)? = null,
     onMonitoreosClick: () -> Unit = {},
     onAdminClick: () -> Unit = {}
 ) {
@@ -156,6 +157,7 @@ fun MonitoreoListaScreen(
                 onPerfilClick = onPerfilClick,
                 onMonitoreosClick = onMonitoreosClick,
                 onAdminClick = onAdminClick,
+                onCambiarCiaClick = onCambiarCiaClick,
                 onCerrarSesionClick = onCerrarSesionClick
             )
 

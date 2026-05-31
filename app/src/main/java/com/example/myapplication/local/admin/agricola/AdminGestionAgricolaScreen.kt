@@ -58,7 +58,8 @@ fun AdminGestionAgricolaScreen(
     onCerrarSesionClick: () -> Unit,
     onMonitoreosClick: () -> Unit,
     onAdminClick: () -> Unit,
-    onMensaje: (String) -> Unit
+    onMensaje: (String) -> Unit,
+    onCambiarCiaClick: (() -> Unit)? = null,
 ) {
     val coroutineScope = rememberCoroutineScope()
 
@@ -812,6 +813,7 @@ fun AdminGestionAgricolaScreen(
                 onPerfilClick = onPerfilClick,
                 onMonitoreosClick = onMonitoreosClick,
                 onAdminClick = onAdminClick,
+                onCambiarCiaClick = onCambiarCiaClick,
                 onCerrarSesionClick = onCerrarSesionClick
             )
 

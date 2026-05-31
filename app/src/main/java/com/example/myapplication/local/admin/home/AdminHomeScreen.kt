@@ -45,6 +45,7 @@ fun AdminHomeScreen(
     onPerfilClick: () -> Unit,
     onCerrarSesionClick: () -> Unit,
     onMonitoreosClick: () -> Unit,
+    onCambiarCiaClick: (() -> Unit)? = null,
     onAdminClick: () -> Unit
 ) {
     Box(
@@ -65,6 +66,7 @@ fun AdminHomeScreen(
                 onPerfilClick = onPerfilClick,
                 onMonitoreosClick = onMonitoreosClick,
                 onAdminClick = onAdminClick,
+                onCambiarCiaClick = onCambiarCiaClick,
                 onCerrarSesionClick = onCerrarSesionClick
             )
 

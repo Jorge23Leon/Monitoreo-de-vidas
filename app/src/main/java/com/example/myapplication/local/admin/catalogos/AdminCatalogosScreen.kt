@@ -52,6 +52,7 @@ fun AdminCatalogosScreen(
     onMonitoreosClick: () -> Unit,
     onAdminClick: () -> Unit,
     onCerrarSesionClick: () -> Unit,
+    onCambiarCiaClick: (() -> Unit)? = null,
     onMensaje: (String) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -261,6 +262,7 @@ fun AdminCatalogosScreen(
                 onPerfilClick = onPerfilClick,
                 onMonitoreosClick = onMonitoreosClick,
                 onAdminClick = onAdminClick,
+                onCambiarCiaClick = onCambiarCiaClick,
                 onCerrarSesionClick = onCerrarSesionClick
             )
 

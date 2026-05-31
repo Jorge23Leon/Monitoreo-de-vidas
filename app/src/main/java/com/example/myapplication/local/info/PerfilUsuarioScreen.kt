@@ -52,6 +52,7 @@ fun PerfilUsuarioScreen(
     onPerfilActualizado: (UserEntity) -> Unit,
     onPerfilClick: () -> Unit,
     onMonitoreosClick: () -> Unit,
+    onCambiarCiaClick: (() -> Unit)? = null,
     onAdminClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -135,6 +136,7 @@ fun PerfilUsuarioScreen(
             onPerfilClick = onPerfilClick,
             onMonitoreosClick = onMonitoreosClick,
             onAdminClick = onAdminClick,
+            onCambiarCiaClick = onCambiarCiaClick,
             onCerrarSesionClick = onCerrarSesionClick
         )
 

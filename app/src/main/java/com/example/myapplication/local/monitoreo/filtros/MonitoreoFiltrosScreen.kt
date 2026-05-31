@@ -47,6 +47,8 @@ fun MonitoreoFiltrosScreen(
     ranchoSeleccionado: LocalRanchEntity?,
     parcelaSeleccionada: LocalPlotEntity?,
     onCerrarSesionClick: () -> Unit,
+    onCambiarCiaClick: (() -> Unit)? = null,
+
 
     monitoreos: List<LocalPhytomonitoringHeaderEntity> = emptyList(),
     productoresResultado: List<LocalAgroUnitEntity> = emptyList(),
@@ -155,6 +157,7 @@ fun MonitoreoFiltrosScreen(
                     onPerfilClick = onPerfilClick,
                     onMonitoreosClick = onMonitoreosClick,
                     onAdminClick = onAdminClick,
+                    onCambiarCiaClick = onCambiarCiaClick,
                     onCerrarSesionClick = onCerrarSesionClick
                 )
 
