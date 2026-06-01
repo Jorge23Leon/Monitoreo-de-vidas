@@ -205,6 +205,12 @@ fun MainNavegacion(
                 onAbrirReporteClick = { header ->
                     mainViewModel.abrirReporte(header)
                 },
+                onCancelarMonitoreoClick = { header, motivo ->
+                    mainViewModel.cancelarMonitoreoConfirmado(
+                        header = header,
+                        motivo = motivo
+                    )
+                },
 
                 onPerfilClick = {
                     mainViewModel.abrirPerfilDesdePantallaActual()
@@ -250,6 +256,13 @@ fun MainNavegacion(
                     mainViewModel.abrirReporte(header)
                 },
 
+                onCancelarMonitoreoClick = { header, motivo ->
+                    mainViewModel.cancelarMonitoreoConfirmado(
+                        header = header,
+                        motivo = motivo
+                    )
+                },
+
                 onPerfilClick = {
                     mainViewModel.abrirPerfilDesdePantallaActual()
                 },
@@ -280,7 +293,6 @@ fun MainNavegacion(
                         programa.idProgram == header.idProgram
                     }
                     ?.cycle ?: header.cycle.ifBlank { "Monitoreo ${header.idHeader}" }
-
                 MonitoreoMapaScreen(
                     database = database,
                     header = header,
@@ -296,6 +308,10 @@ fun MainNavegacion(
                         mainViewModel.onMonitoreoActualizado(nuevoEstado)
                     },
 
+                    onBackClick = {
+                        mainViewModel.volverAConsultaMonitoreos()
+                    },
+
                     onPerfilClick = {
                         mainViewModel.abrirPerfilDesdePantallaActual()
                     },
@@ -307,6 +323,7 @@ fun MainNavegacion(
                     onAdminClick = {
                         mainViewModel.abrirPanelAdministrador()
                     },
+
                     onCambiarCiaClick = cambiarCiaClick,
 
                     onCerrarSesionClick = cerrarSesionClick

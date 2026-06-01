@@ -10,7 +10,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -32,6 +35,7 @@ import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
 import com.example.myapplication.local.entities.LocalPlotEntity
 import com.example.myapplication.local.entities.LocalProgramEntity
 import com.example.myapplication.local.entities.LocalRanchEntity
+import java.util.Locale
 
 @Composable
 fun MonitoreoFiltrosScreen(
@@ -48,7 +52,8 @@ fun MonitoreoFiltrosScreen(
     parcelaSeleccionada: LocalPlotEntity?,
     onCerrarSesionClick: () -> Unit,
     onCambiarCiaClick: (() -> Unit)? = null,
-
+    onMonitoreosClick: () -> Unit = {},
+    onAdminClick: () -> Unit = {},
 
     monitoreos: List<LocalPhytomonitoringHeaderEntity> = emptyList(),
     productoresResultado: List<LocalAgroUnitEntity> = emptyList(),
@@ -63,16 +68,36 @@ fun MonitoreoFiltrosScreen(
 
     onAbrirMapaClick: (LocalPhytomonitoringHeaderEntity) -> Unit = {},
     onAbrirReporteClick: (LocalPhytomonitoringHeaderEntity) -> Unit = {},
-    onPerfilClick: () -> Unit = {},
-    onMonitoreosClick: () -> Unit = {},
-    onAdminClick: () -> Unit = {}
+    onCancelarMonitoreoClick: (LocalPhytomonitoringHeaderEntity, String) -> Unit = { _, _ -> },
+    onPerfilClick: () -> Unit = {}
 ) {
     val rolNormalizado = remember(rolUsuario) {
         normalizarRolVm(rolUsuario)
     }
 
-    val esAdmin = rolNormalizado == "admin"
-    val soloConsulta = rolNormalizado == "gerente" || rolNormalizado == "supervisor"
+    val rolParaPermisos = remember(rolUsuario, rolNormalizado) {
+        "$rolUsuario $rolNormalizado"
+            .trim()
+            .lowercase(Locale.getDefault())
+            .replace("á", "a")
+            .replace("é", "e")
+            .replace("í", "i")
+            .replace("ó", "o")
+            .replace("ú", "u")
+            .replace(".", "")
+            .replace("_", " ")
+            .replace(Regex("\\s+"), " ")
+    }
+
+    val esAdmin = rolParaPermisos.contains("admin") ||
+            rolParaPermisos.contains("administrador")
+
+    val esTecnico = rolParaPermisos.contains("tecnico")
+    val esGerente = rolParaPermisos.contains("gerente")
+    val esSupervisor = rolParaPermisos.contains("supervisor") ||
+            rolParaPermisos.contains("supervision")
+
+    val soloConsulta = esGerente || esSupervisor
 
     val productoresMap = remember(productoresResultado) {
         productoresResultado.associateBy { it.idLocalAgroUnit }
@@ -94,17 +119,187 @@ fun MonitoreoFiltrosScreen(
         cultivosResultado.associateBy { it.idCrop }
     }
 
-    var filtrosExpandidos by remember { mutableStateOf(true) }
+    var filtrosExpandidos by remember {
+        mutableStateOf(true)
+    }
+
+    var monitoreoParaIniciar by remember {
+        mutableStateOf<LocalPhytomonitoringHeaderEntity?>(null)
+    }
+
+    var monitoreoParaCancelar by remember {
+        mutableStateOf<LocalPhytomonitoringHeaderEntity?>(null)
+    }
+
+    var motivoCancelacion by remember {
+        mutableStateOf("")
+    }
+
+    var errorMotivoCancelacion by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    if (monitoreoParaCancelar != null) {
+        AlertDialog(
+            onDismissRequest = {
+                monitoreoParaCancelar = null
+                motivoCancelacion = ""
+                errorMotivoCancelacion = null
+            },
+            title = {
+                Text(
+                    text = "Cancelar monitoreo",
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFB3261E)
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Indica el motivo de cancelación. Esta nota se guardará en el monitoreo.",
+                        fontSize = 13.sp,
+                        color = Color.DarkGray
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = motivoCancelacion,
+                        onValueChange = { texto ->
+                            motivoCancelacion = texto
+                            errorMotivoCancelacion = null
+                        },
+                        label = {
+                            Text("Motivo de cancelación")
+                        },
+                        minLines = 3,
+                        isError = errorMotivoCancelacion != null,
+                        supportingText = {
+                            errorMotivoCancelacion?.let { mensaje ->
+                                Text(
+                                    text = mensaje,
+                                    color = Color(0xFFB3261E)
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val header = monitoreoParaCancelar
+                        val motivoLimpio = motivoCancelacion.trim()
+
+                        if (header == null) {
+                            monitoreoParaCancelar = null
+                            return@TextButton
+                        }
+
+                        if (motivoLimpio.isBlank()) {
+                            errorMotivoCancelacion = "El motivo es obligatorio"
+                            return@TextButton
+                        }
+
+                        onCancelarMonitoreoClick(header, motivoLimpio)
+
+                        monitoreoParaCancelar = null
+                        motivoCancelacion = ""
+                        errorMotivoCancelacion = null
+                    }
+                ) {
+                    Text(
+                        text = "Confirmar cancelación",
+                        color = Color(0xFFB3261E),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        monitoreoParaCancelar = null
+                        motivoCancelacion = ""
+                        errorMotivoCancelacion = null
+                    }
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    if (monitoreoParaIniciar != null) {
+        AlertDialog(
+            onDismissRequest = {
+                monitoreoParaIniciar = null
+            },
+            title = {
+                Text(
+                    text = "Iniciar monitoreo",
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF173B1A)
+                )
+            },
+            text = {
+                Text(
+                    text = "¿Estás seguro que quieres iniciar este monitoreo?\n\nAl continuar se abrirá el mapa del monitoreo.",
+                    fontSize = 14.sp,
+                    color = Color.DarkGray
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val header = monitoreoParaIniciar
+
+                        if (header != null) {
+                            onAbrirMapaClick(header)
+                        }
+
+                        monitoreoParaIniciar = null
+                    }
+                ) {
+                    Text(
+                        text = "Sí, iniciar",
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF0B6B20)
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        monitoreoParaIniciar = null
+                    }
+                ) {
+                    Text("No")
+                }
+            }
+        )
+    }
 
     key(
         productorSeleccionado?.idLocalAgroUnit,
         ranchoSeleccionado?.idLocalRanch,
         parcelaSeleccionada?.idLocalPlot
     ) {
-        var cicloFiltro by remember { mutableStateOf<LocalProgramEntity?>(null) }
-        var fechaInicioTexto by remember { mutableStateOf("") }
-        var fechaFinTexto by remember { mutableStateOf("") }
-        var estadoFiltro by remember { mutableStateOf("Todos") }
+        var cicloFiltro by remember {
+            mutableStateOf<LocalProgramEntity?>(null)
+        }
+
+        var fechaInicioTexto by remember {
+            mutableStateOf("")
+        }
+
+        var fechaFinTexto by remember {
+            mutableStateOf("")
+        }
+
+        var estadoFiltro by remember {
+            mutableStateOf("Todos")
+        }
 
         val programasDisponibles = remember(monitoreos, programasResultado) {
             val idsProgramas = monitoreos
@@ -129,13 +324,26 @@ fun MonitoreoFiltrosScreen(
             estadoFiltro
         ) {
             monitoreos.filter { header ->
-                val cumpleCiclo = cicloFiltro == null || header.idProgram == cicloFiltro?.idProgram
-                val inicioHeader = header.estStartDate ?: 0L
-                val cumpleFechaInicio = fechaInicioMillis == null || inicioHeader >= fechaInicioMillis
-                val cumpleFechaFin = fechaFinMillis == null || inicioHeader <= fechaFinMillis
-                val cumpleEstado = cumpleEstadoFiltro(header.status, estadoFiltro)
+                val cumpleCiclo = cicloFiltro == null ||
+                        header.idProgram == cicloFiltro?.idProgram
 
-                cumpleCiclo && cumpleFechaInicio && cumpleFechaFin && cumpleEstado
+                val inicioHeader = header.estStartDate ?: 0L
+
+                val cumpleFechaInicio = fechaInicioMillis == null ||
+                        inicioHeader >= fechaInicioMillis
+
+                val cumpleFechaFin = fechaFinMillis == null ||
+                        inicioHeader <= fechaFinMillis
+
+                val cumpleEstado = cumpleEstadoFiltro(
+                    status = header.status,
+                    estadoFiltro = estadoFiltro
+                )
+
+                cumpleCiclo &&
+                        cumpleFechaInicio &&
+                        cumpleFechaFin &&
+                        cumpleEstado
             }
         }
 
@@ -176,7 +384,9 @@ fun MonitoreoFiltrosScreen(
 
                 FiltrosPrincipalesCard(
                     filtrosExpandidos = filtrosExpandidos,
-                    onExpandChange = { filtrosExpandidos = !filtrosExpandidos },
+                    onExpandChange = {
+                        filtrosExpandidos = !filtrosExpandidos
+                    },
                     productores = productores,
                     ranchos = ranchos,
                     parcelas = parcelas,
@@ -197,10 +407,18 @@ fun MonitoreoFiltrosScreen(
                         fechaInicioTexto = fechaInicioTexto,
                         fechaFinTexto = fechaFinTexto,
                         estadoFiltro = estadoFiltro,
-                        onCicloChange = { cicloFiltro = it },
-                        onFechaInicioChange = { fechaInicioTexto = it },
-                        onFechaFinChange = { fechaFinTexto = it },
-                        onEstadoChange = { estadoFiltro = it },
+                        onCicloChange = {
+                            cicloFiltro = it
+                        },
+                        onFechaInicioChange = {
+                            fechaInicioTexto = it
+                        },
+                        onFechaFinChange = {
+                            fechaFinTexto = it
+                        },
+                        onEstadoChange = {
+                            estadoFiltro = it
+                        },
                         onLimpiarClick = {
                             cicloFiltro = null
                             fechaInicioTexto = ""
@@ -231,10 +449,34 @@ fun MonitoreoFiltrosScreen(
                         monitoreosFiltrados.forEach { header ->
                             val programa = programasMap[header.idProgram]
                             val parcela = parcelasMap[header.idLocalPlot]
-                            val rancho = parcela?.let { ranchosMap[it.idLocalRanch] }
-                            val productor = programa?.let { productoresMap[it.idLocalAgroUnit] }
-                            val cultivo = cultivosMap[header.idCrop] ?: programa?.let { cultivosMap[it.idCrop] }
+                            val rancho = parcela?.let {
+                                ranchosMap[it.idLocalRanch]
+                            }
+                            val productor = programa?.let {
+                                productoresMap[it.idLocalAgroUnit]
+                            }
+                            val cultivo = cultivosMap[header.idCrop] ?: programa?.let {
+                                cultivosMap[it.idCrop]
+                            }
+
                             val cerrado = esEstadoCerradoFiltro(header.status)
+
+                            val estadoNormalizado = header.status
+                                .trim()
+                                .lowercase(Locale.getDefault())
+
+                            val cancelado = estadoNormalizado in listOf(
+                                "cancelado",
+                                "cancelled",
+                                "canceled"
+                            )
+
+                            val estadoPendiente = estadoNormalizado == "pendiente" ||
+                                    estadoNormalizado == "pending"
+
+                            val monitoreoYaIniciado = header.startAt != null ||
+                                    estadoNormalizado.contains("proceso") ||
+                                    estadoNormalizado.contains("progress")
 
                             TarjetaMonitoreoConsulta(
                                 header = header,
@@ -248,17 +490,32 @@ fun MonitoreoFiltrosScreen(
                                 codigo = header.extId ?: programa?.extId ?: "MON-${header.idHeader}",
                                 fotoCultivo = cultivo?.photo,
                                 nombreCultivo = cultivo?.name,
-                                mostrarAbrir = esAdmin && !cerrado,
-                                mostrarReporte = soloConsulta || esAdmin || cerrado,
-                                onAbrirClick = {
+                                mostrarAbrir = esAdmin && !cerrado && !cancelado,
+                                mostrarReporte = (soloConsulta || esAdmin || cerrado) && !cancelado,
+                                puedeCancelar = (esAdmin || esTecnico) &&
+                                        estadoPendiente &&
+                                        !monitoreoYaIniciado &&
+                                        !cerrado &&
+                                        !cancelado, onAbrirClick = {
+                                    if (cancelado) {
+                                        return@TarjetaMonitoreoConsulta
+                                    }
+
                                     if (soloConsulta || cerrado) {
                                         onAbrirReporteClick(header)
                                     } else {
-                                        onAbrirMapaClick(header)
+                                        monitoreoParaIniciar = header
                                     }
                                 },
                                 onReporteClick = {
-                                    onAbrirReporteClick(header)
+                                    if (!cancelado) {
+                                        onAbrirReporteClick(header)
+                                    }
+                                },
+                                onCancelarClick = {
+                                    monitoreoParaCancelar = header
+                                    motivoCancelacion = ""
+                                    errorMotivoCancelacion = null
                                 }
                             )
 

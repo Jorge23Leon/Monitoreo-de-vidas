@@ -185,6 +185,21 @@ interface LocalPhytomonitoringHeaderDao {
         idHeader: Long
     )
 
+
+    @Query("""
+        UPDATE local_phytomonitoring_headers
+        SET
+            status = 'Cancelado',
+            finished_at = :fechaCancelacion,
+            additional_notes = :motivoCancelacion
+        WHERE idHeader = :idHeader
+    """)
+    suspend fun cancelarMonitoreoConMotivo(
+        idHeader: Long,
+        fechaCancelacion: Long,
+        motivoCancelacion: String
+    ): Int
+
 }
 
 

@@ -1748,6 +1748,11 @@ class MainViewModel(
     }
 
     fun abrirReporte(header: LocalPhytomonitoringHeaderEntity) {
+        if (esEstadoCanceladoVm(header.status)) {
+            mostrarMensaje("Este monitoreo está cancelado. No se puede ver la información.")
+            return
+        }
+
         actualizarEstado {
             it.copy(
                 monitoreoSeleccionadoParaReporte = header,
@@ -1836,6 +1841,10 @@ class MainViewModel(
                  */
                 val headerActualizado = obtenerHeaderFrescoSeguro(header)
                 actualizarHeaderEnLista(headerActualizado)
+                if (esEstadoCanceladoVm(headerActualizado.status)) {
+                    mostrarMensaje("Este monitoreo está cancelado. No se puede abrir ni consultar información.")
+                    return@launch
+                }
 
                 if (esEstadoCerradoVm(headerActualizado.status)) {
                     mandarAReportePorMonitoreoCerrado(
@@ -1991,6 +2000,56 @@ class MainViewModel(
             }
 
             cargarMonitoreosPorFiltrosProgresivos()
+        }
+    }
+
+
+
+    fun cancelarMonitoreoConfirmado(
+        header: LocalPhytomonitoringHeaderEntity,
+        motivo: String
+    ) {
+        val motivoLimpio = motivo.trim()
+
+        if (motivoLimpio.isBlank()) {
+            mostrarMensaje("El motivo de cancelación es obligatorio")
+            return
+        }
+
+        if (uiState.cargando) return
+
+        viewModelScope.launch {
+            try {
+                actualizarEstado { it.copy(cargando = true) }
+
+                val headerActualizado = withContext(Dispatchers.IO) {
+                    val fechaCancelacion = System.currentTimeMillis()
+                    val notaCancelacion = "Cancelado: $motivoLimpio"
+
+                    database.localphytomonitoringheaderDao()
+                        .cancelarMonitoreoConMotivo(
+                            idHeader = header.idHeader,
+                            fechaCancelacion = fechaCancelacion,
+                            motivoCancelacion = notaCancelacion
+                        )
+
+                    database.localphytomonitoringheaderDao()
+                        .getHeaderById(header.idHeader)
+                        ?: header.copy(
+                            status = "Cancelado",
+                            finishedAt = fechaCancelacion,
+                            additionalNotes = notaCancelacion
+                        )
+                }
+
+                actualizarHeaderEnLista(headerActualizado)
+                mostrarMensaje("Monitoreo cancelado correctamente")
+            } catch (e: Exception) {
+                e.printStackTrace()
+                mostrarMensaje("Error al cancelar monitoreo: ${e.message}")
+            } finally {
+                actualizarEstado { it.copy(cargando = false) }
+            }
         }
     }
 
@@ -2198,7 +2257,15 @@ class MainViewModel(
         database.localRoleDao().insertRoles(rolesBase)
     }
 
+    private fun esEstadoCanceladoVm(status: String): Boolean {
+        return when (status.trim().lowercase(Locale.getDefault())) {
+            "cancelado",
+            "cancelled",
+            "canceled" -> true
 
+            else -> false
+        }
+    }
     private fun insertarDatosInicialesSeguros() {
         viewModelScope.launch(Dispatchers.IO) {
             try {

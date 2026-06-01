@@ -64,6 +64,17 @@ data class LocalPhytomonitoringHeaderEntity(
 
     @ColumnInfo(name = "finished_at")
     val finishedAt: Long? = null,
+    @ColumnInfo(
+        name = "additional_notes",
+        defaultValue = ""
+    )
+    val additionalNotes: String = "",
+
+    @ColumnInfo(
+        name = "radius_tolerance",
+        defaultValue = "50.0"
+    )
+    val radiusTolerance: Double = 50.0,
 
     val status: String = "Pendiente",
 

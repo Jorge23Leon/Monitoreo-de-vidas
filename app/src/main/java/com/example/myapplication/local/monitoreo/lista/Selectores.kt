@@ -275,7 +275,7 @@ private fun FiltroCompactoEstado(
     onSelected: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val estados = listOf("Todos", "Pendiente", "En proceso", "Completado", "Cancelado")
+    val estados = listOf("Todos", "Pendiente", "Pausado", "En proceso", "Completado", "Cancelado")
 
     Box {
         OutlinedButton(

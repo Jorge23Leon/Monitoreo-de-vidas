@@ -2,7 +2,6 @@ package com.example.myapplication.local.monitoreo.lista
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,9 +17,16 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,20 +49,44 @@ internal fun EncabezadoListaMonitoreos(
         colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAF7)),
         elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Box(
-                    modifier = Modifier.size(38.dp).clip(CircleShape).background(Color(0xFFE8F5E9)),
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFE8F5E9)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(text = "▣", fontSize = 22.sp, color = Color(0xFF0B6B20))
+                    Text(
+                        text = "▣",
+                        fontSize = 22.sp,
+                        color = Color(0xFF0B6B20)
+                    )
                 }
 
                 Spacer(modifier = Modifier.width(10.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(text = titulo, fontSize = 23.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF173B1A))
-                    Text(text = subtitulo, fontSize = 12.sp, color = Color(0xFF5E6B5B))
+                    Text(
+                        text = titulo,
+                        fontSize = 23.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color(0xFF173B1A)
+                    )
+
+                    Text(
+                        text = subtitulo,
+                        fontSize = 12.sp,
+                        color = Color(0xFF5E6B5B)
+                    )
                 }
             }
 
@@ -88,14 +118,32 @@ internal fun CajaAvisoMonitoreos(
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(text = icono, fontSize = 22.sp, color = Color(0xFF0B6B20))
+            Text(
+                text = icono,
+                fontSize = 22.sp,
+                color = Color(0xFF0B6B20)
+            )
+
             Spacer(modifier = Modifier.width(10.dp))
+
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = textoTitulo, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF173B1A))
-                Text(text = textoDescripcion, fontSize = 12.sp, color = Color(0xFF4E5D45))
+                Text(
+                    text = textoTitulo,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF173B1A)
+                )
+
+                Text(
+                    text = textoDescripcion,
+                    fontSize = 12.sp,
+                    color = Color(0xFF4E5D45)
+                )
             }
         }
     }
@@ -111,102 +159,252 @@ internal fun TarjetaMonitoreoUsuario(
     fotoCultivo: String?,
     nombreCultivo: String?,
     status: String,
+    additionalNotes: String = "",
     fechaInicio: Long?,
     fechaFin: Long?,
     puedeAbrir: Boolean,
     soloConsulta: Boolean,
+    puedeCancelar: Boolean = false,
     onAbrirClick: () -> Unit,
-    onReporteClick: () -> Unit
+    onReporteClick: () -> Unit,
+    onCancelarClick: () -> Unit = {}
 ) {
     val monitoreoCerrado = esEstadoCerradoLista(status)
 
+    val estadoNormalizado = status.trim().lowercase()
+    val monitoreoCancelado = estadoNormalizado == "cancelado" ||
+            estadoNormalizado == "cancelled" ||
+            estadoNormalizado == "canceled"
+
+    var menuAbierto by remember {
+        mutableStateOf(false)
+    }
+
     Card(
-        modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFFDCE8D8), RoundedCornerShape(18.dp)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = Color(0xFFDCE8D8),
+                shape = RoundedCornerShape(18.dp)
+            ),
         shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 3.dp
+        )
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(10.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth().clickable { if (puedeAbrir) onAbrirClick() else onReporteClick() },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                ImageUriBox(
-                    photo = fotoCultivo,
-                    fallbackIcon = iconoCultivoFallbackLista(nombreCultivo),
-                    sizeDp = 82,
+        Box(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (puedeCancelar && !monitoreoCerrado) {
+                Box(
                     modifier = Modifier
-                        .size(width = 92.dp, height = 82.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(colorFondoImagenLista(status))
-                )
-
-                Spacer(modifier = Modifier.width(10.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        EstadoChip(status = status)
-                        Spacer(modifier = Modifier.weight(1f))
-                        Text(text = formatearFechaResumen(fechaInicio), fontSize = 10.sp, color = Color.DarkGray)
+                        .align(Alignment.TopEnd)
+                        .padding(top = 8.dp, end = 8.dp)
+                ) {
+                    IconButton(
+                        onClick = {
+                            menuAbierto = true
+                        },
+                        modifier = Modifier
+                            .size(58.dp)
+                            .background(
+                                color = Color(0xFFF1F1F1),
+                                shape = CircleShape
+                            )
+                    ) {
+                        Text(
+                            text = "⋮",
+                            fontSize = 34.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color(0xFF111111)
+                        )
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = parcelaNombre,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Color(0xFF173B1A),
-                        maxLines = 1
-                    )
-
-                    Spacer(modifier = Modifier.height(7.dp))
-
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        DatoTarjetaUsuario(label = "Ciclo", value = ciclo, modifier = Modifier.weight(1f))
-                        DatoTarjetaUsuario(label = "Código", value = codigo, modifier = Modifier.weight(1f))
+                    DropdownMenu(
+                        expanded = menuAbierto,
+                        onDismissRequest = {
+                            menuAbierto = false
+                        }
+                    ) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = "Cancelar monitoreo",
+                                    color = Color(0xFFB3261E),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            },
+                            onClick = {
+                                menuAbierto = false
+                                onCancelarClick()
+                            }
+                        )
                     }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Text(
-                        text = "⌂ ${ranchoNombre ?: "Sin rancho"}  ·  ${productorNombre ?: "Sin productor"}",
-                        fontSize = 10.sp,
-                        color = Color.DarkGray,
-                        maxLines = 1
-                    )
-
-                    Text(
-                        text = "📅 ${formatearFechaCorta(fechaInicio)}  al  ${formatearFechaCorta(fechaFin)}",
-                        fontSize = 10.sp,
-                        color = Color.DarkGray,
-                        maxLines = 1
-                    )
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            if (puedeAbrir && !soloConsulta && !monitoreoCerrado) {
-                Button(
-                    onClick = onAbrirClick,
-                    modifier = Modifier.fillMaxWidth().height(42.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0B6B20))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = "Abrir monitoreo", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                }
-            } else {
-                OutlinedButton(
-                    onClick = onReporteClick,
-                    modifier = Modifier.fillMaxWidth().height(42.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(
-                        text = if (monitoreoCerrado) "Ver reporte" else "Ver información",
-                        color = Color(0xFF0B6B20),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
+                    ImageUriBox(
+                        photo = fotoCultivo,
+                        fallbackIcon = iconoCultivoFallbackLista(nombreCultivo),
+                        sizeDp = 82,
+                        modifier = Modifier
+                            .size(width = 92.dp, height = 82.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(
+                                colorFondoImagenLista(
+                                    status = status,
+                                    additionalNotes = additionalNotes
+                                )
+                            )
                     )
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            EstadoChip(
+                                status = status,
+                                additionalNotes = additionalNotes
+                            )
+
+                            Spacer(modifier = Modifier.weight(1f))
+
+                            Text(
+                                text = formatearFechaResumen(fechaInicio),
+                                fontSize = 10.sp,
+                                color = Color.DarkGray,
+                                modifier = Modifier.padding(
+                                    end = if (puedeCancelar && !monitoreoCerrado) 64.dp else 0.dp
+                                )
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Text(
+                            text = parcelaNombre,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFF173B1A),
+                            maxLines = 1
+                        )
+
+                        Spacer(modifier = Modifier.height(7.dp))
+
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            DatoTarjetaUsuario(
+                                label = "Ciclo",
+                                value = ciclo,
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            DatoTarjetaUsuario(
+                                label = "Código",
+                                value = codigo,
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            DatoTarjetaUsuario(
+                                label = "Parcela",
+                                value = parcelaNombre,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Text(
+                            text = "⌂ ${ranchoNombre ?: "Sin rancho"}  ·  ${productorNombre ?: "Sin productor"}",
+                            fontSize = 10.sp,
+                            color = Color.DarkGray,
+                            maxLines = 1
+                        )
+
+                        Text(
+                            text = "📅 ${formatearFechaCorta(fechaInicio)}  al  ${formatearFechaCorta(fechaFin)}",
+                            fontSize = 10.sp,
+                            color = Color.DarkGray,
+                            maxLines = 1
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                when {
+                    monitoreoCancelado -> {
+                        Text(
+                            text = "Monitoreo cancelado",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    color = Color(0xFFFFE1E1),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .padding(vertical = 12.dp),
+                            color = Color(0xFFB3261E),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+
+                    puedeAbrir && !soloConsulta && !monitoreoCerrado -> {
+                        Button(
+                            onClick = onAbrirClick,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(42.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF0B6B20)
+                            )
+                        ) {
+                            Text(
+                                text = "Abrir monitoreo",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+
+                    else -> {
+                        OutlinedButton(
+                            onClick = onReporteClick,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(42.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(
+                                text = if (monitoreoCerrado) {
+                                    "Ver reporte"
+                                } else {
+                                    "Ver información"
+                                },
+                                color = Color(0xFF0B6B20),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -214,22 +412,52 @@ internal fun TarjetaMonitoreoUsuario(
 }
 
 @Composable
-private fun DatoTarjetaUsuario(label: String, value: String, modifier: Modifier = Modifier) {
+private fun DatoTarjetaUsuario(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
     Column(modifier = modifier.padding(end = 4.dp)) {
-        Text(text = label, fontSize = 9.sp, color = Color.Gray)
-        Text(text = value, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Black, maxLines = 1)
+        Text(
+            text = label,
+            fontSize = 9.sp,
+            color = Color.Gray
+        )
+
+        Text(
+            text = value,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.Black,
+            maxLines = 1
+        )
     }
 }
 
 @Composable
-private fun EstadoChip(status: String) {
+private fun EstadoChip(
+    status: String,
+    additionalNotes: String = ""
+) {
     Text(
-        text = textoEstadoLista(status),
+        text = textoEstadoLista(
+            status = status,
+            additionalNotes = additionalNotes
+        ),
         fontSize = 10.sp,
         fontWeight = FontWeight.Bold,
-        color = colorEstadoLista(status),
+        color = colorEstadoLista(
+            status = status,
+            additionalNotes = additionalNotes
+        ),
         modifier = Modifier
-            .background(colorFondoEstadoLista(status), RoundedCornerShape(30.dp))
+            .background(
+                color = colorFondoEstadoLista(
+                    status = status,
+                    additionalNotes = additionalNotes
+                ),
+                shape = RoundedCornerShape(30.dp)
+            )
             .padding(horizontal = 10.dp, vertical = 5.dp),
         textAlign = TextAlign.Center
     )

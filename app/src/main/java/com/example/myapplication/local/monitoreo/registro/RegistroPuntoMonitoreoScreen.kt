@@ -1,6 +1,7 @@
 package com.example.myapplication.local.monitoreo.registro
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +12,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -24,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.myapplication.local.common.EncabezadoApp
 import com.example.myapplication.local.entities.AppDatabase
@@ -72,6 +77,41 @@ fun RegistroPuntoMonitoreoScreen(
     var cargando by remember { mutableStateOf(true) }
     var finalizando by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+
+    var mostrarAvisoRegresar by remember { mutableStateOf(false) }
+    var tipoConfirmacionGuardado by remember { mutableStateOf<TipoConfirmacionGuardado?>(null) }
+
+    BackHandler(enabled = true) {
+        mostrarAvisoRegresar = true
+    }
+
+    if (mostrarAvisoRegresar) {
+        AlertDialog(
+            onDismissRequest = {
+                mostrarAvisoRegresar = false
+            },
+            title = {
+                Text(
+                    text = "Guardar punto",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "Debes guardar el punto antes de regresar. Puedes guardarlo como Sin plaga o capturar una plaga/enfermedad y presionar Guardar registro."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        mostrarAvisoRegresar = false
+                    }
+                ) {
+                    Text("Entendido")
+                }
+            }
+        )
+    }
 
     LaunchedEffect(Unit) {
         cargando = true
@@ -313,6 +353,61 @@ fun RegistroPuntoMonitoreoScreen(
         }
     }
 
+
+    tipoConfirmacionGuardado?.let { tipo ->
+        AlertDialog(
+            onDismissRequest = {
+                tipoConfirmacionGuardado = null
+            },
+            title = {
+                Text(
+                    text = "Confirmar guardado",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = if (tipo == TipoConfirmacionGuardado.SIN_PLAGA) {
+                        "¿Estás seguro que quieres guardar este punto como SIN PLAGA?"
+                    } else {
+                        "¿Estás seguro que quieres guardar el registro de este punto?"
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !finalizando,
+                    onClick = {
+                        val accion = tipoConfirmacionGuardado
+                        tipoConfirmacionGuardado = null
+
+                        if (accion == TipoConfirmacionGuardado.SIN_PLAGA) {
+                            registrarSinPlaga()
+                        } else {
+                            guardarRegistro()
+                        }
+                    }
+                ) {
+                    Text(
+                        text = "Confirmar",
+                        color = Color(0xFF0B6B20),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !finalizando,
+                    onClick = {
+                        tipoConfirmacionGuardado = null
+                    }
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -424,10 +519,20 @@ fun RegistroPuntoMonitoreoScreen(
 
             BarraAccionesRegistro(
                 finalizando = finalizando,
-                onSinPlagaClick = { registrarSinPlaga() },
-                onGuardarClick = { guardarRegistro() },
+                onSinPlagaClick = {
+                    tipoConfirmacionGuardado = TipoConfirmacionGuardado.SIN_PLAGA
+                },
+                onGuardarClick = {
+                    tipoConfirmacionGuardado = TipoConfirmacionGuardado.CON_REGISTRO
+                },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
     }
+}
+
+
+private enum class TipoConfirmacionGuardado {
+    SIN_PLAGA,
+    CON_REGISTRO
 }

@@ -5,6 +5,7 @@ import android.graphics.Color as AndroidColor
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.JsResult
 import android.webkit.WebChromeClient
@@ -59,9 +60,18 @@ internal fun MapaMonitoreoWebViewSeguro(
 
                             return true
                         }
+
+                        override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                            android.util.Log.d(
+                                "MapaWebView",
+                                consoleMessage?.message() ?: "Mensaje vacío"
+                            )
+                            return true
+                        }
                     }
 
-                    setBackgroundColor(AndroidColor.WHITE)
+                    setBackgroundColor(AndroidColor.TRANSPARENT)
+                    setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
@@ -71,13 +81,7 @@ internal fun MapaMonitoreoWebViewSeguro(
                     settings.setSupportZoom(true)
                     settings.builtInZoomControls = true
                     settings.displayZoomControls = false
-
-                    settings.cacheMode = if (hayInternet(ctx)) {
-                        WebSettings.LOAD_DEFAULT
-                    } else {
-                        WebSettings.LOAD_CACHE_ELSE_NETWORK
-                    }
-
+                    settings.cacheMode = WebSettings.LOAD_DEFAULT
                     settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                     settings.userAgentString = settings.userAgentString + " AndroidWebViewMonitoreo"
 
@@ -101,18 +105,6 @@ internal fun MapaMonitoreoWebViewSeguro(
         },
         update = { view ->
             if (view is WebView) {
-                val internetActual = hayInternet(view.context)
-
-                view.settings.cacheMode = if (internetActual) {
-                    WebSettings.LOAD_DEFAULT
-                } else {
-                    WebSettings.LOAD_CACHE_ELSE_NETWORK
-                }
-
-                if (internetActual != internetDisponible) {
-                    onInternetDisponibleChange(internetActual)
-                }
-
                 if (view.tag != htmlMapa) {
                     view.tag = htmlMapa
                     view.loadDataWithBaseURL(
@@ -139,7 +131,6 @@ internal fun MapaMonitoreoWebViewSeguro(
         }
     )
 }
-
 
 private class MapaBridge(
     private val onPuntoSeleccionado: (Long) -> Unit
