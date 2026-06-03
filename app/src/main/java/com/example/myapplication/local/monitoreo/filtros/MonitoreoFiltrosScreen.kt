@@ -122,6 +122,9 @@ fun MonitoreoFiltrosScreen(
     var filtrosExpandidos by remember {
         mutableStateOf(true)
     }
+    var monitoreoCanceladoParaVer by remember {
+        mutableStateOf<LocalPhytomonitoringHeaderEntity?>(null)
+    }
 
     var monitoreoParaIniciar by remember {
         mutableStateOf<LocalPhytomonitoringHeaderEntity?>(null)
@@ -225,6 +228,42 @@ fun MonitoreoFiltrosScreen(
                     }
                 ) {
                     Text("Cancelar")
+                }
+            }
+        )
+    }
+    monitoreoCanceladoParaVer?.let { headerCancelado ->
+        AlertDialog(
+            onDismissRequest = {
+                monitoreoCanceladoParaVer = null
+            },
+            title = {
+                Text(
+                    text = "Motivo de cancelación",
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFB3261E)
+                )
+            },
+            text = {
+                Text(
+                    text = headerCancelado.additionalNotes.ifBlank {
+                        "Este monitoreo fue cancelado, pero no tiene motivo registrado."
+                    },
+                    fontSize = 14.sp,
+                    color = Color.DarkGray
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        monitoreoCanceladoParaVer = null
+                    }
+                ) {
+                    Text(
+                        text = "Aceptar",
+                        color = Color(0xFFB3261E),
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         )
@@ -461,6 +500,7 @@ fun MonitoreoFiltrosScreen(
 
                             val cerrado = esEstadoCerradoFiltro(header.status)
 
+
                             val estadoNormalizado = header.status
                                 .trim()
                                 .lowercase(Locale.getDefault())
@@ -476,7 +516,8 @@ fun MonitoreoFiltrosScreen(
 
                             val monitoreoYaIniciado = header.startAt != null ||
                                     estadoNormalizado.contains("proceso") ||
-                                    estadoNormalizado.contains("progress")
+                                    estadoNormalizado.contains("progress") ||
+                                    header.additionalNotes.startsWith("PAUSADO", ignoreCase = true)
 
                             TarjetaMonitoreoConsulta(
                                 header = header,
@@ -490,13 +531,19 @@ fun MonitoreoFiltrosScreen(
                                 codigo = header.extId ?: programa?.extId ?: "MON-${header.idHeader}",
                                 fotoCultivo = cultivo?.photo,
                                 nombreCultivo = cultivo?.name,
+
                                 mostrarAbrir = esAdmin && !cerrado && !cancelado,
                                 mostrarReporte = (soloConsulta || esAdmin || cerrado) && !cancelado,
-                                puedeCancelar = (esAdmin || esTecnico) &&
+
+                                puedeCancelar = (esAdmin || esGerente || esSupervisor) &&
                                         estadoPendiente &&
                                         !monitoreoYaIniciado &&
                                         !cerrado &&
-                                        !cancelado, onAbrirClick = {
+                                        !cancelado,
+
+                                estaCancelado = cancelado,
+
+                                onAbrirClick = {
                                     if (cancelado) {
                                         return@TarjetaMonitoreoConsulta
                                     }
@@ -504,18 +551,24 @@ fun MonitoreoFiltrosScreen(
                                     if (soloConsulta || cerrado) {
                                         onAbrirReporteClick(header)
                                     } else {
-                                        monitoreoParaIniciar = header
+                                        onAbrirMapaClick(header)
                                     }
                                 },
+
                                 onReporteClick = {
                                     if (!cancelado) {
                                         onAbrirReporteClick(header)
                                     }
                                 },
+
                                 onCancelarClick = {
                                     monitoreoParaCancelar = header
                                     motivoCancelacion = ""
                                     errorMotivoCancelacion = null
+                                },
+
+                                onVerMotivoCancelacionClick = {
+                                    monitoreoCanceladoParaVer = header
                                 }
                             )
 

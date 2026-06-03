@@ -324,13 +324,16 @@ internal fun TarjetaMonitoreoConsulta(
     mostrarAbrir: Boolean,
     mostrarReporte: Boolean,
     puedeCancelar: Boolean = false,
+    estaCancelado: Boolean = false,
     onAbrirClick: () -> Unit,
     onReporteClick: () -> Unit,
-    onCancelarClick: () -> Unit = {}
+    onCancelarClick: () -> Unit = {},
+    onVerMotivoCancelacionClick: () -> Unit = {}
 ) {
     var menuAbierto by remember {
         mutableStateOf(false)
     }
+
 
     val cerrado = esEstadoCerradoFiltro(header.status)
 
@@ -476,7 +479,26 @@ internal fun TarjetaMonitoreoConsulta(
                     }
                 }
 
-                if (mostrarAbrir || mostrarReporte) {
+                if (estaCancelado) {
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedButton(
+                        onClick = onVerMotivoCancelacionClick,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(42.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = Color(0xFFFFEBEE)
+                        )
+                    ) {
+                        Text(
+                            text = "Ver motivo de cancelación",
+                            color = Color(0xFFB3261E),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                } else if (mostrarAbrir || mostrarReporte) {
                     Spacer(modifier = Modifier.height(10.dp))
 
                     if (mostrarAbrir) {

@@ -9,6 +9,10 @@ import android.provider.MediaStore
 import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
 import java.io.File
 import java.io.OutputStreamWriter
+import java.text.Normalizer
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 internal fun descargarCsvReporteUi(
     context: Context,
@@ -20,7 +24,13 @@ internal fun descargarCsvReporteUi(
     cultivo: String,
     filas: List<FilaReporteCapturaUi>
 ): String {
-    val nombreArchivo = "reporte_monitoreo_${header.idHeader}_${System.currentTimeMillis()}.csv"
+    val nombreArchivo = crearNombreArchivoCsvReporteUi(
+        productor = productor,
+        rancho = rancho,
+        parcela = parcela,
+        fecha = System.currentTimeMillis()
+    )
+
     val contenido = crearContenidoCsvReporteUi(
         header = header,
         nombreCia = nombreCia,
@@ -46,6 +56,35 @@ internal fun descargarCsvReporteUi(
     }
 }
 
+private fun crearNombreArchivoCsvReporteUi(
+    productor: String,
+    rancho: String,
+    parcela: String,
+    fecha: Long
+): String {
+    val fechaTexto = SimpleDateFormat("dd_MM_yyyy", Locale("es", "MX"))
+        .format(Date(fecha))
+
+    val nombreBase = listOf(productor, rancho, parcela, fechaTexto)
+        .joinToString("_") { limpiarParteNombreArchivoCsvUi(it) }
+        .replace(Regex("_+"), "_")
+        .trim('_')
+        .ifBlank { "REPORTE_MONITOREO_$fechaTexto" }
+
+    return "$nombreBase.csv"
+}
+
+private fun limpiarParteNombreArchivoCsvUi(valor: String): String {
+    val sinAcentos = Normalizer.normalize(valor.trim(), Normalizer.Form.NFD)
+        .replace(Regex("\\p{Mn}+"), "")
+
+    return sinAcentos
+        .uppercase(Locale("es", "MX"))
+        .replace(Regex("[^A-Z0-9]+"), "_")
+        .trim('_')
+        .ifBlank { "SIN_DATO" }
+}
+
 private fun crearContenidoCsvReporteUi(
     header: LocalPhytomonitoringHeaderEntity,
     nombreCia: String,
@@ -56,21 +95,25 @@ private fun crearContenidoCsvReporteUi(
     filas: List<FilaReporteCapturaUi>
 ): String {
     return buildString {
-        appendLine("REPORTE DE MONITOREO FITOSANITARIO")
-        appendLine("Campo,Valor")
-        appendLine(listOf("ID Monitoreo", header.idHeader.toString()).joinToString(",") { escaparCsvUi(it) })
-        appendLine(listOf("CIA", nombreCia).joinToString(",") { escaparCsvUi(it) })
-        appendLine(listOf("Productor", productor).joinToString(",") { escaparCsvUi(it) })
-        appendLine(listOf("Rancho", rancho).joinToString(",") { escaparCsvUi(it) })
-        appendLine(listOf("Parcela", parcela).joinToString(",") { escaparCsvUi(it) })
-        appendLine(listOf("Cultivo", cultivo).joinToString(",") { escaparCsvUi(it) })
-        appendLine(listOf("Estado", textoEstadoReporteUi(header.status)).joinToString(",") { escaparCsvUi(it) })
-        appendLine(listOf("Fecha programada", formatearFechaReporteUi(header.estStartDate)).joinToString(",") { escaparCsvUi(it) })
-        appendLine(listOf("Inicio real", formatearFechaOpcionalReporteUi(header.startAt)).joinToString(",") { escaparCsvUi(it) })
-        appendLine(listOf("Finalizado", formatearFechaOpcionalReporteUi(header.finishedAt)).joinToString(",") { escaparCsvUi(it) })
+        append('\uFEFF')
+        appendLine("sep=,")
+        appendLine("Monitoreo  de plagas y enfermedades en parcelas")
+        appendLine("field,value")
+
+        appendLine(listOf("idHeader", header.idHeader.toString()).joinToString(",") { escaparCsvUi(it) })
+        appendLine(listOf("name", nombreCia).joinToString(",") { escaparCsvUi(it) })
+        appendLine(listOf("commercial_name", productor).joinToString(",") { escaparCsvUi(it) })
+        appendLine(listOf("ranch_name", rancho).joinToString(",") { escaparCsvUi(it) })
+        appendLine(listOf("plot_name", parcela).joinToString(",") { escaparCsvUi(it) })
+        appendLine(listOf("crop_name", cultivo).joinToString(",") { escaparCsvUi(it) })
+        appendLine(listOf("status", header.status).joinToString(",") { escaparCsvUi(it) })
+        appendLine(listOf("est_start_date", formatearFechaReporteUi(header.estStartDate)).joinToString(",") { escaparCsvUi(it) })
+        appendLine(listOf("start_at", formatearFechaOpcionalReporteUi(header.startAt)).joinToString(",") { escaparCsvUi(it) })
+        appendLine(listOf("finished_at", formatearFechaOpcionalReporteUi(header.finishedAt)).joinToString(",") { escaparCsvUi(it) })
 
         appendLine()
-        appendLine("Punto,Latitud,Longitud,Coordenadas,Plaga o Enfermedad,Tipo,Fase,Cantidad,Fecha de captura,Notas")
+        appendLine("Monitoreos ")
+        appendLine("point_number,lat,lon,name,type,stage,qty,captured_at,notes")
 
         filas.forEach { fila ->
             appendLine(
@@ -78,7 +121,6 @@ private fun crearContenidoCsvReporteUi(
                     fila.numeroPunto.toString(),
                     fila.lat?.toString() ?: "",
                     fila.lon?.toString() ?: "",
-                    fila.coordenadas,
                     fila.plagaEnfermedad,
                     fila.tipo,
                     fila.fase,
@@ -133,14 +175,20 @@ private fun guardarCsvEnDescargasLegacy(
     contenido: String
 ): String {
     return try {
-        val carpeta = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val carpeta = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            "Monitoreos"
+        )
         if (!carpeta.exists()) carpeta.mkdirs()
 
         val archivo = File(carpeta, nombreArchivo)
         archivo.writeText(contenido, Charsets.UTF_8)
         archivo.absolutePath
     } catch (_: Exception) {
-        val carpetaApp = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) ?: context.filesDir
+        val carpetaApp = File(
+            context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) ?: context.filesDir,
+            "Monitoreos"
+        )
         if (!carpetaApp.exists()) carpetaApp.mkdirs()
 
         val archivo = File(carpetaApp, nombreArchivo)

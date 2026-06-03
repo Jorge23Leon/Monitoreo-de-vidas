@@ -92,7 +92,7 @@ internal fun crearHtmlMapaMonitoreo(
                     color: #b00020;
                 }
 
-               .legend {
+                .legend {
                     background: rgba(255, 255, 255, 0.92);
                     padding: 7px 9px;
                     border-radius: 10px;
@@ -100,7 +100,7 @@ internal fun crearHtmlMapaMonitoreo(
                     font-size: 11px;
                     line-height: 17px;
                     color: #222;
-                    max-width: 150px;
+                    max-width: 165px;
                     margin-bottom: 42px;
                 }
 
@@ -139,6 +139,7 @@ internal fun crearHtmlMapaMonitoreo(
                 .leaflet-control-attribution {
                     font-size: 10px;
                 }
+
                 .leaflet-bottom {
                     bottom: 34px !important;
                 }
@@ -149,7 +150,7 @@ internal fun crearHtmlMapaMonitoreo(
             <div id="map">
                 <div class="loading-box">
                     <b>Cargando mapa...</b><br>
-                    Preparando polígono y puntos del monitoreo.
+                    Preparando polígono, puntos y rangos del monitoreo.
                 </div>
             </div>
 
@@ -165,13 +166,16 @@ internal fun crearHtmlMapaMonitoreo(
                 let map = null;
                 let userMarker = null;
                 let currentUserLocation = null;
+                let pointLayers = [];
 
                 function normalizarPunto(p) {
+                    const radio = Number(p.radius || p.radiusM || 50);
+
                     return {
                         idTargetPoint: p.idTargetPoint,
                         lat: Number(p.lat),
                         lon: Number(p.lon),
-                        radius: Number(p.radius || 50),
+                        radius: isNaN(radio) || radio <= 0 ? 50 : radio,
                         status: p.status || 'pending'
                     };
                 }
@@ -204,16 +208,41 @@ internal fun crearHtmlMapaMonitoreo(
                     return '#F9A825';
                 }
 
+                function calcularDistanciaPunto(p) {
+                    if (map == null || currentUserLocation == null) return null;
+
+                    return map.distance(
+                        [currentUserLocation.lat, currentUserLocation.lon],
+                        [p.lat, p.lon]
+                    );
+                }
+
+                function textoRangoPunto(p, distancia) {
+                    const radioTexto = Number(p.radius).toFixed(0) + ' m';
+
+                    if (distancia == null) {
+                        return 'Radio permitido: ' + radioTexto + '<br>Esperando ubicación GPS';
+                    }
+
+                    const dentro = distancia <= p.radius;
+
+                    return 'Radio permitido: ' + radioTexto + '<br>' +
+                        'Distancia actual: ' + distancia.toFixed(1) + ' m<br>' +
+                        (dentro ? '<b>Estás en rango</b>' : '<b>Fuera de rango</b>');
+                }
+
                 function validarRangoDelPunto(p) {
                     if (currentUserLocation == null) {
                         alert('No se ha obtenido tu ubicación actual. Activa el GPS e intenta de nuevo.');
                         return null;
                     }
 
-                    const distancia = map.distance(
-                        [currentUserLocation.lat, currentUserLocation.lon],
-                        [p.lat, p.lon]
-                    );
+                    const distancia = calcularDistanciaPunto(p);
+
+                    if (distancia == null) {
+                        alert('No se pudo calcular la distancia al punto. Intenta de nuevo.');
+                        return null;
+                    }
 
                     if (distancia > p.radius) {
                         alert(
@@ -225,6 +254,53 @@ internal fun crearHtmlMapaMonitoreo(
                     }
 
                     return distancia;
+                }
+
+                function actualizarRangosVisuales() {
+                    if (map == null || pointLayers.length === 0) return;
+
+                    pointLayers.forEach(function(item) {
+                        const distancia = calcularDistanciaPunto(item.punto);
+                        const dentro = distancia != null && distancia <= item.punto.radius;
+                        const capturado = item.punto.status === 'completed';
+                        const cancelado = item.punto.status === 'cancelled';
+
+                        let colorRango = '#F9A825';
+                        let fillRango = '#FFF176';
+
+                        if (capturado) {
+                            colorRango = '#2E7D32';
+                            fillRango = '#A5D6A7';
+                        } else if (cancelado) {
+                            colorRango = '#D32F2F';
+                            fillRango = '#EF9A9A';
+                        } else if (dentro) {
+                            colorRango = '#1B5E20';
+                            fillRango = '#66BB6A';
+                        }
+
+                        item.rango.setStyle({
+                            color: colorRango,
+                            fillColor: fillRango,
+                            fillOpacity: dentro ? 0.30 : 0.16,
+                            opacity: 0.95
+                        });
+
+                        item.rango.bindPopup(
+                            '<b>Punto ' + item.numero + '</b><br>' +
+                            textoEstado(item.punto.status) + '<br>' +
+                            textoRangoPunto(item.punto, distancia)
+                        );
+
+                        item.marker.bindTooltip(
+                            'Punto ' + item.numero + ' - ' + textoEstado(item.punto.status) + '<br>' +
+                            textoRangoPunto(item.punto, distancia),
+                            {
+                                permanent: false,
+                                direction: 'top'
+                            }
+                        );
+                    });
                 }
 
                 window.updateUserLocation = function(lat, lon) {
@@ -248,6 +324,8 @@ internal fun crearHtmlMapaMonitoreo(
                     } else {
                         userMarker.setLatLng([lat, lon]);
                     }
+
+                    actualizarRangosVisuales();
                 };
 
                 function agregarCapaBase() {
@@ -302,8 +380,9 @@ internal fun crearHtmlMapaMonitoreo(
                             '<span class="dot" style="background:#F9A825"></span>Pendiente<br>' +
                             '<span class="dot" style="background:#0288D1"></span>En proceso<br>' +
                             '<span class="dot" style="background:#2E7D32"></span>Capturado<br>' +
-                            '<span class="dot" style="background:#1976D2"></span>Tu ubicación<br>' +
-                            '<span class="dot" style="background:#D32F2F"></span>Cancelado';
+                            '<span class="dot" style="background:#D32F2F"></span>Cancelado<br>' +
+                            '<span class="dot" style="background:#66BB6A"></span>En rango<br>' +
+                            '<span class="dot" style="background:#1976D2"></span>Tu ubicación';
                         return div;
                     };
 
@@ -313,6 +392,11 @@ internal fun crearHtmlMapaMonitoreo(
                 function abrirPuntoDesdeJs(p) {
                     if (p.status === 'completed') {
                         alert('Este punto ya fue capturado.');
+                        return;
+                    }
+
+                    if (p.status === 'cancelled') {
+                        alert('Este punto está cancelado.');
                         return;
                     }
 
@@ -334,11 +418,19 @@ internal fun crearHtmlMapaMonitoreo(
                     const height = Math.max(mapDiv.clientHeight || 420, 420);
 
                     const coords = [];
+
                     vertices.forEach(function(v) {
-                        coords.push({ lat: Number(v.lat), lon: Number(v.lon) });
+                        coords.push({
+                            lat: Number(v.lat),
+                            lon: Number(v.lon)
+                        });
                     });
+
                     puntos.map(normalizarPunto).forEach(function(p) {
-                        coords.push({ lat: p.lat, lon: p.lon });
+                        coords.push({
+                            lat: p.lat,
+                            lon: p.lon
+                        });
                     });
 
                     if (coords.length === 0) {
@@ -346,8 +438,10 @@ internal fun crearHtmlMapaMonitoreo(
                         return;
                     }
 
-                    let minLat = coords[0].lat, maxLat = coords[0].lat;
-                    let minLon = coords[0].lon, maxLon = coords[0].lon;
+                    let minLat = coords[0].lat;
+                    let maxLat = coords[0].lat;
+                    let minLon = coords[0].lon;
+                    let maxLon = coords[0].lon;
 
                     coords.forEach(function(c) {
                         minLat = Math.min(minLat, c.lat);
@@ -369,7 +463,9 @@ internal fun crearHtmlMapaMonitoreo(
                     }
 
                     const polygonPoints = vertices
-                        .map(function(v) { return x(Number(v.lon)) + ',' + y(Number(v.lat)); })
+                        .map(function(v) {
+                            return x(Number(v.lon)) + ',' + y(Number(v.lat));
+                        })
                         .join(' ');
 
                     let svg = '';
@@ -386,6 +482,8 @@ internal fun crearHtmlMapaMonitoreo(
                         const cx = x(p.lon);
                         const cy = y(p.lat);
                         const color = colorEstado(p.status);
+
+                        svg += '<circle cx="' + cx + '" cy="' + cy + '" r="24" fill="#FFF176" fill-opacity="0.35" stroke="#F9A825" stroke-width="2" />';
                         svg += '<circle cx="' + cx + '" cy="' + cy + '" r="13" fill="' + color + '" stroke="#111" stroke-width="2" />';
                         svg += '<text x="' + (cx - 4) + '" y="' + (cy + 4) + '" font-size="10" font-weight="bold" fill="#111">' + (index + 1) + '</text>';
                     });
@@ -415,8 +513,12 @@ internal fun crearHtmlMapaMonitoreo(
                     agregarCapaBase();
 
                     const polygonLatLng = vertices
-                        .map(function(v) { return [Number(v.lat), Number(v.lon)]; })
-                        .filter(function(v) { return !isNaN(v[0]) && !isNaN(v[1]); });
+                        .map(function(v) {
+                            return [Number(v.lat), Number(v.lon)];
+                        })
+                        .filter(function(v) {
+                            return !isNaN(v[0]) && !isNaN(v[1]);
+                        });
 
                     if (polygonLatLng.length > 0) {
                         const polygon = L.polygon(polygonLatLng, {
@@ -439,13 +541,26 @@ internal fun crearHtmlMapaMonitoreo(
                         });
                     } else if (puntos.length > 0) {
                         const p0 = normalizarPunto(puntos[0]);
-                        map.setView([puntos[0].lat, puntos[0].lon], 19);
+                        map.setView([p0.lat, p0.lon], 19);
                     } else if (usuarioInicial != null) {
                         map.setView([usuarioInicial.lat, usuarioInicial.lon], 17);
                     }
 
+                    pointLayers = [];
+
                     puntos.map(normalizarPunto).forEach(function(p, index) {
+                        const numero = index + 1;
                         const color = colorEstado(p.status);
+
+                        const rango = L.circle([p.lat, p.lon], {
+                            radius: p.radius,
+                            color: '#F9A825',
+                            weight: 2,
+                            opacity: 0.95,
+                            fillColor: '#FFF176',
+                            fillOpacity: 0.16,
+                            interactive: true
+                        }).addTo(map);
 
                         const marker = L.circleMarker([p.lat, p.lon], {
                             radius: 12,
@@ -455,27 +570,38 @@ internal fun crearHtmlMapaMonitoreo(
                             fillOpacity: 0.95
                         }).addTo(map);
 
-                        const touchArea = L.circleMarker([p.lat, p.lon], {
-                            radius: 30,
-                            color: color,
-                            weight: 0,
-                            opacity: 0,
-                            fillColor: color,
-                            fillOpacity: 0,
-                            interactive: true
-                        }).addTo(map);
-
                         marker.bindTooltip(
-                            'Punto ' + (index + 1) + ' - ' + textoEstado(p.status),
+                            'Punto ' + numero + ' - ' + textoEstado(p.status) + '<br>' +
+                            'Radio permitido: ' + p.radius + ' m',
                             {
                                 permanent: false,
                                 direction: 'top'
                             }
                         );
 
-                        marker.on('click', function() { abrirPuntoDesdeJs(p); });
-                        touchArea.on('click', function() { abrirPuntoDesdeJs(p); });
+                        rango.bindPopup(
+                            '<b>Punto ' + numero + '</b><br>' +
+                            textoEstado(p.status) + '<br>' +
+                            'Radio permitido: ' + p.radius + ' m'
+                        );
+
+                        marker.on('click', function() {
+                            abrirPuntoDesdeJs(p);
+                        });
+
+                        rango.on('click', function() {
+                            abrirPuntoDesdeJs(p);
+                        });
+
+                        pointLayers.push({
+                            punto: p,
+                            numero: numero,
+                            rango: rango,
+                            marker: marker
+                        });
                     });
+
+                    actualizarRangosVisuales();
 
                     if (usuarioInicial != null) {
                         window.updateUserLocation(usuarioInicial.lat, usuarioInicial.lon);
