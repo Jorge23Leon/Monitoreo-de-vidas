@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -74,6 +75,7 @@ internal fun textoEstadoMapa(
     status: String,
     additionalNotes: String = ""
 ): String {
+    if (esCierreAutomaticoMapa(additionalNotes)) return "Cerrado por tiempo"
     if (esMonitoreoPausadoMapa(status, additionalNotes)) return "Pausado"
 
     return when (status.trim().lowercase(Locale.getDefault())) {
@@ -85,18 +87,40 @@ internal fun textoEstadoMapa(
     }
 }
 
+internal fun obtenerCierreAutomaticoMs(startAt: Long?): Long? {
+    return startAt?.plus(DURACION_MONITOREO_MS)
+}
+
+internal fun tiempoMonitoreoAgotado(
+    startAt: Long?,
+    ahoraMs: Long
+): Boolean {
+    val cierreAutomaticoMs = obtenerCierreAutomaticoMs(startAt) ?: return false
+    return ahoraMs >= cierreAutomaticoMs
+}
+
+internal fun esCierreAutomaticoMapa(additionalNotes: String): Boolean {
+    return additionalNotes.trim().startsWith(
+        prefix = "CERRADO_AUTOMATICO",
+        ignoreCase = true
+    ) || additionalNotes.contains(
+        other = "CERRADO_AUTOMATICO",
+        ignoreCase = true
+    )
+}
+
 internal fun textoTiempoRestanteMonitoreo(
     startAt: Long?,
     ahoraMs: Long
 ): String {
-    if (startAt == null) return "Aún no inicia"
+    if (startAt == null) return "Inicia al abrir"
 
-    val venceMs = startAt + DURACION_MONITOREO_MS
-    val restanteMs = venceMs - ahoraMs
+    val cierreAutomaticoMs = obtenerCierreAutomaticoMs(startAt) ?: return "Inicia al abrir"
+    val restanteMs = cierreAutomaticoMs - ahoraMs
 
     if (restanteMs <= 0L) return "Tiempo agotado"
 
-    val totalMinutos = restanteMs / 60_000L
+    val totalMinutos = (restanteMs / 60_000L).coerceAtLeast(0L)
     val horas = totalMinutos / 60L
     val minutos = totalMinutos % 60L
 
@@ -111,6 +135,7 @@ private fun colorEstadoMapa(
     status: String,
     additionalNotes: String = ""
 ): Color {
+    if (esCierreAutomaticoMapa(additionalNotes)) return Color(0xFF1F6D2A)
     if (esMonitoreoPausadoMapa(status, additionalNotes)) return Color(0xFFD66B00)
 
     return when (status.trim().lowercase(Locale.getDefault())) {
@@ -126,6 +151,7 @@ private fun colorFondoEstadoMapa(
     status: String,
     additionalNotes: String = ""
 ): Color {
+    if (esCierreAutomaticoMapa(additionalNotes)) return Color(0xFFE4F4DF)
     if (esMonitoreoPausadoMapa(status, additionalNotes)) return Color(0xFFFFF0D6)
 
     return when (status.trim().lowercase(Locale.getDefault())) {
@@ -217,7 +243,7 @@ internal fun BarraMapaMonitoreo(
                     )
 
                     Text(
-                        text = "Mapa del monitoreo",
+                        text = "Monitoreo libre por punto",
                         fontSize = 12.sp,
                         color = Color(0xFF6E7580),
                         maxLines = 1
@@ -238,63 +264,64 @@ internal fun BarraMapaMonitoreo(
     }
 }
 
+
 @Composable
-internal fun ResumenMapaMonitoreo(
-    totalVertices: Int,
-    totalPuntos: Int,
-    totalCapturas: Int
+internal fun InstruccionMapaLibre(
+    puntosCapturados: Int
 ) {
-    val porcentaje = if (totalPuntos > 0) {
-        (totalCapturas * 100) / totalPuntos
+    val titulo = if (puntosCapturados <= 0) {
+        "Camina al lugar y toca el mapa"
     } else {
-        0
+        "Sigue caminando y toca el mapa"
+    }
+
+    val descripcion = if (puntosCapturados <= 0) {
+        "Aquí harás el primer monitoreo."
+    } else {
+        "El siguiente punto será el número ${puntosCapturados + 1}."
     }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F8EE)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp)
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                text = "Resumen del monitoreo",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Black,
-                color = Color(0xFF1D2430)
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF0B6B20)),
+                contentAlignment = Alignment.Center
             ) {
-                MetricaMapaCard(
-                    icono = "▧",
-                    label = "Vértices",
-                    value = totalVertices.toString(),
-                    modifier = Modifier.weight(1f)
+                Text(
+                    text = "🚶",
+                    fontSize = 24.sp,
+                    color = Color.White
+                )
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = titulo,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Color(0xFF173B1A)
                 )
 
-                MetricaMapaCard(
-                    icono = "⌖",
-                    label = "Puntos",
-                    value = totalPuntos.toString(),
-                    modifier = Modifier.weight(1f)
-                )
-
-                MetricaMapaCard(
-                    icono = "✓",
-                    label = "Capturados",
-                    value = "$totalCapturas ($porcentaje%)",
-                    modifier = Modifier.weight(1f)
+                Text(
+                    text = descripcion,
+                    fontSize = 12.sp,
+                    color = Color(0xFF4E5D45)
                 )
             }
         }
@@ -302,42 +329,127 @@ internal fun ResumenMapaMonitoreo(
 }
 
 @Composable
-private fun MetricaMapaCard(
-    icono: String,
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier
+internal fun ChipPuntosMonitoreados(
+    puntosCapturados: Int
 ) {
-    Column(
-        modifier = modifier
-            .background(Color(0xFFF8FAF7), RoundedCornerShape(14.dp))
-            .border(1.dp, Color(0xFFE3EAE0), RoundedCornerShape(14.dp))
-            .padding(horizontal = 10.dp, vertical = 10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = icono,
-            fontSize = 22.sp,
-            color = Color(0xFF0B6B20),
-            fontWeight = FontWeight.Black
-        )
-
-        Text(
-            text = label,
-            fontSize = 10.sp,
-            color = Color(0xFF6E7580),
-            maxLines = 1
-        )
-
-        Text(
-            text = value,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Black,
+            text = "⌖  Puntos monitoreados: $puntosCapturados",
+            modifier = Modifier
+                .background(Color.White, RoundedCornerShape(14.dp))
+                .border(1.dp, Color(0xFFE3EAE0), RoundedCornerShape(14.dp))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             color = Color(0xFF1D2430),
-            maxLines = 1
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp
         )
     }
 }
+
+@Composable
+internal fun ConfirmarPuntoLibreCard(
+    numeroPunto: Int,
+    creandoPunto: Boolean,
+    onConfirmarClick: () -> Unit,
+    onCancelarClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(width = 82.dp, height = 5.dp)
+                    .background(Color(0xFFD2D6D0), RoundedCornerShape(30.dp))
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "¿Realizar monitoreo aquí?",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Black,
+                color = Color(0xFF1D2430),
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = "Se registrará el punto $numeroPunto en tu ubicación seleccionada.",
+                fontSize = 13.sp,
+                color = Color(0xFF6E7580),
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = onConfirmarClick,
+                enabled = !creandoPunto,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF006B2A),
+                    disabledContainerColor = Color(0xFF9E9E9E)
+                )
+            ) {
+                Text(
+                    text = if (creandoPunto) {
+                        "Creando punto..."
+                    } else {
+                        "✓  Confirmar monitoreo"
+                    },
+                    color = Color.White,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 16.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            OutlinedButton(
+                onClick = onCancelarClick,
+                enabled = !creandoPunto,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, Color(0xFFD0D7DE)),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = Color.White
+                )
+            ) {
+                Text(
+                    text = "Cancelar",
+                    color = Color(0xFF0B6B20),
+                    fontWeight = FontWeight.Black,
+                    fontSize = 15.sp
+                )
+            }
+        }
+    }
+}
+
 @Composable
 internal fun AccionesMapaMonitoreo(
     totalPuntos: Int,
@@ -351,29 +463,39 @@ internal fun AccionesMapaMonitoreo(
     val puedeAccionar = puntosCapturados > 0
 
     if (estaPausado) {
-        Button(
-            onClick = onContinuarClick,
-            enabled = !finalizandoMonitoreo,
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-                .height(56.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFFD96B00),
-                disabledContainerColor = Color(0xFFBDBDBD)
-            )
+                .navigationBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
         ) {
-            Text(
-                text = if (finalizandoMonitoreo) {
-                    "Procesando..."
-                } else {
-                    "▶  Continuar monitoreo"
-                },
-                fontWeight = FontWeight.Black,
-                color = Color.White,
-                fontSize = 16.sp
-            )
+            Button(
+                onClick = onContinuarClick,
+                enabled = !finalizandoMonitoreo,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(10.dp)
+                    .height(52.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFD96B00),
+                    disabledContainerColor = Color(0xFFBDBDBD)
+                )
+            ) {
+                Text(
+                    text = if (finalizandoMonitoreo) {
+                        "Procesando..."
+                    } else {
+                        "▶  Continuar monitoreo"
+                    },
+                    fontWeight = FontWeight.Black,
+                    color = Color.White,
+                    fontSize = 15.sp
+                )
+            }
         }
 
         return
@@ -382,84 +504,61 @@ internal fun AccionesMapaMonitoreo(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .navigationBarsPadding()
             .padding(horizontal = 12.dp, vertical = 8.dp),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp)
+                .padding(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
-                text = "Acciones del monitoreo",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Black,
-                color = Color(0xFF1D2430)
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            OutlinedButton(
+                onClick = onPausarClick,
+                enabled = !finalizandoMonitoreo && puedeAccionar,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, Color(0xFFD96B00)),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = Color.White
+                )
             ) {
-                OutlinedButton(
-                    onClick = onPausarClick,
-                    enabled = !finalizandoMonitoreo && puedeAccionar,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(52.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, Color(0xFFD96B00)),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = Color.White
-                    )
-                ) {
-                    Text(
-                        text = "Ⅱ  Pausar",
-                        color = Color(0xFFD96B00),
-                        fontWeight = FontWeight.Black,
-                        maxLines = 1
-                    )
-                }
-
-                Button(
-                    onClick = onTerminarClick,
-                    enabled = !finalizandoMonitoreo && puedeAccionar,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(52.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF006B2A),
-                        disabledContainerColor = Color(0xFFBDBDBD)
-                    )
-                ) {
-                    Text(
-                        text = "✓  Terminar",
-                        color = Color.White,
-                        fontWeight = FontWeight.Black,
-                        maxLines = 1
-                    )
-                }
+                Text(
+                    text = "Ⅱ  Pausar",
+                    color = Color(0xFFD96B00),
+                    fontWeight = FontWeight.Black,
+                    maxLines = 1
+                )
             }
 
-            if (!puedeAccionar && totalPuntos > 0) {
-                Spacer(modifier = Modifier.height(8.dp))
-
+            Button(
+                onClick = onTerminarClick,
+                enabled = !finalizandoMonitoreo && puedeAccionar,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF006B2A),
+                    disabledContainerColor = Color(0xFFBDBDBD)
+                )
+            ) {
                 Text(
-                    text = "Primero captura mínimo 1 punto para pausar o terminar el monitoreo.",
-                    fontSize = 12.sp,
-                    color = Color(0xFF6E7580),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
+                    text = "✓  Terminar",
+                    color = Color.White,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 1
                 )
             }
         }
     }
 }
+
 @Composable
 internal fun DialogoAccionMapa(
     accion: AccionDialogoMapa,
@@ -470,11 +569,10 @@ internal fun DialogoAccionMapa(
     onPausarConfirmado: () -> Unit,
     onTerminarConfirmado: () -> Unit
 ) {
-    val puntosFaltantes = (totalPuntos - puntosCapturados).coerceAtLeast(0)
     val sinCapturas = puntosCapturados <= 0
 
     val esTerminar = accion == AccionDialogoMapa.TERMINAR ||
-            (accion == AccionDialogoMapa.REGRESAR && totalPuntos > 0 && puntosFaltantes == 0)
+            accion == AccionDialogoMapa.REGRESAR
 
     val titulo = when {
         sinCapturas -> "Captura requerida"
@@ -496,19 +594,15 @@ internal fun DialogoAccionMapa(
 
     val mensaje = when {
         sinCapturas -> {
-            "Mínimo necesitas capturar 1 punto para pausar o terminar el monitoreo."
-        }
-
-        esTerminar && puntosFaltantes > 0 -> {
-            "Has capturado $puntosCapturados de $totalPuntos puntos. Aún faltan $puntosFaltantes. ¿Seguro que quieres terminar el monitoreo? Después ya no podrás capturar más puntos."
+            "Necesitas guardar mínimo 1 punto para pausar o terminar el monitoreo."
         }
 
         esTerminar -> {
-            "Ya capturaste todos los puntos. ¿Quieres terminar el monitoreo? Después ya no podrás capturar más puntos."
+            "Has guardado $puntosCapturados puntos. ¿Seguro que quieres terminar el monitoreo? Después ya no podrás agregar más puntos."
         }
 
         else -> {
-            "Has capturado $puntosCapturados de $totalPuntos puntos. Aún faltan $puntosFaltantes. ¿Quieres pausar el monitoreo? El tiempo seguirá corriendo desde el primer inicio del monitoreo."
+            "Has guardado $puntosCapturados puntos. ¿Quieres pausar el monitoreo? El tiempo seguirá corriendo desde el inicio."
         }
     }
 

@@ -116,7 +116,7 @@ fun AdminMonitorHeroCard(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Crea programas, encabezados y puntos objetivo con la base actual de MyApplication.",
+                        text = "Crea el monitoreo base. Los puntos se registrarán libremente en campo.",
                         color = Color(0xFFE8F5E9),
                         fontWeight = FontWeight.Medium,
                         fontSize = 12.sp,
@@ -355,9 +355,9 @@ fun PolygonStatusCard(vertices: List<LocalPlotVertexEntity>) {
                 )
                 Text(
                     text = if (listo) {
-                        "La parcela tiene ${vertices.size} vértices. Se pueden generar puntos dentro del lote."
+                        "La parcela tiene ${vertices.size} vértices. El mapa podrá validar la ubicación dentro del lote."
                     } else {
-                        "La parcela necesita mínimo 3 vértices en LocalPlotVertexEntity."
+                        "La parcela necesita mínimo 3 vértices para mostrar el polígono en el mapa."
                     },
                     fontSize = 12.sp,
                     color = Color(0xFF4E5D45),
@@ -377,8 +377,6 @@ fun AdminResumenMonitoreo(
     ciclo: String,
     fechaInicio: String,
     fechaFin: String,
-    radioTexto: String,
-    cantidadPuntosTexto: String,
     totalVertices: Int
 ) {
     Card(
@@ -404,7 +402,8 @@ fun AdminResumenMonitoreo(
             ResumenRow("Cultivo", cultivo?.name ?: "Pendiente")
             ResumenRow("Ciclo", ciclo.ifBlank { "Pendiente" })
             ResumenRow("Fechas", "${fechaInicio.ifBlank { "Inicio" }} → ${fechaFin.ifBlank { "Fin" }}")
-            ResumenRow("Puntos", "${cantidadPuntosTexto.ifBlank { "0" }} puntos / radio ${radioTexto.ifBlank { "0" }} m")
+            ResumenRow("Modo", "Monitoreo libre por punto")
+            ResumenRow("Puntos", "Se crearán en campo al tocar el mapa")
             ResumenRow("Vértices", "$totalVertices registrados")
 
             AnimatedVisibility(visible = totalVertices < 3) {

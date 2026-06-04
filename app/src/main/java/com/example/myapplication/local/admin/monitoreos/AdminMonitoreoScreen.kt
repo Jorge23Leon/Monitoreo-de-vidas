@@ -25,7 +25,6 @@ import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.LocalAgroUnitEntity
 import com.example.myapplication.local.entities.LocalCropCatalogEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
-import com.example.myapplication.local.entities.LocalPhytomonitoringTargetPointEntity
 import com.example.myapplication.local.entities.LocalPlotEntity
 import com.example.myapplication.local.entities.LocalPlotVertexEntity
 import com.example.myapplication.local.entities.LocalProgramEntity
@@ -50,7 +49,6 @@ fun AdminMonitoreoScreen(
     onCambiarCiaClick: (() -> Unit)? = null,
     onCerrarSesionClick: () -> Unit,
     onMonitoreoCreado: () -> Unit
-
 ) {
     val coroutineScope = rememberCoroutineScope()
 
@@ -71,8 +69,6 @@ fun AdminMonitoreoScreen(
     var ciclo by remember { mutableStateOf("") }
     var fechaInicioMillis by remember { mutableStateOf<Long?>(null) }
     var fechaFinMillis by remember { mutableStateOf<Long?>(null) }
-    var radioTexto by remember { mutableStateOf("20") }
-    var cantidadPuntosTexto by remember { mutableStateOf("10") }
 
     LaunchedEffect(idLocalCia) {
         cargandoInicial = true
@@ -88,6 +84,7 @@ fun AdminMonitoreoScreen(
                     val cultivosDb = database.localCropCatalogDao().getAllCrops()
                     productoresCia to cultivosDb
                 }
+
                 productores = datos.first
                 cultivos = datos.second
             }
@@ -167,8 +164,6 @@ fun AdminMonitoreoScreen(
         ciclo = ""
         fechaInicioMillis = null
         fechaFinMillis = null
-        cantidadPuntosTexto = "10"
-        radioTexto = "20"
         productorSeleccionado = null
         ranchoSeleccionado = null
         parcelaSeleccionada = null
@@ -186,8 +181,6 @@ fun AdminMonitoreoScreen(
         val cultivo = cultivoSeleccionado
         val inicioMillis = fechaInicioMillis?.let { normalizarFechaAdmin(it, finDelDia = false) }
         val finMillis = fechaFinMillis?.let { normalizarFechaAdmin(it, finDelDia = true) }
-        val radio = radioTexto.trim().toIntOrNull()
-        val cantidadPuntos = cantidadPuntosTexto.trim().toIntOrNull()
         val cicloLimpio = normalizarCicloMonitoreoAdmin(ciclo)
 
         when {
@@ -200,25 +193,12 @@ fun AdminMonitoreoScreen(
             inicioMillis == null -> onMensaje("Selecciona la fecha de inicio")
             finMillis == null -> onMensaje("Selecciona la fecha fin")
             inicioMillis > finMillis -> onMensaje("La fecha de inicio no puede ser mayor que la fecha fin")
-            radio == null || radio <= 0 -> onMensaje("El radio debe ser mayor a 0")
-            cantidadPuntos == null || cantidadPuntos <= 0 -> onMensaje("La cantidad de puntos debe ser mayor a 0")
-            vertices.size < 3 -> onMensaje("La parcela necesita al menos 3 vértices para generar puntos")
+            vertices.size < 3 -> onMensaje("La parcela necesita al menos 3 vértices para mostrar el mapa")
             else -> {
                 coroutineScope.launch {
                     guardando = true
                     try {
-                        val resultado = withContext(Dispatchers.IO) {
-                            val puntosGenerados = generarPuntosDentroDelPoligonoAdmin(
-                                vertices = vertices,
-                                cantidad = cantidadPuntos
-                            )
-
-                            if (puntosGenerados.isEmpty()) {
-                                throw IllegalStateException(
-                                    "No se pudieron generar puntos dentro del polígono. Revisa los vértices de la parcela"
-                                )
-                            }
-
+                        withContext(Dispatchers.IO) {
                             val idProgram = database.localprogramDao().insertProgram(
                                 LocalProgramEntity(
                                     cycle = cicloLimpio,
@@ -234,7 +214,7 @@ fun AdminMonitoreoScreen(
                                 )
                             )
 
-                            val idHeader = database.localphytomonitoringheaderDao().insertHeader(
+                            database.localphytomonitoringheaderDao().insertHeader(
                                 LocalPhytomonitoringHeaderEntity(
                                     cycle = cicloLimpio,
                                     estStartDate = inicioMillis,
@@ -248,26 +228,11 @@ fun AdminMonitoreoScreen(
                                     assignedUserId = parcela.assignedUserId
                                 )
                             )
-
-                            puntosGenerados.forEach { punto ->
-                                database.LocalPhytomonitoringTargetPointDao().insertTargetPoint(
-                                    LocalPhytomonitoringTargetPointEntity(
-                                        radiusM = radio,
-                                        lat = punto.lat,
-                                        lon = punto.lon,
-                                        status = "Pendiente",
-                                        idHeader = idHeader,
-                                        idLocalPlot = parcela.idLocalPlot
-                                    )
-                                )
-                            }
-
-                            idHeader to puntosGenerados.size
                         }
 
-                        onMensaje("Monitoreo realizado")
+                        onMensaje("Monitoreo creado. Los puntos se registrarán en campo")
                         reiniciarFormulario()
-                        onAdminClick()
+                        onMonitoreoCreado()
                     } catch (e: Exception) {
                         e.printStackTrace()
                         onMensaje("No se pudo crear el monitoreo: ${e.message}")
@@ -286,9 +251,8 @@ fun AdminMonitoreoScreen(
         cultivoSeleccionado != null,
         ciclo.isNotBlank(),
         fechaInicioMillis != null && fechaFinMillis != null,
-        radioTexto.isNotBlank() && cantidadPuntosTexto.isNotBlank(),
         vertices.size >= 3
-    ).count { it } / 8f
+    ).count { it } / 7f
 
     Box(
         modifier = Modifier
@@ -339,8 +303,6 @@ fun AdminMonitoreoScreen(
                     ciclo = ciclo,
                     fechaInicioMillis = fechaInicioMillis,
                     fechaFinMillis = fechaFinMillis,
-                    radioTexto = radioTexto,
-                    cantidadPuntosTexto = cantidadPuntosTexto,
                     onProductorSeleccionado = { productor ->
                         productorSeleccionado = productor
                         limpiarDependenciasDesdeProductor()
@@ -362,8 +324,6 @@ fun AdminMonitoreoScreen(
                     onCicloChange = { ciclo = it },
                     onFechaInicioChange = { fechaInicioMillis = it },
                     onFechaFinChange = { fechaFinMillis = it },
-                    onRadioChange = { radioTexto = it },
-                    onCantidadPuntosChange = { cantidadPuntosTexto = it },
                     onGuardarClick = { validarYGuardar() }
                 )
             }

@@ -73,7 +73,8 @@ internal fun crearHtmlMapaMonitoreo(
                 }
 
                 .loading-box,
-                .error-box {
+                .error-box,
+                .hint-box {
                     position: absolute;
                     left: 14px;
                     top: 14px;
@@ -93,15 +94,14 @@ internal fun crearHtmlMapaMonitoreo(
                 }
 
                 .legend {
-                    background: rgba(255, 255, 255, 0.92);
-                    padding: 7px 9px;
-                    border-radius: 10px;
+                    background: rgba(255, 255, 255, 0.94);
+                    padding: 8px 10px;
+                    border-radius: 12px;
                     box-shadow: 0 3px 12px rgba(0,0,0,0.22);
                     font-size: 11px;
-                    line-height: 17px;
+                    line-height: 18px;
                     color: #222;
-                    max-width: 165px;
-                    margin-bottom: 42px;
+                    margin-bottom: 28px;
                 }
 
                 .legend-title {
@@ -115,25 +115,18 @@ internal fun crearHtmlMapaMonitoreo(
                     border-radius: 50%;
                     display: inline-block;
                     margin-right: 6px;
+                    vertical-align: middle;
                 }
 
-                .offline-box,
                 .map-title-box {
                     background: rgba(255, 255, 255, 0.95);
                     color: #1B5E20;
                     padding: 7px 10px;
-                    border-radius: 9px;
+                    border-radius: 10px;
                     box-shadow: 0 2px 8px rgba(0,0,0,0.22);
                     font-size: 12px;
                     font-weight: bold;
-                    max-width: 230px;
-                }
-
-                .offline-box {
-                    color: #333;
-                    font-size: 11px;
-                    text-align: center;
-                    line-height: 15px;
+                    max-width: 260px;
                 }
 
                 .leaflet-control-attribution {
@@ -141,7 +134,7 @@ internal fun crearHtmlMapaMonitoreo(
                 }
 
                 .leaflet-bottom {
-                    bottom: 34px !important;
+                    bottom: 28px !important;
                 }
             </style>
         </head>
@@ -150,7 +143,7 @@ internal fun crearHtmlMapaMonitoreo(
             <div id="map">
                 <div class="loading-box">
                     <b>Cargando mapa...</b><br>
-                    Preparando polígono, puntos y rangos del monitoreo.
+                    Preparando parcela y puntos monitoreados.
                 </div>
             </div>
 
@@ -165,24 +158,39 @@ internal fun crearHtmlMapaMonitoreo(
 
                 let map = null;
                 let userMarker = null;
+                let userAccuracy = null;
                 let currentUserLocation = null;
-                let pointLayers = [];
-
-                function normalizarPunto(p) {
-                    const radio = Number(p.radius || p.radiusM || 50);
-
-                    return {
-                        idTargetPoint: p.idTargetPoint,
-                        lat: Number(p.lat),
-                        lon: Number(p.lon),
-                        radius: isNaN(radio) || radio <= 0 ? 50 : radio,
-                        status: p.status || 'pending'
-                    };
-                }
+                let selectedMarker = null;
+                let selectedHalo = null;
+                let polygonLatLng = [];
 
                 function limpiarCargando() {
                     const loading = document.querySelector('.loading-box');
                     if (loading) loading.remove();
+                }
+
+                function normalizarPunto(p) {
+                    return {
+                        idTargetPoint: p.idTargetPoint,
+                        lat: Number(p.lat),
+                        lon: Number(p.lon),
+                        status: (p.status || 'completed').toLowerCase()
+                    };
+                }
+
+                function puntoEstaCompletado(p) {
+                    const estado = (p.status || '').toLowerCase();
+                    return estado === 'completed' ||
+                        estado === 'completado' ||
+                        estado === 'capturado';
+                }
+
+                function colorPunto(p) {
+                    return puntoEstaCompletado(p) ? '#087A2D' : '#D98A00';
+                }
+
+                function textoPunto(p) {
+                    return puntoEstaCompletado(p) ? 'Punto monitoreado' : 'Punto sin finalizar';
                 }
 
                 function mostrarError(mensaje) {
@@ -190,313 +198,202 @@ internal fun crearHtmlMapaMonitoreo(
                     mapDiv.innerHTML =
                         '<div class="error-box"><b>Error al cargar el mapa:</b><br>' +
                         mensaje +
-                        '<br><br>Se mostrará una vista básica del polígono.</div>';
-                    renderFallback(mensaje);
+                        '<br><br>Se mostrará una vista básica.</div>';
+                    renderFallback();
                 }
 
-                function textoEstado(status) {
-                    if (status === 'completed') return 'Capturado';
-                    if (status === 'cancelled') return 'Cancelado';
-                    if (status === 'in_progress') return 'En proceso';
-                    return 'Pendiente';
-                }
-
-                function colorEstado(status) {
-                    if (status === 'completed') return '#2E7D32';
-                    if (status === 'cancelled') return '#D32F2F';
-                    if (status === 'in_progress') return '#0288D1';
-                    return '#F9A825';
-                }
-
-                function calcularDistanciaPunto(p) {
-                    if (map == null || currentUserLocation == null) return null;
-
-                    return map.distance(
-                        [currentUserLocation.lat, currentUserLocation.lon],
-                        [p.lat, p.lon]
-                    );
-                }
-
-                function textoRangoPunto(p, distancia) {
-                    const radioTexto = Number(p.radius).toFixed(0) + ' m';
-
-                    if (distancia == null) {
-                        return 'Radio permitido: ' + radioTexto + '<br>Esperando ubicación GPS';
-                    }
-
-                    const dentro = distancia <= p.radius;
-
-                    return 'Radio permitido: ' + radioTexto + '<br>' +
-                        'Distancia actual: ' + distancia.toFixed(1) + ' m<br>' +
-                        (dentro ? '<b>Estás en rango</b>' : '<b>Fuera de rango</b>');
-                }
-
-                function validarRangoDelPunto(p) {
-                    if (currentUserLocation == null) {
-                        alert('No se ha obtenido tu ubicación actual. Activa el GPS e intenta de nuevo.');
-                        return null;
-                    }
-
-                    const distancia = calcularDistanciaPunto(p);
-
-                    if (distancia == null) {
-                        alert('No se pudo calcular la distancia al punto. Intenta de nuevo.');
-                        return null;
-                    }
-
-                    if (distancia > p.radius) {
-                        alert(
-                            'Estás fuera del rango permitido para este punto.\n\n' +
-                            'Distancia actual: ' + distancia.toFixed(1) + ' m\n' +
-                            'Radio permitido: ' + p.radius + ' m'
-                        );
-                        return null;
-                    }
-
-                    return distancia;
-                }
-
-                function actualizarRangosVisuales() {
-                    if (map == null || pointLayers.length === 0) return;
-
-                    pointLayers.forEach(function(item) {
-                        const distancia = calcularDistanciaPunto(item.punto);
-                        const dentro = distancia != null && distancia <= item.punto.radius;
-                        const capturado = item.punto.status === 'completed';
-                        const cancelado = item.punto.status === 'cancelled';
-
-                        let colorRango = '#F9A825';
-                        let fillRango = '#FFF176';
-
-                        if (capturado) {
-                            colorRango = '#2E7D32';
-                            fillRango = '#A5D6A7';
-                        } else if (cancelado) {
-                            colorRango = '#D32F2F';
-                            fillRango = '#EF9A9A';
-                        } else if (dentro) {
-                            colorRango = '#1B5E20';
-                            fillRango = '#66BB6A';
-                        }
-
-                        item.rango.setStyle({
-                            color: colorRango,
-                            fillColor: fillRango,
-                            fillOpacity: dentro ? 0.30 : 0.16,
-                            opacity: 0.95
-                        });
-
-                        item.rango.bindPopup(
-                            '<b>Punto ' + item.numero + '</b><br>' +
-                            textoEstado(item.punto.status) + '<br>' +
-                            textoRangoPunto(item.punto, distancia)
-                        );
-
-                        item.marker.bindTooltip(
-                            'Punto ' + item.numero + ' - ' + textoEstado(item.punto.status) + '<br>' +
-                            textoRangoPunto(item.punto, distancia),
+                function agregarCapaBase() {
+                    if (internetDisponible) {
+                        L.tileLayer(
+                            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                             {
-                                permanent: false,
-                                direction: 'top'
+                                maxZoom: 19,
+                                maxNativeZoom: 19,
+                                attribution: 'Tiles © Esri'
                             }
-                        );
+                        ).addTo(map);
+                    } else {
+                        L.tileLayer(
+                            'file:///android_asset/leaflet/tiles/{z}/{x}/{y}.png',
+                            {
+                                minZoom: 0,
+                                maxZoom: 19,
+                                maxNativeZoom: 19,
+                                attribution: 'Mapa local'
+                            }
+                        ).addTo(map);
+                    }
+                }
+
+                function puntoDentroPoligono(lat, lon) {
+                    if (polygonLatLng.length < 3) return true;
+
+                    let dentro = false;
+                    const x = lon;
+                    const y = lat;
+
+                    for (let i = 0, j = polygonLatLng.length - 1; i < polygonLatLng.length; j = i++) {
+                        const yi = polygonLatLng[i][0];
+                        const xi = polygonLatLng[i][1];
+                        const yj = polygonLatLng[j][0];
+                        const xj = polygonLatLng[j][1];
+
+                        const intersecta = ((yi > y) !== (yj > y)) &&
+                            (x < (xj - xi) * (y - yi) / ((yj - yi) || 0.000000001) + xi);
+
+                        if (intersecta) dentro = !dentro;
+                    }
+
+                    return dentro;
+                }
+
+                function setSelectedFreePoint(lat, lon) {
+                    if (map == null) return;
+
+                    clearSelectedFreePoint();
+
+                    selectedHalo = L.circle([lat, lon], {
+                        radius: 4,
+                        color: '#0B6B20',
+                        weight: 3,
+                        opacity: 0.95,
+                        fillColor: '#55B947',
+                        fillOpacity: 0.18,
+                        interactive: false
+                    }).addTo(map);
+
+                    selectedMarker = L.circleMarker([lat, lon], {
+                        radius: 15,
+                        color: '#0B6B20',
+                        weight: 4,
+                        fillColor: '#FFFFFF',
+                        fillOpacity: 0.95
+                    }).addTo(map);
+
+                    selectedMarker.bindTooltip('Punto nuevo seleccionado', {
+                        permanent: false,
+                        direction: 'top'
                     });
+                }
+
+                function clearSelectedFreePoint() {
+                    if (selectedMarker != null) {
+                        map.removeLayer(selectedMarker);
+                        selectedMarker = null;
+                    }
+
+                    if (selectedHalo != null) {
+                        map.removeLayer(selectedHalo);
+                        selectedHalo = null;
+                    }
+                }
+
+                window.setSelectedFreePoint = setSelectedFreePoint;
+                window.clearSelectedFreePoint = clearSelectedFreePoint;
+
+                function seleccionarDesdeMapa(lat, lon) {
+                    if (!puntoDentroPoligono(lat, lon)) {
+                        alert('Selecciona un punto dentro de la parcela.');
+                        return;
+                    }
+
+                    setSelectedFreePoint(lat, lon);
+
+                    if (window.Android && Android.onPuntoLibreSeleccionado) {
+                        Android.onPuntoLibreSeleccionado(String(lat), String(lon));
+                    }
                 }
 
                 window.updateUserLocation = function(lat, lon) {
+                    if (map == null) return;
+
+                    const latNum = Number(lat);
+                    const lonNum = Number(lon);
+
+                    if (isNaN(latNum) || isNaN(lonNum)) return;
+
                     currentUserLocation = {
-                        lat: Number(lat),
-                        lon: Number(lon)
+                        lat: latNum,
+                        lon: lonNum
                     };
 
-                    if (map == null || typeof L === 'undefined') return;
-
-                    if (userMarker == null) {
-                        userMarker = L.circleMarker([lat, lon], {
-                            radius: 10,
-                            color: '#0D47A1',
-                            weight: 3,
-                            fillColor: '#1976D2',
-                            fillOpacity: 0.95
-                        })
-                        .addTo(map)
-                        .bindPopup('<b>Tu ubicación actual</b>');
-                    } else {
-                        userMarker.setLatLng([lat, lon]);
+                    if (userAccuracy != null) {
+                        map.removeLayer(userAccuracy);
                     }
 
-                    actualizarRangosVisuales();
+                    if (userMarker != null) {
+                        map.removeLayer(userMarker);
+                    }
+
+                    userAccuracy = L.circle([latNum, lonNum], {
+                        radius: 8,
+                        color: '#1E88E5',
+                        weight: 2,
+                        opacity: 0.35,
+                        fillColor: '#1E88E5',
+                        fillOpacity: 0.18,
+                        interactive: false
+                    }).addTo(map);
+
+                    userMarker = L.circleMarker([latNum, lonNum], {
+                        radius: 10,
+                        color: '#FFFFFF',
+                        weight: 4,
+                        fillColor: '#1E88E5',
+                        fillOpacity: 1
+                    }).addTo(map);
+
+                    userMarker.bindTooltip('Tu ubicación actual', {
+                        permanent: false,
+                        direction: 'top'
+                    });
                 };
 
-                function agregarCapaBase() {
-                    const capaSatelital = L.tileLayer(
-                        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                        {
-                            maxZoom: 22,
-                            maxNativeZoom: 18,
-                            updateWhenIdle: true,
-                            updateWhenZooming: false,
-                            keepBuffer: 2,
-                            attribution: 'Tiles © Esri'
-                        }
-                    );
-
-                    capaSatelital.addTo(map);
-
-                    if (!internetDisponible) {
-                        const avisoOffline = L.control({ position: 'topright' });
-
-                        avisoOffline.onAdd = function () {
-                            const div = L.DomUtil.create('div', 'offline-box');
-                            div.innerHTML = '<b>Sin internet</b><br>Usando caché si existe';
-                            return div;
-                        };
-
-                        avisoOffline.addTo(map);
-                    }
-                }
-
                 function agregarTituloMapa() {
-                    const titleControl = L.control({ position: 'topleft' });
+                    const control = L.control({ position: 'topright' });
 
-                    titleControl.onAdd = function () {
+                    control.onAdd = function() {
                         const div = L.DomUtil.create('div', 'map-title-box');
-                        div.innerHTML = internetDisponible
-                            ? 'Vista satelital de parcela'
-                            : 'Vista local / satélite en caché';
+                        div.innerHTML = 'Toca el mapa donde estás parado';
                         return div;
                     };
 
-                    titleControl.addTo(map);
+                    control.addTo(map);
+                }
+
+                function aplicarLimitesDeParcela(bounds) {
+                    if (!map || !bounds || !bounds.isValid()) return;
+                    const boundsExpandidos = bounds.pad(0.45);
+                    map.setMaxBounds(boundsExpandidos);
+                    map.options.maxBoundsViscosity = 0.85;
                 }
 
                 function agregarLeyenda() {
-                    const legend = L.control({ position: 'bottomleft' });
+                    const control = L.control({ position: 'bottomleft' });
 
-                    legend.onAdd = function () {
+                    control.onAdd = function() {
                         const div = L.DomUtil.create('div', 'legend');
                         div.innerHTML =
                             '<div class="legend-title">Estados</div>' +
-                            '<span class="dot" style="background:#F9A825"></span>Pendiente<br>' +
-                            '<span class="dot" style="background:#0288D1"></span>En proceso<br>' +
-                            '<span class="dot" style="background:#2E7D32"></span>Capturado<br>' +
-                            '<span class="dot" style="background:#D32F2F"></span>Cancelado<br>' +
-                            '<span class="dot" style="background:#66BB6A"></span>En rango<br>' +
-                            '<span class="dot" style="background:#1976D2"></span>Tu ubicación';
+                            '<div><span class="dot" style="background:#087A2D"></span>Monitoreado</div>' +
+                            '<div><span class="dot" style="background:#1E88E5"></span>Tu ubicación</div>' +
+                            '<div><span class="dot" style="background:#FFFFFF; border:2px solid #0B6B20; box-sizing:border-box"></span>Punto nuevo</div>';
                         return div;
                     };
 
-                    legend.addTo(map);
+                    control.addTo(map);
                 }
 
-                function abrirPuntoDesdeJs(p) {
-                    if (p.status === 'completed') {
-                        alert('Este punto ya fue capturado.');
-                        return;
-                    }
-
-                    if (p.status === 'cancelled') {
-                        alert('Este punto está cancelado.');
-                        return;
-                    }
-
-                    if (map != null) {
-                        const distancia = validarRangoDelPunto(p);
-                        if (distancia == null) return;
-                    }
-
-                    if (window.Android && Android.onPuntoSeleccionado) {
-                        Android.onPuntoSeleccionado(String(p.idTargetPoint));
-                    } else {
-                        alert('No se pudo abrir el registro del punto.');
-                    }
-                }
-
-                function renderFallback(motivo) {
+                function renderFallback() {
                     const mapDiv = document.getElementById('map');
-                    const width = Math.max(mapDiv.clientWidth || 360, 320);
-                    const height = Math.max(mapDiv.clientHeight || 420, 420);
-
-                    const coords = [];
-
-                    vertices.forEach(function(v) {
-                        coords.push({
-                            lat: Number(v.lat),
-                            lon: Number(v.lon)
-                        });
-                    });
-
-                    puntos.map(normalizarPunto).forEach(function(p) {
-                        coords.push({
-                            lat: p.lat,
-                            lon: p.lon
-                        });
-                    });
-
-                    if (coords.length === 0) {
-                        mapDiv.innerHTML = '<div class="error-box"><b>Sin datos de mapa</b><br>No hay vértices ni puntos para mostrar.</div>';
-                        return;
-                    }
-
-                    let minLat = coords[0].lat;
-                    let maxLat = coords[0].lat;
-                    let minLon = coords[0].lon;
-                    let maxLon = coords[0].lon;
-
-                    coords.forEach(function(c) {
-                        minLat = Math.min(minLat, c.lat);
-                        maxLat = Math.max(maxLat, c.lat);
-                        minLon = Math.min(minLon, c.lon);
-                        maxLon = Math.max(maxLon, c.lon);
-                    });
-
-                    const pad = 42;
-                    const latSpan = Math.max(maxLat - minLat, 0.000001);
-                    const lonSpan = Math.max(maxLon - minLon, 0.000001);
-
-                    function x(lon) {
-                        return pad + ((lon - minLon) / lonSpan) * (width - pad * 2);
-                    }
-
-                    function y(lat) {
-                        return height - pad - ((lat - minLat) / latSpan) * (height - pad * 2);
-                    }
-
-                    const polygonPoints = vertices
-                        .map(function(v) {
-                            return x(Number(v.lon)) + ',' + y(Number(v.lat));
-                        })
-                        .join(' ');
-
-                    let svg = '';
-                    svg += '<svg width="100%" height="100%" viewBox="0 0 ' + width + ' ' + height + '" xmlns="http://www.w3.org/2000/svg">';
-                    svg += '<rect x="0" y="0" width="' + width + '" height="' + height + '" fill="#dfe8d1" />';
-                    svg += '<text x="16" y="28" font-size="14" font-weight="bold" fill="#1B5E20">Vista básica del monitoreo</text>';
-                    svg += '<text x="16" y="48" font-size="11" fill="#4B5A45">' + nombreMonitoreo + '</text>';
-
-                    if (polygonPoints.length > 0) {
-                        svg += '<polygon points="' + polygonPoints + '" fill="#7CB342" fill-opacity="0.35" stroke="#1B5E20" stroke-width="4" />';
-                    }
-
-                    puntos.map(normalizarPunto).forEach(function(p, index) {
-                        const cx = x(p.lon);
-                        const cy = y(p.lat);
-                        const color = colorEstado(p.status);
-
-                        svg += '<circle cx="' + cx + '" cy="' + cy + '" r="24" fill="#FFF176" fill-opacity="0.35" stroke="#F9A825" stroke-width="2" />';
-                        svg += '<circle cx="' + cx + '" cy="' + cy + '" r="13" fill="' + color + '" stroke="#111" stroke-width="2" />';
-                        svg += '<text x="' + (cx - 4) + '" y="' + (cy + 4) + '" font-size="10" font-weight="bold" fill="#111">' + (index + 1) + '</text>';
-                    });
-
-                    svg += '</svg>';
-                    mapDiv.innerHTML = svg;
+                    mapDiv.innerHTML = '<div class="error-box"><b>Sin mapa interactivo</b><br>No se pudo cargar Leaflet.</div>';
                 }
 
                 function inicializarMapa() {
                     limpiarCargando();
 
                     if (typeof L === 'undefined') {
-                        renderFallback('Leaflet no cargó desde assets locales.');
+                        renderFallback();
                         return;
                     }
 
@@ -506,13 +403,14 @@ internal fun crearHtmlMapaMonitoreo(
                         zoomSnap: 0.25,
                         zoomDelta: 0.5,
                         minZoom: 3,
-                        maxZoom: 22
+                        maxZoom: 19,
+                        bounceAtZoomLimits: false
                     });
 
                     map.setView([20.6767, -101.3563], 14);
                     agregarCapaBase();
 
-                    const polygonLatLng = vertices
+                    polygonLatLng = vertices
                         .map(function(v) {
                             return [Number(v.lat), Number(v.lon)];
                         })
@@ -522,86 +420,53 @@ internal fun crearHtmlMapaMonitoreo(
 
                     if (polygonLatLng.length > 0) {
                         const polygon = L.polygon(polygonLatLng, {
-                            color: '#1B5E20',
+                            color: '#0B6B20',
                             weight: 4,
                             opacity: 1,
                             fillColor: internetDisponible ? '#7CB342' : '#8BC34A',
-                            fillOpacity: internetDisponible ? 0.30 : 0.48
+                            fillOpacity: internetDisponible ? 0.26 : 0.45
                         }).addTo(map);
 
                         polygon.bindPopup(
                             '<b>Parcela del monitoreo</b><br>' +
                             nombreMonitoreo +
-                            '<br><br>Vértices: ' + polygonLatLng.length
+                            '<br><br>Toca dentro de la parcela para crear un punto.'
                         );
 
-                        map.fitBounds(polygon.getBounds(), {
-                            padding: [10, 10],
-                            maxZoom: 19
+                        const boundsParcela = polygon.getBounds();
+                        aplicarLimitesDeParcela(boundsParcela);
+                        map.fitBounds(boundsParcela, {
+                            padding: [18, 18],
+                            maxZoom: 18
                         });
                     } else if (puntos.length > 0) {
                         const p0 = normalizarPunto(puntos[0]);
                         map.setView([p0.lat, p0.lon], 19);
                     } else if (usuarioInicial != null) {
-                        map.setView([usuarioInicial.lat, usuarioInicial.lon], 17);
+                        map.setView([usuarioInicial.lat, usuarioInicial.lon], 18);
                     }
 
-                    pointLayers = [];
-
                     puntos.map(normalizarPunto).forEach(function(p, index) {
-                        const numero = index + 1;
-                        const color = colorEstado(p.status);
-
-                        const rango = L.circle([p.lat, p.lon], {
-                            radius: p.radius,
-                            color: '#F9A825',
-                            weight: 2,
-                            opacity: 0.95,
-                            fillColor: '#FFF176',
-                            fillOpacity: 0.16,
-                            interactive: true
-                        }).addTo(map);
-
                         const marker = L.circleMarker([p.lat, p.lon], {
                             radius: 12,
-                            color: '#1A1A1A',
-                            weight: 2,
-                            fillColor: color,
-                            fillOpacity: 0.95
+                            color: '#FFFFFF',
+                            weight: 3,
+                            fillColor: colorPunto(p),
+                            fillOpacity: 0.98
                         }).addTo(map);
 
                         marker.bindTooltip(
-                            'Punto ' + numero + ' - ' + textoEstado(p.status) + '<br>' +
-                            'Radio permitido: ' + p.radius + ' m',
+                            'Punto ' + (index + 1) + '<br>' + textoPunto(p),
                             {
                                 permanent: false,
                                 direction: 'top'
                             }
                         );
-
-                        rango.bindPopup(
-                            '<b>Punto ' + numero + '</b><br>' +
-                            textoEstado(p.status) + '<br>' +
-                            'Radio permitido: ' + p.radius + ' m'
-                        );
-
-                        marker.on('click', function() {
-                            abrirPuntoDesdeJs(p);
-                        });
-
-                        rango.on('click', function() {
-                            abrirPuntoDesdeJs(p);
-                        });
-
-                        pointLayers.push({
-                            punto: p,
-                            numero: numero,
-                            rango: rango,
-                            marker: marker
-                        });
                     });
 
-                    actualizarRangosVisuales();
+                    map.on('click', function(e) {
+                        seleccionarDesdeMapa(e.latlng.lat, e.latlng.lng);
+                    });
 
                     if (usuarioInicial != null) {
                         window.updateUserLocation(usuarioInicial.lat, usuarioInicial.lon);
@@ -613,16 +478,16 @@ internal fun crearHtmlMapaMonitoreo(
                     setTimeout(function () {
                         if (map != null) {
                             map.invalidateSize(true);
-
                             if (polygonLatLng.length > 0) {
                                 const bounds = L.latLngBounds(polygonLatLng);
+                                aplicarLimitesDeParcela(bounds);
                                 map.fitBounds(bounds, {
-                                    padding: [10, 10],
-                                    maxZoom: 19
+                                    padding: [18, 18],
+                                    maxZoom: 18
                                 });
                             }
                         }
-                    }, 500);
+                    }, 450);
                 }
 
                 try {

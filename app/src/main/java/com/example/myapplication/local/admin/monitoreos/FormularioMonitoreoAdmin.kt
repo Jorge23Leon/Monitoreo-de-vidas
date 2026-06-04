@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -19,7 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.myapplication.local.entities.LocalAgroUnitEntity
 import com.example.myapplication.local.entities.LocalCropCatalogEntity
@@ -43,8 +41,6 @@ fun FormularioMonitoreoAdmin(
     ciclo: String,
     fechaInicioMillis: Long?,
     fechaFinMillis: Long?,
-    radioTexto: String,
-    cantidadPuntosTexto: String,
     onProductorSeleccionado: (LocalAgroUnitEntity) -> Unit,
     onRanchoSeleccionado: (LocalRanchEntity) -> Unit,
     onParcelaSeleccionada: (LocalPlotEntity) -> Unit,
@@ -52,8 +48,6 @@ fun FormularioMonitoreoAdmin(
     onCicloChange: (String) -> Unit,
     onFechaInicioChange: (Long) -> Unit,
     onFechaFinChange: (Long) -> Unit,
-    onRadioChange: (String) -> Unit,
-    onCantidadPuntosChange: (String) -> Unit,
     onGuardarClick: () -> Unit
 ) {
     val context = LocalContext.current
@@ -61,7 +55,7 @@ fun FormularioMonitoreoAdmin(
     AdminMonitorSectionCard(
         numero = "1",
         titulo = "Ubicación del monitoreo",
-        subtitulo = "Selecciona productor, rancho y parcela de la CIA actual."
+        subtitulo = "Selecciona productor, rancho y parcela. Los puntos se crearán en campo."
     ) {
         AdminSelectorField(
             etiqueta = "Productor",
@@ -104,7 +98,7 @@ fun FormularioMonitoreoAdmin(
     AdminMonitorSectionCard(
         numero = "2",
         titulo = "Datos del programa",
-        subtitulo = "Define cultivo, ciclo y fechas estimadas."
+        subtitulo = "Define cultivo, ciclo y fechas estimadas del monitoreo."
     ) {
         AdminSelectorField(
             etiqueta = "Cultivo",
@@ -171,36 +165,9 @@ fun FormularioMonitoreoAdmin(
 
     AdminMonitorSectionCard(
         numero = "3",
-        titulo = "Puntos objetivo",
-        subtitulo = "Configura radio y cantidad de puntos ordenados dentro del polígono."
+        titulo = "Monitoreo libre por punto",
+        subtitulo = "El técnico caminará, tocará el mapa y creará cada punto al momento de capturar."
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            OutlinedTextField(
-                value = radioTexto,
-                onValueChange = { texto -> onRadioChange(texto.filter { it.isDigit() }) },
-                modifier = Modifier.weight(1f),
-                label = { Text("Radio m") },
-                enabled = !guardando,
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-            )
-
-            OutlinedTextField(
-                value = cantidadPuntosTexto,
-                onValueChange = { texto -> onCantidadPuntosChange(texto.filter { it.isDigit() }) },
-                modifier = Modifier.weight(1f),
-                label = { Text("Puntos") },
-                enabled = !guardando,
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
         AdminResumenMonitoreo(
             productor = productorSeleccionado,
             rancho = ranchoSeleccionado,
@@ -209,8 +176,6 @@ fun FormularioMonitoreoAdmin(
             ciclo = ciclo,
             fechaInicio = formatearFechaAdmin(fechaInicioMillis),
             fechaFin = formatearFechaAdmin(fechaFinMillis),
-            radioTexto = radioTexto,
-            cantidadPuntosTexto = cantidadPuntosTexto,
             totalVertices = vertices.size
         )
 
@@ -236,7 +201,7 @@ fun FormularioMonitoreoAdmin(
                 Text("Guardando...")
             } else {
                 Text(
-                    text = "Crear monitoreo y generar puntos",
+                    text = "Crear monitoreo libre",
                     fontWeight = FontWeight.Black,
                     modifier = Modifier.padding(vertical = 6.dp)
                 )
