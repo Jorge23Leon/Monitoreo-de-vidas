@@ -166,10 +166,23 @@ fun MainNavegacion(
         }
 
         PantallaActual.FILTROS_MONITOREO -> {
+            val textoCiaSeleccionada = uiState.ciaSeleccionada?.let { cia ->
+                val parentCia = uiState.parentCiaSeleccionada
+                    ?: uiState.parentCiasUsuario.firstOrNull { parent ->
+                        parent.idParentCia == cia.idParentCia
+                    }
+
+                if (parentCia != null) {
+                    "${parentCia.name} / ${cia.nombre}"
+                } else {
+                    cia.nombre
+                }
+            } ?: "Sin CIA"
+
             MonitoreoFiltrosScreen(
                 nombreUsuario = uiState.nombreUsuarioActual,
                 rolUsuario = uiState.rolUsuarioActual,
-                nombreCia = uiState.ciaSeleccionada?.nombre ?: "Sin CIA",
+                nombreCia = textoCiaSeleccionada,
 
                 productores = uiState.productores,
                 ranchos = uiState.ranchos,

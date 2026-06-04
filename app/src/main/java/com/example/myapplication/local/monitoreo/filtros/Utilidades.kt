@@ -14,7 +14,7 @@ internal fun resumenFiltrosPrincipales(
     rancho: LocalRanchEntity?,
     parcela: LocalPlotEntity?
 ): String {
-    return "Productor: ${productor?.commercial_name ?: "Sin seleccionar"}  |  " +
+    return "Productor: ${productor?.commercial_name ?: "Todos"}  |  " +
             "Rancho: ${rancho?.name ?: "Todos"}  |  " +
             "Parcela: ${parcela?.let { obtenerNombreParcelaFiltro(it) } ?: "Todas"}"
 }

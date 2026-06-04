@@ -62,7 +62,7 @@ fun MonitoreoFiltrosScreen(
     programasResultado: List<LocalProgramEntity> = emptyList(),
     cultivosResultado: List<LocalCropCatalogEntity> = emptyList(),
 
-    onProductorChange: (LocalAgroUnitEntity) -> Unit,
+    onProductorChange: (LocalAgroUnitEntity?) -> Unit,
     onRanchoChange: (LocalRanchEntity?) -> Unit,
     onParcelaChange: (LocalPlotEntity?) -> Unit,
 
@@ -411,7 +411,7 @@ fun MonitoreoFiltrosScreen(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "CIA seleccionada: $nombreCia",
+                    text = nombreCia,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = Color.Black,
@@ -439,141 +439,136 @@ fun MonitoreoFiltrosScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                if (productorSeleccionado != null) {
-                    FiltrosSecundarios(
-                        cicloFiltro = cicloFiltro,
-                        programas = programasDisponibles,
-                        fechaInicioTexto = fechaInicioTexto,
-                        fechaFinTexto = fechaFinTexto,
-                        estadoFiltro = estadoFiltro,
-                        onCicloChange = {
-                            cicloFiltro = it
-                        },
-                        onFechaInicioChange = {
-                            fechaInicioTexto = it
-                        },
-                        onFechaFinChange = {
-                            fechaFinTexto = it
-                        },
-                        onEstadoChange = {
-                            estadoFiltro = it
-                        },
-                        onLimpiarClick = {
-                            cicloFiltro = null
-                            fechaInicioTexto = ""
-                            fechaFinTexto = ""
-                            estadoFiltro = "Todos"
-                        }
-                    )
+                FiltrosSecundarios(
+                    cicloFiltro = cicloFiltro,
+                    programas = programasDisponibles,
+                    fechaInicioTexto = fechaInicioTexto,
+                    fechaFinTexto = fechaFinTexto,
+                    estadoFiltro = estadoFiltro,
+                    onCicloChange = {
+                        cicloFiltro = it
+                    },
+                    onFechaInicioChange = {
+                        fechaInicioTexto = it
+                    },
+                    onFechaFinChange = {
+                        fechaFinTexto = it
+                    },
+                    onEstadoChange = {
+                        estadoFiltro = it
+                    },
+                    onLimpiarClick = {
+                        cicloFiltro = null
+                        fechaInicioTexto = ""
+                        fechaFinTexto = ""
+                        estadoFiltro = "Todos"
+                    }
+                )
 
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
+                Spacer(modifier = Modifier.height(16.dp))
 
-                if (productorSeleccionado == null) {
-                    EstadoVacioSeleccionProductor()
+                Text(
+                    text = "Monitoreos disponibles: ${monitoreosFiltrados.size}",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF173B1A),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                if (monitoreosFiltrados.isEmpty()) {
+                    EstadoVacioSinResultados()
                 } else {
-                    Text(
-                        text = "Monitoreos disponibles: ${monitoreosFiltrados.size}",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF173B1A),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    if (monitoreosFiltrados.isEmpty()) {
-                        EstadoVacioSinResultados()
-                    } else {
-                        monitoreosFiltrados.forEach { header ->
-                            val programa = programasMap[header.idProgram]
-                            val parcela = parcelasMap[header.idLocalPlot]
-                            val rancho = parcela?.let {
-                                ranchosMap[it.idLocalRanch]
-                            }
-                            val productor = programa?.let {
-                                productoresMap[it.idLocalAgroUnit]
-                            }
-                            val cultivo = cultivosMap[header.idCrop] ?: programa?.let {
-                                cultivosMap[it.idCrop]
-                            }
-
-                            val cerrado = esEstadoCerradoFiltro(header.status)
-
-
-                            val estadoNormalizado = header.status
-                                .trim()
-                                .lowercase(Locale.getDefault())
-
-                            val cancelado = estadoNormalizado in listOf(
-                                "cancelado",
-                                "cancelled",
-                                "canceled"
-                            )
-
-                            val estadoPendiente = estadoNormalizado == "pendiente" ||
-                                    estadoNormalizado == "pending"
-
-                            val monitoreoYaIniciado = header.startAt != null ||
-                                    estadoNormalizado.contains("proceso") ||
-                                    estadoNormalizado.contains("progress") ||
-                                    header.additionalNotes.startsWith("PAUSADO", ignoreCase = true)
-
-                            TarjetaMonitoreoConsulta(
-                                header = header,
-                                parcelaNombre = parcela?.let {
-                                    obtenerNombreParcelaFiltro(it)
-                                } ?: "Parcela ${header.idLocalPlot}",
-                                productorNombre = productor?.commercial_name
-                                    ?: productorSeleccionado.commercial_name,
-                                ranchoNombre = rancho?.name,
-                                ciclo = programa?.cycle ?: header.cycle,
-                                codigo = header.extId ?: programa?.extId ?: "MON-${header.idHeader}",
-                                fotoCultivo = cultivo?.photo,
-                                nombreCultivo = cultivo?.name,
-
-                                mostrarAbrir = esAdmin && !cerrado && !cancelado,
-                                mostrarReporte = (soloConsulta || esAdmin || cerrado) && !cancelado,
-
-                                puedeCancelar = (esAdmin || esGerente || esSupervisor) &&
-                                        estadoPendiente &&
-                                        !monitoreoYaIniciado &&
-                                        !cerrado &&
-                                        !cancelado,
-
-                                estaCancelado = cancelado,
-
-                                onAbrirClick = {
-                                    if (cancelado) {
-                                        return@TarjetaMonitoreoConsulta
-                                    }
-
-                                    if (soloConsulta || cerrado) {
-                                        onAbrirReporteClick(header)
-                                    } else {
-                                        onAbrirMapaClick(header)
-                                    }
-                                },
-
-                                onReporteClick = {
-                                    if (!cancelado) {
-                                        onAbrirReporteClick(header)
-                                    }
-                                },
-
-                                onCancelarClick = {
-                                    monitoreoParaCancelar = header
-                                    motivoCancelacion = ""
-                                    errorMotivoCancelacion = null
-                                },
-
-                                onVerMotivoCancelacionClick = {
-                                    monitoreoCanceladoParaVer = header
-                                }
-                            )
-
-                            Spacer(modifier = Modifier.height(12.dp))
+                    monitoreosFiltrados.forEach { header ->
+                        val programa = programasMap[header.idProgram]
+                        val parcela = parcelasMap[header.idLocalPlot]
+                        val rancho = parcela?.let {
+                            ranchosMap[it.idLocalRanch]
                         }
+                        val productor = programa?.let {
+                            productoresMap[it.idLocalAgroUnit]
+                        }
+                        val cultivo = cultivosMap[header.idCrop] ?: programa?.let {
+                            cultivosMap[it.idCrop]
+                        }
+
+                        val cerrado = esEstadoCerradoFiltro(header.status)
+
+
+                        val estadoNormalizado = header.status
+                            .trim()
+                            .lowercase(Locale.getDefault())
+
+                        val cancelado = estadoNormalizado in listOf(
+                            "cancelado",
+                            "cancelled",
+                            "canceled"
+                        )
+
+                        val estadoPendiente = estadoNormalizado == "pendiente" ||
+                                estadoNormalizado == "pending"
+
+                        val monitoreoYaIniciado = header.startAt != null ||
+                                estadoNormalizado.contains("proceso") ||
+                                estadoNormalizado.contains("progress") ||
+                                header.additionalNotes.startsWith("PAUSADO", ignoreCase = true)
+
+                        TarjetaMonitoreoConsulta(
+                            header = header,
+                            parcelaNombre = parcela?.let {
+                                obtenerNombreParcelaFiltro(it)
+                            } ?: "Parcela ${header.idLocalPlot}",
+                            productorNombre = productor?.commercial_name
+                                ?: productorSeleccionado?.commercial_name
+                                ?: "Sin productor",
+                            ranchoNombre = rancho?.name,
+                            ciclo = programa?.cycle ?: header.cycle,
+                            codigo = header.extId ?: programa?.extId ?: "MON-${header.idHeader}",
+                            fotoCultivo = cultivo?.photo,
+                            nombreCultivo = cultivo?.name,
+
+                            mostrarAbrir = esAdmin && !cerrado && !cancelado,
+                            mostrarReporte = (soloConsulta || esAdmin || cerrado) && !cancelado,
+
+                            puedeCancelar = (esAdmin || esGerente || esSupervisor) &&
+                                    estadoPendiente &&
+                                    !monitoreoYaIniciado &&
+                                    !cerrado &&
+                                    !cancelado,
+
+                            estaCancelado = cancelado,
+
+                            onAbrirClick = {
+                                if (cancelado) {
+                                    return@TarjetaMonitoreoConsulta
+                                }
+
+                                if (soloConsulta || cerrado) {
+                                    onAbrirReporteClick(header)
+                                } else {
+                                    onAbrirMapaClick(header)
+                                }
+                            },
+
+                            onReporteClick = {
+                                if (!cancelado) {
+                                    onAbrirReporteClick(header)
+                                }
+                            },
+
+                            onCancelarClick = {
+                                monitoreoParaCancelar = header
+                                motivoCancelacion = ""
+                                errorMotivoCancelacion = null
+                            },
+
+                            onVerMotivoCancelacionClick = {
+                                monitoreoCanceladoParaVer = header
+                            }
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
                     }
                 }
 

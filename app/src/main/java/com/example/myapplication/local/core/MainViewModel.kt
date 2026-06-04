@@ -43,6 +43,13 @@ private data class MainLoginTemp(
     val ciaPreferente: LocalCiaEntity?
 )
 
+private data class MainCatalogosFiltrosTemp(
+    val productores: List<LocalAgroUnitEntity>,
+    val productorRestaurado: LocalAgroUnitEntity?,
+    val ranchos: List<LocalRanchEntity>,
+    val parcelas: List<LocalPlotEntity>
+)
+
 
 class MainViewModel(
     application: Application
@@ -1022,28 +1029,72 @@ class MainViewModel(
     ) {
         viewModelScope.launch {
             try {
-                val lista = withContext(Dispatchers.IO) {
-                    database.localCiaAgroUnitDao()
+                val resultado = withContext(Dispatchers.IO) {
+                    val productoresCia = database.localCiaAgroUnitDao()
                         .getProductoresByCia(idLocalCia)
-                }
 
-                val productorRestaurado = idProductorRestaurar
-                    ?.takeIf { id -> id > 0L }
-                    ?.let { id ->
-                        lista.firstOrNull { productor ->
-                            productor.idLocalAgroUnit == id
+                    val productorRestaurado = idProductorRestaurar
+                        ?.takeIf { id -> id > 0L }
+                        ?.let { id ->
+                            productoresCia.firstOrNull { productor ->
+                                productor.idLocalAgroUnit == id
+                            }
                         }
+
+                    val programasCia = database.localprogramDao()
+                        .getProgramasByCia(idLocalCia)
+
+                    val programasBase = if (productorRestaurado != null) {
+                        programasCia.filter { programa ->
+                            programa.idLocalAgroUnit == productorRestaurado.idLocalAgroUnit
+                        }
+                    } else {
+                        programasCia
                     }
+
+                    val idsRanchos = programasBase
+                        .map { programa -> programa.idLocalRanch }
+                        .distinct()
+
+                    val idsParcelas = programasBase
+                        .map { programa -> programa.idLocalPlot }
+                        .distinct()
+
+                    val ranchosFiltro = if (idsRanchos.isEmpty()) {
+                        emptyList()
+                    } else {
+                        database.localRanchDao()
+                            .getRanchosByIds(idsRanchos)
+                            .sortedBy { rancho -> rancho.name }
+                    }
+
+                    val parcelasFiltro = if (idsParcelas.isEmpty()) {
+                        emptyList()
+                    } else {
+                        database.localPlotDao()
+                            .getParcelasByIds(idsParcelas)
+                            .sortedBy { parcela ->
+                                parcela.code?.takeIf { it.isNotBlank() } ?: parcela.name
+                            }
+                    }
+
+                    MainCatalogosFiltrosTemp(
+                        productores = productoresCia,
+                        productorRestaurado = productorRestaurado,
+                        ranchos = ranchosFiltro,
+                        parcelas = parcelasFiltro
+                    )
+                }
 
                 actualizarEstado {
                     it.copy(
-                        productores = lista,
-                        productorSeleccionado = productorRestaurado,
+                        productores = resultado.productores,
+                        productorSeleccionado = resultado.productorRestaurado,
 
-                        ranchos = emptyList(),
+                        ranchos = resultado.ranchos,
                         ranchoSeleccionado = null,
 
-                        parcelas = emptyList(),
+                        parcelas = resultado.parcelas,
                         parcelaSeleccionada = null,
 
                         ciclos = emptyList(),
@@ -1051,16 +1102,11 @@ class MainViewModel(
                     )
                 }
 
-                when {
-                    lista.isEmpty() -> {
-                        mostrarMensaje("La CIA seleccionada no tiene productores asignados")
-                    }
-
-                    productorRestaurado != null -> {
-                        cargarRanchos(productorRestaurado.idLocalAgroUnit)
-                        cargarMonitoreosPorFiltrosProgresivos()
-                    }
+                if (resultado.productores.isEmpty()) {
+                    mostrarMensaje("La CIA seleccionada no tiene productores asignados")
                 }
+
+                cargarMonitoreosPorFiltrosProgresivos()
             } catch (e: Exception) {
                 e.printStackTrace()
                 mostrarMensaje("Error al cargar productores: ${e.message}")
@@ -1068,9 +1114,31 @@ class MainViewModel(
         }
     }
 
-    fun onProductorChange(productor: LocalAgroUnitEntity) {
-        guardarProductorSesion(productor.idLocalAgroUnit)
+    fun onProductorChange(productor: LocalAgroUnitEntity?) {
+        if (productor == null) {
+            obtenerPrefsSesion()
+                .edit()
+                .remove("id_productor")
+                .remove("id_rancho")
+                .remove("id_parcela")
+                .apply()
 
+            actualizarEstado {
+                it.copy(
+                    productorSeleccionado = null,
+                    ranchoSeleccionado = null,
+                    parcelaSeleccionada = null,
+                    cicloSeleccionado = null,
+                    ciclos = emptyList()
+                )
+            }
+
+            cargarRanchosYParcelasParaFiltros(productor = null)
+            cargarMonitoreosPorFiltrosProgresivos()
+            return
+        }
+
+        guardarProductorSesion(productor.idLocalAgroUnit)
 
         actualizarEstado {
             it.copy(
@@ -1078,14 +1146,80 @@ class MainViewModel(
                 ranchoSeleccionado = null,
                 parcelaSeleccionada = null,
                 cicloSeleccionado = null,
-                ranchos = emptyList(),
-                parcelas = emptyList(),
                 ciclos = emptyList()
             )
         }
 
-        cargarRanchos(productor.idLocalAgroUnit)
+        cargarRanchosYParcelasParaFiltros(productor = productor)
         cargarMonitoreosPorFiltrosProgresivos()
+    }
+
+    private fun cargarRanchosYParcelasParaFiltros(productor: LocalAgroUnitEntity?) {
+        val cia = uiState.ciaSeleccionada ?: return
+        val idProductorEsperado = productor?.idLocalAgroUnit
+
+        viewModelScope.launch {
+            try {
+                val resultado = withContext(Dispatchers.IO) {
+                    val programasCia = database.localprogramDao()
+                        .getProgramasByCia(cia.idLocalCia)
+
+                    val programasBase = if (idProductorEsperado != null) {
+                        programasCia.filter { programa ->
+                            programa.idLocalAgroUnit == idProductorEsperado
+                        }
+                    } else {
+                        programasCia
+                    }
+
+                    val idsRanchos = programasBase
+                        .map { programa -> programa.idLocalRanch }
+                        .distinct()
+
+                    val idsParcelas = programasBase
+                        .map { programa -> programa.idLocalPlot }
+                        .distinct()
+
+                    val ranchosFiltro = if (idsRanchos.isEmpty()) {
+                        emptyList()
+                    } else {
+                        database.localRanchDao()
+                            .getRanchosByIds(idsRanchos)
+                            .sortedBy { rancho -> rancho.name }
+                    }
+
+                    val parcelasFiltro = if (idsParcelas.isEmpty()) {
+                        emptyList()
+                    } else {
+                        database.localPlotDao()
+                            .getParcelasByIds(idsParcelas)
+                            .sortedBy { parcela ->
+                                parcela.code?.takeIf { it.isNotBlank() } ?: parcela.name
+                            }
+                    }
+
+                    ranchosFiltro to parcelasFiltro
+                }
+
+                actualizarEstado { estadoActual ->
+                    val productorActual = estadoActual.productorSeleccionado?.idLocalAgroUnit
+
+                    if (estadoActual.ciaSeleccionada?.idLocalCia != cia.idLocalCia ||
+                        productorActual != idProductorEsperado
+                    ) {
+                        estadoActual
+                    } else {
+                        estadoActual.copy(
+                            ranchos = resultado.first,
+                            parcelas = resultado.second
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                mostrarMensaje("Error al cargar ranchos y parcelas: ${e.message}")
+            }
+        }
     }
 
     fun cargarRanchos(idProductor: Long) {
@@ -1121,15 +1255,18 @@ class MainViewModel(
         guardarRanchoSesion(rancho?.idLocalRanch)
 
         if (rancho == null) {
+            val productorActual = uiState.productorSeleccionado
+
             actualizarEstado {
                 it.copy(
                     ranchoSeleccionado = null,
                     parcelaSeleccionada = null,
                     cicloSeleccionado = null,
-                    parcelas = emptyList(),
                     ciclos = emptyList()
                 )
             }
+
+            cargarRanchosYParcelasParaFiltros(productor = productorActual)
             cargarMonitoreosPorFiltrosProgresivos()
             return
         }
@@ -1514,21 +1651,6 @@ class MainViewModel(
             return
         }
 
-        val productor = estado.productorSeleccionado
-        if (productor == null) {
-            actualizarEstado {
-                it.copy(
-                    monitoreosEncontrados = emptyList(),
-                    productoresResultado = emptyList(),
-                    ranchosResultado = emptyList(),
-                    parcelasResultado = emptyList(),
-                    programasResultado = emptyList(),
-                    cultivosResultado = emptyList()
-                )
-            }
-            return
-        }
-
         viewModelScope.launch {
             try {
                 val resultado = withContext(Dispatchers.IO) {
@@ -1537,122 +1659,120 @@ class MainViewModel(
                     val ranchoActual = estadoActual.ranchoSeleccionado
                     val parcelaActual = estadoActual.parcelaSeleccionada
 
-                    if (productorActual == null) {
-                        MainResultadoMonitoreoTemp(
-                            headers = emptyList(),
-                            productores = emptyList(),
-                            ranchos = emptyList(),
-                            parcelas = emptyList(),
-                            programas = emptyList(),
-                            cultivos = emptyList()
-                        )
-                    } else {
-                        val programasCia = database.localprogramDao()
-                            .getProgramasByCia(cia.idLocalCia)
+                    val programasCia = database.localprogramDao()
+                        .getProgramasByCia(cia.idLocalCia)
 
-                        var programasFiltrados = programasCia.filter { programa ->
-                            programa.idLocalAgroUnit == productorActual.idLocalAgroUnit
+                    var programasFiltrados = programasCia
+
+                    productorActual?.let { productor ->
+                        programasFiltrados = programasFiltrados.filter { programa ->
+                            programa.idLocalAgroUnit == productor.idLocalAgroUnit
                         }
-
-                        ranchoActual?.let { rancho ->
-                            programasFiltrados = programasFiltrados.filter { programa ->
-                                programa.idLocalRanch == rancho.idLocalRanch
-                            }
-                        }
-
-                        parcelaActual?.let { parcela ->
-                            programasFiltrados = programasFiltrados.filter { programa ->
-                                programa.idLocalPlot == parcela.idLocalPlot
-                            }
-                        }
-
-                        val idsProgramas = programasFiltrados
-                            .map { programa -> programa.idProgram }
-                            .distinct()
-
-                        val headers = if (idsProgramas.isEmpty()) {
-                            emptyList()
-                        } else {
-                            database.localphytomonitoringheaderDao()
-                                .filtrarHeadersMonitoreo(
-                                    programIds = idsProgramas,
-                                    idProgram = null,
-                                    idPlot = parcelaActual?.idLocalPlot,
-                                    startDate = null,
-                                    endDate = null,
-                                    statuses = listOf(
-                                        "Pendiente",
-                                        "pending",
-                                        "En proceso",
-                                        "in_progress",
-                                        "vigente",
-                                        "Completado",
-                                        "completed",
-                                        "finalizado",
-                                        "Cancelado",
-                                        "cancelled"
-                                    )
-                                )
-                        }
-
-                        val idsProgramasResultado = headers
-                            .map { header -> header.idProgram }
-                            .distinct()
-
-                        val idsParcelasResultado = headers
-                            .map { header -> header.idLocalPlot }
-                            .distinct()
-
-                        val programasRel = if (idsProgramasResultado.isEmpty()) {
-                            emptyList()
-                        } else {
-                            database.localprogramDao()
-                                .getProgramasByIds(idsProgramasResultado)
-                        }
-
-                        val parcelasRel = if (idsParcelasResultado.isEmpty()) {
-                            emptyList()
-                        } else {
-                            database.localPlotDao()
-                                .getParcelasByIds(idsParcelasResultado)
-                        }
-
-                        val idsRanchosResultado = parcelasRel
-                            .map { parcela -> parcela.idLocalRanch }
-                            .distinct()
-
-                        val ranchosRel = if (idsRanchosResultado.isEmpty()) {
-                            emptyList()
-                        } else {
-                            database.localRanchDao()
-                                .getRanchosByIds(idsRanchosResultado)
-                        }
-
-                        val idsProductoresResultado = programasRel
-                            .map { programa -> programa.idLocalAgroUnit }
-                            .distinct()
-
-                        val productoresRel = if (idsProductoresResultado.isEmpty()) {
-                            emptyList()
-                        } else {
-                            database.localAgroUnitDao()
-                                .getProductoresByIds(idsProductoresResultado)
-                        }
-
-                        val cultivosRel = cargarCultivosRelacionados(
-                            headers = headers,
-                            programas = programasRel
-                        )
-
-                        MainResultadoMonitoreoTemp(
-                            headers = headers,
-                            productores = productoresRel,
-                            ranchos = ranchosRel,
-                            parcelas = parcelasRel,
-                            programas = programasRel,
-                            cultivos = cultivosRel
-                        )
                     }
+
+                    ranchoActual?.let { rancho ->
+                        programasFiltrados = programasFiltrados.filter { programa ->
+                            programa.idLocalRanch == rancho.idLocalRanch
+                        }
+                    }
+
+                    parcelaActual?.let { parcela ->
+                        programasFiltrados = programasFiltrados.filter { programa ->
+                            programa.idLocalPlot == parcela.idLocalPlot
+                        }
+                    }
+
+                    val idsProgramas = programasFiltrados
+                        .map { programa -> programa.idProgram }
+                        .distinct()
+
+                    val headers = if (idsProgramas.isEmpty()) {
+                        emptyList()
+                    } else {
+                        database.localphytomonitoringheaderDao()
+                            .filtrarHeadersMonitoreo(
+                                programIds = idsProgramas,
+                                idProgram = null,
+                                idPlot = parcelaActual?.idLocalPlot,
+                                startDate = null,
+                                endDate = null,
+                                statuses = listOf(
+                                    "Pendiente",
+                                    "pending",
+                                    "pendiente",
+                                    "En proceso",
+                                    "in_progress",
+                                    "en proceso",
+                                    "vigente",
+                                    "Completado",
+                                    "completed",
+                                    "completado",
+                                    "finalizado",
+                                    "Cancelado",
+                                    "cancelled",
+                                    "cancelado",
+                                    "canceled"
+                                )
+                            )
+                    }
+
+                    val idsProgramasResultado = headers
+                        .map { header -> header.idProgram }
+                        .distinct()
+
+                    val idsParcelasResultado = headers
+                        .map { header -> header.idLocalPlot }
+                        .distinct()
+
+                    val programasRel = if (idsProgramasResultado.isEmpty()) {
+                        emptyList()
+                    } else {
+                        database.localprogramDao()
+                            .getProgramasByIds(idsProgramasResultado)
+                    }
+
+                    val parcelasRel = if (idsParcelasResultado.isEmpty()) {
+                        emptyList()
+                    } else {
+                        database.localPlotDao()
+                            .getParcelasByIds(idsParcelasResultado)
+                    }
+
+                    val idsRanchosResultado = parcelasRel
+                        .map { parcela -> parcela.idLocalRanch }
+                        .distinct()
+
+                    val ranchosRel = if (idsRanchosResultado.isEmpty()) {
+                        emptyList()
+                    } else {
+                        database.localRanchDao()
+                            .getRanchosByIds(idsRanchosResultado)
+                    }
+
+                    val idsProductoresResultado = programasRel
+                        .map { programa -> programa.idLocalAgroUnit }
+                        .distinct()
+
+                    val productoresRel = if (idsProductoresResultado.isEmpty()) {
+                        emptyList()
+                    } else {
+                        database.localAgroUnitDao()
+                            .getProductoresByIds(idsProductoresResultado)
+                    }
+
+                    val cultivosRel = cargarCultivosRelacionados(
+                        headers = headers,
+                        programas = programasRel
+                    )
+
+                    MainResultadoMonitoreoTemp(
+                        headers = headers,
+                        productores = productoresRel,
+                        ranchos = ranchosRel,
+                        parcelas = parcelasRel,
+                        programas = programasRel,
+                        cultivos = cultivosRel
+                    )
                 }
 
                 actualizarEstado {

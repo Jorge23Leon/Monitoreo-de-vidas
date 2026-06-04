@@ -59,7 +59,7 @@ internal fun FiltrosPrincipalesCard(
     productorSeleccionado: LocalAgroUnitEntity?,
     ranchoSeleccionado: LocalRanchEntity?,
     parcelaSeleccionada: LocalPlotEntity?,
-    onProductorChange: (LocalAgroUnitEntity) -> Unit,
+    onProductorChange: (LocalAgroUnitEntity?) -> Unit,
     onRanchoChange: (LocalRanchEntity?) -> Unit,
     onParcelaChange: (LocalPlotEntity?) -> Unit
 ) {
@@ -102,15 +102,17 @@ internal fun FiltrosPrincipalesCard(
             if (filtrosExpandidos) {
                 Spacer(modifier = Modifier.height(10.dp))
 
-                SelectorFiltro(
+                SelectorFiltroConTodos(
                     label = "Productor",
                     selected = productorSeleccionado,
+                    allText = "Todos los productores",
                     items = productores,
                     itemText = { it.commercial_name },
-                    emptyText = "Selecciona productor",
                     enabled = productores.isNotEmpty(),
                     modifier = Modifier.fillMaxWidth(),
-                    onSelected = onProductorChange
+                    onSelected = { productor ->
+                        onProductorChange(productor)
+                    }
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -125,7 +127,7 @@ internal fun FiltrosPrincipalesCard(
                         allText = "Todos",
                         items = ranchos,
                         itemText = { it.name },
-                        enabled = productorSeleccionado != null,
+                        enabled = ranchos.isNotEmpty(),
                         modifier = Modifier.weight(1f),
                         onSelected = { rancho ->
                             onRanchoChange(rancho)
@@ -138,7 +140,7 @@ internal fun FiltrosPrincipalesCard(
                         allText = "Todas",
                         items = parcelas,
                         itemText = { obtenerNombreParcelaFiltro(it) },
-                        enabled = productorSeleccionado != null && ranchoSeleccionado != null,
+                        enabled = parcelas.isNotEmpty(),
                         modifier = Modifier.weight(1f),
                         onSelected = { parcela ->
                             onParcelaChange(parcela)
