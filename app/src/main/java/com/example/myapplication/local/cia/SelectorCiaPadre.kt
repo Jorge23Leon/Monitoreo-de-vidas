@@ -1,5 +1,6 @@
 package com.example.myapplication.local.cia
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -22,9 +24,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.myapplication.local.R
 import com.example.myapplication.local.entities.LocalParentCiaEntity
 
 @Composable
@@ -71,7 +75,11 @@ fun SelectorCiaPadre(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp)
                 ) {
-                    Text(text = "🏢", fontSize = 20.sp)
+                    Image(
+                        painter = painterResource(id = R.drawable.img_cia_padre),
+                        contentDescription = "CIA padre",
+                        modifier = Modifier.size(28.dp)
+                    )
 
                     Spacer(modifier = Modifier.width(10.dp))
 

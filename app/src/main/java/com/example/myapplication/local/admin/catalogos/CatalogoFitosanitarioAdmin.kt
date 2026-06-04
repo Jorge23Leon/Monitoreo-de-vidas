@@ -124,7 +124,7 @@ internal fun DialogoFitosanitarioAdmin(
     cultivos: List<LocalCropCatalogEntity>,
     etapas: List<LocalPhytostageEntity>,
     onDismiss: () -> Unit,
-    onGuardar: (String, String, LocalCropCatalogEntity?, String, String, String, String?, String) -> Unit
+    onGuardar: (String, String, LocalCropCatalogEntity?, String, String, String, String?, List<EtapaFitoAdminUi>) -> Unit
 ) {
     val etapasActuales = remember(item?.idPhytosanitary, etapas) {
         if (item == null) {
@@ -134,6 +134,19 @@ internal fun DialogoFitosanitarioAdmin(
                 .filter { it.idPhytosanitary == item.idPhytosanitary }
                 .sortedBy { it.idLocalPhytostage }
                 .mapNotNull { normalizarEtapaFijaFitoAdmin(it.stage) }
+        }
+    }
+
+    val fotosEtapasActuales = remember(item?.idPhytosanitary, etapas) {
+        if (item == null) {
+            emptyMap<String, String?>()
+        } else {
+            etapas
+                .filter { it.idPhytosanitary == item.idPhytosanitary }
+                .associate { etapa ->
+                    val etapaNormalizada = normalizarEtapaFijaFitoAdmin(etapa.stage) ?: etapa.stage
+                    etapaNormalizada to etapa.photo
+                }
         }
     }
 
@@ -148,6 +161,9 @@ internal fun DialogoFitosanitarioAdmin(
     var photo by remember(item?.idPhytosanitary) { mutableStateOf(item?.photo) }
     var etapasSeleccionadas by remember(item?.idPhytosanitary, etapasActuales) {
         mutableStateOf(etapasActuales.distinctBy { it.lowercase() })
+    }
+    var fotosEtapas by remember(item?.idPhytosanitary, fotosEtapasActuales) {
+        mutableStateOf(fotosEtapasActuales)
     }
 
     val etapasPermitidas = remember(tipo) {
@@ -169,9 +185,13 @@ internal fun DialogoFitosanitarioAdmin(
         } else {
             seleccionValidada
         }
-    }
 
-    val etapasTexto = etapasSeleccionadas.joinToString("\n")
+        fotosEtapas = fotosEtapas.filterKeys { etapa ->
+            etapasPermitidas.any { permitida ->
+                permitida.equals(etapa, ignoreCase = true)
+            }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -180,7 +200,26 @@ internal fun DialogoFitosanitarioAdmin(
                 text = if (item == null) "Guardar" else "Actualizar",
                 guardando = guardando,
                 enabled = nombre.trim().isNotBlank() && etapasSeleccionadas.isNotEmpty(),
-                onClick = { onGuardar(nombre, tipo, cultivoSeleccionado, minRef, maxRef, descripcion, photo, etapasTexto) }
+                onClick = {
+                    val etapasParaGuardar = etapasSeleccionadas.map { etapa ->
+                        val etapaNormalizada = normalizarEtapaFijaFitoAdmin(etapa) ?: etapa
+                        EtapaFitoAdminUi(
+                            nombre = etapaNormalizada,
+                            photo = fotosEtapas[etapaNormalizada]
+                        )
+                    }
+
+                    onGuardar(
+                        nombre,
+                        tipo,
+                        cultivoSeleccionado,
+                        minRef,
+                        maxRef,
+                        descripcion,
+                        photo,
+                        etapasParaGuardar
+                    )
+                }
             )
         },
         dismissButton = {
@@ -205,6 +244,7 @@ internal fun DialogoFitosanitarioAdmin(
                     onTipoChange = { nuevoTipo ->
                         tipo = nuevoTipo
                         etapasSeleccionadas = etapasFijasPorTipoFitoAdmin(nuevoTipo)
+                        fotosEtapas = emptyMap()
                     },
                     habilitado = !guardando
                 )
@@ -231,13 +271,29 @@ internal fun DialogoFitosanitarioAdmin(
                 SelectorEtapasFijasAdmin(
                     tipo = tipo,
                     etapasSeleccionadas = etapasSeleccionadas,
+                    fotosEtapas = fotosEtapas,
                     guardando = guardando,
                     onToggleEtapa = { etapa ->
-                        etapasSeleccionadas = if (etapasSeleccionadas.any { it.equals(etapa, ignoreCase = true) }) {
-                            etapasSeleccionadas.filterNot { it.equals(etapa, ignoreCase = true) }
-                        } else {
-                            (etapasSeleccionadas + etapa).distinctBy { it.lowercase() }
+                        val etapaNormalizada = normalizarEtapaFijaFitoAdmin(etapa) ?: etapa
+                        val yaSeleccionada = etapasSeleccionadas.any {
+                            it.equals(etapaNormalizada, ignoreCase = true)
                         }
+
+                        etapasSeleccionadas = if (yaSeleccionada) {
+                            etapasSeleccionadas.filterNot {
+                                it.equals(etapaNormalizada, ignoreCase = true)
+                            }
+                        } else {
+                            (etapasSeleccionadas + etapaNormalizada).distinctBy { it.lowercase() }
+                        }
+
+                        if (yaSeleccionada) {
+                            fotosEtapas = fotosEtapas - etapaNormalizada
+                        }
+                    },
+                    onPhotoEtapaChange = { etapa, nuevaFoto ->
+                        val etapaNormalizada = normalizarEtapaFijaFitoAdmin(etapa) ?: etapa
+                        fotosEtapas = fotosEtapas + (etapaNormalizada to nuevaFoto)
                     }
                 )
 
@@ -254,8 +310,10 @@ internal fun DialogoFitosanitarioAdmin(
 private fun SelectorEtapasFijasAdmin(
     tipo: String,
     etapasSeleccionadas: List<String>,
+    fotosEtapas: Map<String, String?>,
     guardando: Boolean,
-    onToggleEtapa: (String) -> Unit
+    onToggleEtapa: (String) -> Unit,
+    onPhotoEtapaChange: (String, String?) -> Unit
 ) {
     val etapasPermitidas = etapasFijasPorTipoFitoAdmin(tipo)
 
@@ -274,22 +332,31 @@ private fun SelectorEtapasFijasAdmin(
             Spacer(modifier = Modifier.height(4.dp))
             DialogInfoText(
                 if (tipo.equals("ENFERMEDAD", ignoreCase = true)) {
-                    "Selecciona únicamente las etapas permitidas para enfermedades."
+                    "Selecciona las etapas permitidas para enfermedades y agrega imagen a cada una."
                 } else {
-                    "Selecciona únicamente las etapas permitidas para plagas."
+                    "Selecciona las etapas permitidas para plagas y agrega imagen a cada una."
                 }
             )
             Spacer(modifier = Modifier.height(10.dp))
 
             etapasPermitidas.forEachIndexed { index, etapa ->
+                val etapaNormalizada = normalizarEtapaFijaFitoAdmin(etapa) ?: etapa
+                val seleccionada = etapasSeleccionadas.any {
+                    it.equals(etapaNormalizada, ignoreCase = true)
+                }
+
                 ItemEtapaFijaAdmin(
                     numero = index + 1,
-                    etapa = etapa,
-                    seleccionada = etapasSeleccionadas.any { it.equals(etapa, ignoreCase = true) },
+                    etapa = etapaNormalizada,
+                    seleccionada = seleccionada,
+                    photo = fotosEtapas[etapaNormalizada],
                     guardando = guardando,
-                    onClick = { onToggleEtapa(etapa) }
+                    onClick = { onToggleEtapa(etapaNormalizada) },
+                    onPhotoChange = { nuevaFoto ->
+                        onPhotoEtapaChange(etapaNormalizada, nuevaFoto)
+                    }
                 )
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
             if (etapasSeleccionadas.isEmpty()) {
@@ -310,10 +377,12 @@ private fun ItemEtapaFijaAdmin(
     numero: Int,
     etapa: String,
     seleccionada: Boolean,
+    photo: String?,
     guardando: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onPhotoChange: (String?) -> Unit
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
@@ -323,40 +392,61 @@ private fun ItemEtapaFijaAdmin(
                 shape = RoundedCornerShape(14.dp)
             )
             .background(if (seleccionada) Color(0xFFE8F5E9) else Color.White)
-            .clickable(enabled = !guardando) { onClick() }
-            .padding(horizontal = 10.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(10.dp)
     ) {
-        Box(
+        Row(
             modifier = Modifier
-                .size(28.dp)
-                .clip(CircleShape)
-                .background(if (seleccionada) Color(0xFF2E7D32) else Color(0xFFF1F5EE)),
-            contentAlignment = Alignment.Center
+                .fillMaxWidth()
+                .clickable(enabled = !guardando) { onClick() },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(if (seleccionada) Color(0xFF2E7D32) else Color(0xFFF1F5EE)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (seleccionada) "✓" else numero.toString(),
+                    color = if (seleccionada) Color.White else Color(0xFF1B5E20),
+                    fontWeight = FontWeight.Black,
+                    fontSize = 12.sp
+                )
+            }
+
             Text(
-                text = if (seleccionada) "✓" else numero.toString(),
-                color = if (seleccionada) Color.White else Color(0xFF1B5E20),
+                text = nombreVisibleEtapaFitoAdmin(etapa),
+                modifier = Modifier.weight(1f),
+                color = Color(0xFF263B1E),
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp
+            )
+
+            Text(
+                text = if (seleccionada) "Seleccionada" else "Agregar",
+                color = if (seleccionada) Color(0xFF2E7D32) else Color(0xFF5E6D58),
                 fontWeight = FontWeight.Black,
-                fontSize = 12.sp
+                fontSize = 11.sp
             )
         }
 
-        Text(
-            text = nombreVisibleEtapaFitoAdmin(etapa),
-            modifier = Modifier.weight(1f),
-            color = Color(0xFF263B1E),
-            fontWeight = FontWeight.Bold,
-            fontSize = 13.sp
-        )
-
-        Text(
-            text = if (seleccionada) "Seleccionada" else "Agregar",
-            color = if (seleccionada) Color(0xFF2E7D32) else Color(0xFF5E6D58),
-            fontWeight = FontWeight.Black,
-            fontSize = 11.sp
-        )
+        if (seleccionada) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = "Imagen de ${nombreVisibleEtapaFitoAdmin(etapa)}",
+                color = Color(0xFF1B5E20),
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            AdminImagePickerField(
+                photo = photo,
+                guardando = guardando,
+                onPhotoChange = onPhotoChange
+            )
+        }
     }
 }
 
@@ -434,7 +524,7 @@ internal suspend fun guardarFitosanitarioAdmin(
     maxRef: String,
     descripcion: String,
     photo: String?,
-    etapasTexto: String
+    etapasUi: List<EtapaFitoAdminUi>
 ): ResultadoOperacionCatalogoAdmin {
     val nombreLimpio = nombre.trim()
     val tipoLimpio = tipo.trim().uppercase()
@@ -444,20 +534,26 @@ internal suspend fun guardarFitosanitarioAdmin(
     val photoLimpia = photo?.trim()?.ifBlank { null }
     val idCultivo = cultivo?.idCrop
 
-    val etapasSeparadas = etapasTexto
-        .split("\n", ",", ";")
-        .map { it.trim() }
-        .filter { it.isNotBlank() }
-
     val etapasPermitidas = etapasFijasPorTipoFitoAdmin(tipoLimpio)
-    val etapasLimpias = etapasSeparadas
-        .mapNotNull { normalizarEtapaFijaFitoAdmin(it) }
-        .filter { etapa ->
-            etapasPermitidas.any { permitida ->
-                permitida.equals(etapa, ignoreCase = true)
+    val etapasLimpias = etapasUi
+        .mapNotNull { etapaUi ->
+            val nombreNormalizado = normalizarEtapaFijaFitoAdmin(etapaUi.nombre)
+                ?: return@mapNotNull null
+
+            val esPermitida = etapasPermitidas.any { permitida ->
+                permitida.equals(nombreNormalizado, ignoreCase = true)
+            }
+
+            if (!esPermitida) {
+                null
+            } else {
+                EtapaFitoAdminUi(
+                    nombre = nombreNormalizado,
+                    photo = etapaUi.photo?.trim()?.ifBlank { null }
+                )
             }
         }
-        .distinctBy { it.lowercase() }
+        .distinctBy { it.nombre.lowercase() }
 
     when {
         itemBase != null && esSinPlagaSistemaAdmin(itemBase) -> {
@@ -530,31 +626,18 @@ internal suspend fun guardarFitosanitarioAdmin(
         val etapasActuales = database.localphytostageDao()
             .getStagesByPhytosanitary(idFitosanitario)
 
-        val etapasAEliminar = etapasActuales
-            .filter { etapaActual ->
-                etapasLimpias.none { etapaNueva ->
-                    etapaNueva.equals(etapaActual.stage, ignoreCase = true)
-                }
-            }
-
-        etapasAEliminar.forEach { etapa ->
+        etapasActuales.forEach { etapa ->
             database.localphytostageDao().deletePhytostage(etapa)
         }
 
-        val etapasNuevas = etapasLimpias
-            .filter { etapaNueva ->
-                etapasActuales.none { etapaActual ->
-                    etapaActual.stage.equals(etapaNueva, ignoreCase = true)
-                }
-            }
-            .map { etapaNueva ->
-                LocalPhytostageEntity(
-                    ext_id = null,
-                    stage = etapaNueva,
-                    photo = null,
-                    idPhytosanitary = idFitosanitario
-                )
-            }
+        val etapasNuevas = etapasLimpias.map { etapaNueva ->
+            LocalPhytostageEntity(
+                ext_id = null,
+                stage = etapaNueva.nombre,
+                photo = etapaNueva.photo,
+                idPhytosanitary = idFitosanitario
+            )
+        }
 
         if (etapasNuevas.isNotEmpty()) {
             database.localphytostageDao().insertPhytostages(etapasNuevas)
@@ -564,9 +647,9 @@ internal suspend fun guardarFitosanitarioAdmin(
     return ResultadoOperacionCatalogoAdmin(
         exito = true,
         mensaje = if (itemBase == null) {
-            "Catálogo fitosanitario agregado con etapas fijas"
+            "Catálogo fitosanitario agregado con imágenes por etapa"
         } else {
-            "Catálogo fitosanitario actualizado con etapas fijas"
+            "Catálogo fitosanitario actualizado con imágenes por etapa"
         }
     )
 }

@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -353,7 +352,6 @@ fun RegistroPuntoMonitoreoScreen(
         }
     }
 
-
     tipoConfirmacionGuardado?.let { tipo ->
         AlertDialog(
             onDismissRequest = {
@@ -429,7 +427,7 @@ fun RegistroPuntoMonitoreoScreen(
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 14.dp, vertical = 12.dp)
-                    .padding(bottom = 92.dp),
+                    .padding(bottom = 160.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 RegistroPuntoSuperiorCard(
@@ -525,12 +523,14 @@ fun RegistroPuntoMonitoreoScreen(
                 onGuardarClick = {
                     tipoConfirmacionGuardado = TipoConfirmacionGuardado.CON_REGISTRO
                 },
-                modifier = Modifier.align(Alignment.BottomCenter)
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 14.dp)
+                    .padding(bottom = 42.dp)
             )
         }
     }
 }
-
 
 private enum class TipoConfirmacionGuardado {
     SIN_PLAGA,

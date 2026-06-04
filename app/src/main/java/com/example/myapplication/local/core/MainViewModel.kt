@@ -34,6 +34,15 @@ private data class MainSesionRestauradaTemp(
     val ciaGuardada: LocalCiaEntity?
 )
 
+private data class MainLoginTemp(
+    val sesion: UsuarioSesion,
+    val parentCias: List<LocalParentCiaEntity>,
+    val ciasHijasUsuario: List<LocalCiaEntity>,
+    val parentCiaPreferente: LocalParentCiaEntity?,
+    val ciasHijasPreferente: List<LocalCiaEntity>,
+    val ciaPreferente: LocalCiaEntity?
+)
+
 
 class MainViewModel(
     application: Application
@@ -208,6 +217,12 @@ class MainViewModel(
                     val idUserGuardado = prefs.getLong("id_user", 0L)
                     val idParentCiaGuardada = prefs.getLong("id_parent_cia", 0L)
                     val idLocalCiaGuardada = prefs.getLong("id_local_cia", 0L)
+                    val idCiaPreferenteGuardada = obtenerCiaPreferente(idUserGuardado)
+                    val idCiaParaRestaurar = if (idLocalCiaGuardada > 0L) {
+                        idLocalCiaGuardada
+                    } else {
+                        idCiaPreferenteGuardada
+                    }
 
                     if (!sesionActiva || idUserGuardado <= 0L) {
                         null
@@ -264,9 +279,9 @@ class MainViewModel(
                                 }
                             }
 
-                            val ciaGuardada = if (idLocalCiaGuardada > 0L) {
+                            val ciaGuardada = if (idCiaParaRestaurar > 0L) {
                                 ciasHijasGuardadas.firstOrNull { cia ->
-                                    cia.idLocalCia == idLocalCiaGuardada
+                                    cia.idLocalCia == idCiaParaRestaurar
                                 }
                             } else {
                                 null
@@ -317,6 +332,8 @@ class MainViewModel(
                         },
 
                         ciaSeleccionada = resultado.ciaGuardada,
+                        seleccionarPreferente = resultado.ciaGuardada != null &&
+                                resultado.ciaGuardada.idLocalCia == obtenerCiaPreferente(sesion.idUser),
 
                         productores = emptyList(),
                         ranchos = emptyList(),
@@ -584,16 +601,61 @@ class MainViewModel(
                             emptyList()
                         }
 
-                        Triple(sesion, parentCias, ciasHijasUsuario)
+                        val idCiaPreferente = obtenerCiaPreferente(sesion.idUser)
+                        var parentCiaPreferente: LocalParentCiaEntity? = null
+                        var ciasHijasPreferente: List<LocalCiaEntity> = emptyList()
+
+                        val ciaPreferente = if (
+                            idCiaPreferente > 0L &&
+                            !sesion.esTecnico &&
+                            !sesion.esInvitado
+                        ) {
+                            if (sesion.esSupervisor) {
+                                ciasHijasUsuario.firstOrNull { cia ->
+                                    cia.idLocalCia == idCiaPreferente
+                                }
+                            } else {
+                                var ciaEncontrada: LocalCiaEntity? = null
+
+                                for (parentCia in parentCias) {
+                                    val hijas = database.localCiaDao()
+                                        .getCiasByParentCia(parentCia.idParentCia)
+
+                                    val candidata = hijas.firstOrNull { cia ->
+                                        cia.idLocalCia == idCiaPreferente
+                                    }
+
+                                    if (candidata != null) {
+                                        parentCiaPreferente = parentCia
+                                        ciasHijasPreferente = hijas
+                                        ciaEncontrada = candidata
+                                        break
+                                    }
+                                }
+
+                                ciaEncontrada
+                            }
+                        } else {
+                            null
+                        }
+
+                        MainLoginTemp(
+                            sesion = sesion,
+                            parentCias = parentCias,
+                            ciasHijasUsuario = ciasHijasUsuario,
+                            parentCiaPreferente = parentCiaPreferente,
+                            ciasHijasPreferente = ciasHijasPreferente,
+                            ciaPreferente = ciaPreferente
+                        )
                     }
                 }
 
                 if (resultado == null) {
                     mostrarMensaje("Usuario o contraseña incorrectos")
                 } else {
-                    val sesion = resultado.first
-                    val parentCias = resultado.second
-                    val ciasHijasUsuario = resultado.third
+                    val sesion = resultado.sesion
+                    val parentCias = resultado.parentCias
+                    val ciasHijasUsuario = resultado.ciasHijasUsuario
                     guardarSesionBasica(sesion.idUser)
 
                     actualizarEstado {
@@ -605,9 +667,14 @@ class MainViewModel(
                             nivelRolUsuarioActual = sesion.level,
 
                             parentCiasUsuario = parentCias,
-                            parentCiaSeleccionada = null,
-                            ciasUsuario = if (sesion.esSupervisor || sesion.esTecnico) ciasHijasUsuario else emptyList(),
-                            ciaSeleccionada = null,
+                            parentCiaSeleccionada = resultado.parentCiaPreferente,
+                            ciasUsuario = when {
+                                resultado.ciasHijasPreferente.isNotEmpty() -> resultado.ciasHijasPreferente
+                                sesion.esSupervisor || sesion.esTecnico -> ciasHijasUsuario
+                                else -> emptyList()
+                            },
+                            ciaSeleccionada = resultado.ciaPreferente,
+                            seleccionarPreferente = resultado.ciaPreferente != null,
                             productores = emptyList(),
                             ranchos = emptyList(),
                             parcelas = emptyList(),
@@ -636,6 +703,10 @@ class MainViewModel(
                         when {
                             sesion.esSupervisor && ciasHijasUsuario.isEmpty() -> {
                                 mostrarMensaje("Bienvenido ${sesion.firstName}. No tienes CIAS hijas asignadas")
+                            }
+
+                            resultado.ciaPreferente != null -> {
+                                mostrarMensaje("Bienvenido ${sesion.firstName}. CIA preferente cargada: ${resultado.ciaPreferente.nombre}")
                             }
 
                             sesion.esSupervisor -> {
@@ -730,17 +801,40 @@ class MainViewModel(
     }
 
     fun onPreferenteChange(seleccionado: Boolean) {
-        actualizarEstado { it.copy(seleccionarPreferente = seleccionado) }
+        val idUser = uiState.idUsuarioActual
+        val ciaActual = uiState.ciaSeleccionada
+
+        if (seleccionado && ciaActual == null) {
+            mostrarMensaje("Primero selecciona una CIA hija")
+            return
+        }
+
+        if (idUser > 0L) {
+            if (seleccionado && ciaActual != null) {
+                guardarCiaPreferente(
+                    idUser = idUser,
+                    idLocalCia = ciaActual.idLocalCia
+                )
+            } else {
+                borrarCiaPreferente(idUser)
+            }
+        }
+
+        actualizarEstado {
+            it.copy(seleccionarPreferente = seleccionado)
+        }
     }
 
     fun onParentCiaChange(parentCia: LocalParentCiaEntity) {
         guardarParentCiaSesion(parentCia.idParentCia)
+
         actualizarEstado {
             it.copy(
                 parentCiaSeleccionada = parentCia,
 
                 ciasUsuario = emptyList(),
                 ciaSeleccionada = null,
+                seleccionarPreferente = false,
 
                 productores = emptyList(),
                 ranchos = emptyList(),
@@ -781,16 +875,19 @@ class MainViewModel(
                         .getCiasByParentCia(parentCia.idParentCia)
                 }
 
+                val idCiaPreferente = obtenerCiaPreferente(sesion.idUser)
+                val ciaPreferente = ciasHijas.firstOrNull { cia ->
+                    cia.idLocalCia == idCiaPreferente
+                }
+
                 actualizarEstado { estadoActual ->
                     if (estadoActual.parentCiaSeleccionada?.idParentCia != parentCia.idParentCia) {
                         estadoActual
                     } else {
                         estadoActual.copy(
                             ciasUsuario = ciasHijas,
-
-                            // IMPORTANTE:
-                            // Cuando cambias de CIA padre, tampoco seleccionamos CIA hija automática.
-                            ciaSeleccionada = null,
+                            ciaSeleccionada = ciaPreferente,
+                            seleccionarPreferente = ciaPreferente != null,
 
                             productores = emptyList(),
                             ranchos = emptyList(),
@@ -812,8 +909,14 @@ class MainViewModel(
                     }
                 }
 
-                if (ciasHijas.isEmpty()) {
-                    mostrarMensaje("Esta CIA padre no tiene CIAS hijas asignadas")
+                when {
+                    ciasHijas.isEmpty() -> {
+                        mostrarMensaje("Esta CIA padre no tiene CIAS hijas asignadas")
+                    }
+
+                    ciaPreferente != null -> {
+                        mostrarMensaje("CIA preferente cargada: ${ciaPreferente.nombre}")
+                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -835,7 +938,27 @@ class MainViewModel(
     }
 
     fun onCiaChange(cia: LocalCiaEntity) {
-        actualizarEstado { it.copy(ciaSeleccionada = cia) }
+        val idUser = uiState.idUsuarioActual
+
+        if (idUser > 0L && uiState.seleccionarPreferente) {
+            guardarCiaPreferente(
+                idUser = idUser,
+                idLocalCia = cia.idLocalCia
+            )
+        }
+
+        val idCiaPreferente = if (idUser > 0L) {
+            obtenerCiaPreferente(idUser)
+        } else {
+            0L
+        }
+
+        actualizarEstado {
+            it.copy(
+                ciaSeleccionada = cia,
+                seleccionarPreferente = idCiaPreferente == cia.idLocalCia
+            )
+        }
     }
 
     private fun abrirFiltrosMonitoreoConCia(
@@ -865,6 +988,7 @@ class MainViewModel(
             mostrarMensaje("Este usuario no tiene CIAS hijas asignadas")
             return
         }
+
         if (estado.seleccionarPreferente) {
             guardarCiaPreferente(
                 idUser = estado.idUsuarioActual,
@@ -883,7 +1007,13 @@ class MainViewModel(
 
         abrirFiltrosMonitoreoConCia(cia)
 
-        mostrarMensaje("CIA seleccionada: ${cia.nombre}")
+        val extraPreferente = if (estado.seleccionarPreferente) {
+            " como preferente"
+        } else {
+            ""
+        }
+
+        mostrarMensaje("CIA seleccionada$extraPreferente: ${cia.nombre}")
     }
 
     fun cargarProductores(
@@ -2316,10 +2446,23 @@ class MainViewModel(
     }
 
     private fun obtenerCiaPreferente(idUser: Long): Long {
+        if (idUser <= 0L) return 0L
+
         val prefs = getApplication<Application>()
             .getSharedPreferences("preferencias_app", android.content.Context.MODE_PRIVATE)
 
         return prefs.getLong("cia_preferente_usuario_$idUser", 0L)
+    }
+
+    private fun borrarCiaPreferente(idUser: Long) {
+        if (idUser <= 0L) return
+
+        val prefs = getApplication<Application>()
+            .getSharedPreferences("preferencias_app", android.content.Context.MODE_PRIVATE)
+
+        prefs.edit()
+            .remove("cia_preferente_usuario_$idUser")
+            .apply()
     }
 
 

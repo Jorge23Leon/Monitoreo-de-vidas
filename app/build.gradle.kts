@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.monitoreodeplagas"
+    namespace = "com.example.myapplication.local"
     compileSdk = 35
 
     defaultConfig {

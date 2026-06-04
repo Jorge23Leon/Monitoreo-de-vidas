@@ -176,7 +176,7 @@ fun AdminCatalogosScreen(
         maxRef: String,
         descripcion: String,
         photo: String?,
-        etapasTexto: String
+        etapasUi: List<EtapaFitoAdminUi>
     ) {
         coroutineScope.launch {
             guardando = true
@@ -192,7 +192,7 @@ fun AdminCatalogosScreen(
                     maxRef = maxRef,
                     descripcion = descripcion,
                     photo = photo,
-                    etapasTexto = etapasTexto
+                    etapasUi = etapasUi
                 )
 
                 onMensaje(resultado.mensaje)
@@ -229,7 +229,7 @@ fun AdminCatalogosScreen(
             cultivos = cultivos,
             etapas = etapas,
             onDismiss = { cerrarDialogos() },
-            onGuardar = { nombre, tipo, cultivo, minRef, maxRef, descripcion, photo, etapasTexto ->
+            onGuardar = { nombre, tipo, cultivo, minRef, maxRef, descripcion, photo, etapasUi ->
                 ejecutarGuardarFitosanitario(
                     nombre = nombre,
                     tipo = tipo,
@@ -238,7 +238,7 @@ fun AdminCatalogosScreen(
                     maxRef = maxRef,
                     descripcion = descripcion,
                     photo = photo,
-                    etapasTexto = etapasTexto
+                    etapasUi = etapasUi
                 )
             }
         )
@@ -312,6 +312,11 @@ fun AdminCatalogosScreen(
         }
     }
 }
+
+internal data class EtapaFitoAdminUi(
+    val nombre: String,
+    val photo: String?
+)
 
 @Composable
 private fun AdminCatalogosHeroCard(

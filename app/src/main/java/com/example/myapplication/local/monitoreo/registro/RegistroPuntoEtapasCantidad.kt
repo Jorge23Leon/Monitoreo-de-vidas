@@ -28,6 +28,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.myapplication.local.common.ImageUriBox
+import com.example.myapplication.local.entities.LocalPhytostageEntity
 
 @Composable
 internal fun EtapasCantidadCard(
@@ -64,7 +66,7 @@ internal fun EtapasCantidadCard(
 
             etapas.forEach { etapaUi ->
                 EtapaRowModerna(
-                    nombreEtapa = etapaUi.etapa.stage,
+                    etapa = etapaUi.etapa,
                     cantidad = etapaUi.cantidad,
                     onMenos = etapaUi.onMenos,
                     onMas = etapaUi.onMas
@@ -76,11 +78,13 @@ internal fun EtapasCantidadCard(
 
 @Composable
 private fun EtapaRowModerna(
-    nombreEtapa: String,
+    etapa: LocalPhytostageEntity,
     cantidad: Int,
     onMenos: () -> Unit,
     onMas: () -> Unit
 ) {
+    val nombreEtapa = etapa.stage
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -89,20 +93,15 @@ private fun EtapaRowModerna(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Box(
+        ImageUriBox(
+            photo = etapa.photo,
+            fallbackIcon = iconoEtapaRegistro(nombreEtapa),
+            sizeDp = 42,
             modifier = Modifier
                 .size(42.dp)
                 .clip(CircleShape)
-                .background(colorIconoEtapaRegistro(nombreEtapa)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = iconoEtapaRegistro(nombreEtapa),
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Black,
-                color = Color(0xFF3A4652)
-            )
-        }
+                .background(colorIconoEtapaRegistro(nombreEtapa))
+        )
 
         Text(
             text = nombreEtapa,

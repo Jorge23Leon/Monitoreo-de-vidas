@@ -34,6 +34,10 @@ import com.example.myapplication.local.common.EncabezadoApp
 import com.example.myapplication.local.entities.LocalCiaEntity
 import com.example.myapplication.local.entities.LocalParentCiaEntity
 import java.util.Locale
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.res.painterResource
+import com.example.myapplication.local.R
 
 @Composable
 fun SeleccionCiaScreen(
@@ -126,6 +130,7 @@ fun SeleccionCiaScreen(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 TarjetaCiaPreferente(
+                    ciaSeleccionada = ciaSeleccionada,
                     seleccionarPreferente = seleccionarPreferente,
                     onPreferenteChange = onPreferenteChange
                 )
@@ -225,13 +230,22 @@ private fun MensajeEstadoSeleccionCia(
 
 @Composable
 private fun TarjetaCiaPreferente(
+    ciaSeleccionada: LocalCiaEntity?,
     seleccionarPreferente: Boolean,
     onPreferenteChange: (Boolean) -> Unit
 ) {
+    val habilitada = ciaSeleccionada != null
+
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = habilitada) {
+                onPreferenteChange(!seleccionarPreferente)
+            },
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFFAFAFA))
+        colors = CardDefaults.cardColors(
+            containerColor = if (habilitada) Color(0xFFFAFAFA) else Color(0xFFF2F2F2)
+        )
     ) {
         Row(
             modifier = Modifier
@@ -239,13 +253,22 @@ private fun TarjetaCiaPreferente(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(text = "⭐", fontSize = 22.sp)
+            Image(
+                painter = painterResource(id = R.drawable.img_cia_preferente),
+                contentDescription = "CIA preferente",
+                modifier = Modifier.size(30.dp)
+            )
 
             Spacer(modifier = Modifier.width(8.dp))
 
             Checkbox(
                 checked = seleccionarPreferente,
-                onCheckedChange = onPreferenteChange,
+                onCheckedChange = {
+                    if (habilitada) {
+                        onPreferenteChange(it)
+                    }
+                },
+                enabled = habilitada,
                 modifier = Modifier.size(32.dp)
             )
 
@@ -256,11 +279,23 @@ private fun TarjetaCiaPreferente(
                     text = "Seleccionar CIA hija preferente",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.Black
+                    color = if (habilitada) Color.Black else Color(0xFF888888)
                 )
 
                 Text(
-                    text = "La app recordará esta CIA hija para este usuario.",
+                    text = when {
+                        ciaSeleccionada == null -> {
+                            "Primero selecciona una CIA hija."
+                        }
+
+                        seleccionarPreferente -> {
+                            "Se recordará: ${ciaSeleccionada.nombre}"
+                        }
+
+                        else -> {
+                            "No se guardará como preferente."
+                        }
+                    },
                     fontSize = 11.sp,
                     color = Color(0xFF777777)
                 )

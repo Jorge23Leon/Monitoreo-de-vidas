@@ -38,6 +38,7 @@ import com.example.myapplication.local.common.ImageUriBox
 import com.example.myapplication.local.entities.LocalPhytomonitoringTargetPointEntity
 import com.example.myapplication.local.entities.LocalPhytosanitaryCatalogEntity
 
+
 @Composable
 internal fun RegistroPuntoSuperiorCard(
     punto: LocalPhytomonitoringTargetPointEntity,
@@ -76,12 +77,11 @@ internal fun RegistroPuntoSuperiorCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "Punto ${numeroPunto.toString().padStart(2, '0')}",
-                    fontSize = 28.sp,
+                    fontSize = 24.sp,
                     fontWeight = FontWeight.Black,
                     color = Color(0xFF1D2430),
                     maxLines = 1
                 )
-
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
@@ -102,10 +102,10 @@ internal fun RegistroPuntoSuperiorCard(
             ImageUriBox(
                 photo = fotoCultivo,
                 fallbackIcon = "🌽",
-                sizeDp = 110,
+                sizeDp = 92,
                 modifier = Modifier
-                    .width(126.dp)
-                    .height(78.dp)
+                    .width(104.dp)
+                    .height(70.dp)
                     .clip(RoundedCornerShape(16.dp))
             )
         }
@@ -130,7 +130,7 @@ internal fun ElementoSeleccionadoCard(
                 .padding(14.dp)
         ) {
             Text(
-                text = if (fito == null) "Elemento seleccionado" else "Elemento seleccionado",
+                text = "Elemento seleccionado",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Black,
                 color = Color(0xFF743B1F)
@@ -316,7 +316,7 @@ internal fun BarraAccionesRegistro(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
+        shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {

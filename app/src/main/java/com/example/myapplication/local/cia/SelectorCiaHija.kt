@@ -1,5 +1,6 @@
 package com.example.myapplication.local.cia
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,12 +23,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.myapplication.local.R
 import com.example.myapplication.local.entities.LocalCiaEntity
 import com.example.myapplication.local.entities.LocalParentCiaEntity
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 
 @Composable
 fun SelectorCiaHija(
@@ -74,7 +81,7 @@ fun SelectorCiaHija(
 
                 esSupervisor -> {
                     ListaCiasHijasCard(
-                        iconoEncabezado = "🌱",
+                        imagenEncabezado = R.drawable.img_cia_hija,
                         tituloEncabezado = "CIAS hijas disponibles",
                         cias = cias,
                         ciaSeleccionada = ciaSeleccionada,
@@ -92,7 +99,7 @@ fun SelectorCiaHija(
 
                 else -> {
                     ListaCiasHijasCard(
-                        iconoEncabezado = "🏢",
+                        imagenEncabezado = R.drawable.img_cia_padre,
                         tituloEncabezado = parentCiaSeleccionada.name,
                         mostrarIconoExpandido = true,
                         cias = cias,
@@ -107,13 +114,17 @@ fun SelectorCiaHija(
 
 @Composable
 private fun ListaCiasHijasCard(
-    iconoEncabezado: String,
+    imagenEncabezado: Int,
     tituloEncabezado: String,
     mostrarIconoExpandido: Boolean = false,
     cias: List<LocalCiaEntity>,
     ciaSeleccionada: LocalCiaEntity?,
     onCiaChange: (LocalCiaEntity) -> Unit
 ) {
+    var expandido by remember(tituloEncabezado, cias.size) {
+        mutableStateOf(true)
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -125,10 +136,17 @@ private fun ListaCiasHijasCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color(0xFFEAF5E4))
+                    .clickable(enabled = mostrarIconoExpandido) {
+                        expandido = !expandido
+                    }
                     .padding(horizontal = 12.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(text = iconoEncabezado, fontSize = 22.sp)
+                Image(
+                    painter = painterResource(id = imagenEncabezado),
+                    contentDescription = tituloEncabezado,
+                    modifier = Modifier.size(30.dp)
+                )
 
                 Spacer(modifier = Modifier.width(10.dp))
 
@@ -143,16 +161,17 @@ private fun ListaCiasHijasCard(
                 if (mostrarIconoExpandido) {
                     Box(
                         modifier = Modifier
-                            .size(24.dp)
+                            .size(26.dp)
                             .border(
                                 width = 2.dp,
                                 color = Color(0xFF4A8F2A),
                                 shape = CircleShape
-                            ),
+                            )
+                            .clip(CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "−",
+                            text = if (expandido) "−" else "+",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF4A8F2A)
@@ -161,13 +180,15 @@ private fun ListaCiasHijasCard(
                 }
             }
 
-            cias.forEachIndexed { index, cia ->
-                CiaHijaTreeItem(
-                    cia = cia,
-                    seleccionada = ciaSeleccionada?.idLocalCia == cia.idLocalCia,
-                    esUltima = index == cias.lastIndex,
-                    onClick = { onCiaChange(cia) }
-                )
+            if (!mostrarIconoExpandido || expandido) {
+                cias.forEachIndexed { index, cia ->
+                    CiaHijaTreeItem(
+                        cia = cia,
+                        seleccionada = ciaSeleccionada?.idLocalCia == cia.idLocalCia,
+                        esUltima = index == cias.lastIndex,
+                        onClick = { onCiaChange(cia) }
+                    )
+                }
             }
         }
     }
@@ -216,7 +237,11 @@ private fun CiaHijaTreeItem(
             )
         }
 
-        Text(text = "🌱", fontSize = 20.sp)
+        Image(
+            painter = painterResource(id = R.drawable.img_cia_hija),
+            contentDescription = "CIA hija",
+            modifier = Modifier.size(28.dp)
+        )
 
         Spacer(modifier = Modifier.width(10.dp))
 
