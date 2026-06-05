@@ -7,7 +7,10 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import com.example.myapplication.local.entities.LocalPhytomonitoringCheckpointEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringTargetPointEntity
+import com.example.myapplication.local.entities.LocalPhytosanitaryCatalogEntity
 import com.example.myapplication.local.entities.LocalPlotVertexEntity
+import com.example.myapplication.local.monitoreo.severidad.RangosSeveridad
+import com.example.myapplication.local.monitoreo.severidad.calcularSeveridadPorPunto
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -27,35 +30,36 @@ internal fun crearVerticesJson(vertices: List<LocalPlotVertexEntity>): String {
 
 internal fun crearPuntosJson(
     puntos: List<LocalPhytomonitoringTargetPointEntity>,
-    checkpoints: List<LocalPhytomonitoringCheckpointEntity>
+    checkpoints: List<LocalPhytomonitoringCheckpointEntity>,
+    catalogo: List<LocalPhytosanitaryCatalogEntity> = emptyList()
 ): String {
-    val idsPuntosActuales = puntos
-        .map { it.idTargetPoint }
-        .toSet()
+    val checkpointsPorPunto = checkpoints.groupBy { checkpoint ->
+        checkpoint.idTargetPoint
+    }
 
-    val idsCapturados = checkpoints
-        .filter { checkpoint ->
-            checkpoint.idTargetPoint in idsPuntosActuales
-        }
-        .map { checkpoint ->
-            checkpoint.idTargetPoint
-        }
+    val catalogoPorId = catalogo.associateBy { item ->
+        item.idPhytosanitary
+    }
+
+    val idsPuntosConCheckpoint = checkpoints
+        .map { checkpoint -> checkpoint.idTargetPoint }
         .toSet()
 
     val array = JSONArray()
 
     puntos.forEach { punto ->
-        val statusBase = punto.status.lowercase().trim()
+        val statusBase = punto.status.trim().lowercase()
 
         val statusFinal = when {
-            punto.idTargetPoint in idsCapturados -> "completed"
+            statusBase == "cancelled" ||
+                    statusBase == "cancelado" ||
+                    statusBase == "canceled" -> "cancelled"
+
+            punto.idTargetPoint in idsPuntosConCheckpoint -> "completed"
 
             statusBase == "completed" ||
                     statusBase == "completado" ||
                     statusBase == "capturado" -> "completed"
-
-            statusBase == "cancelled" ||
-                    statusBase == "cancelado" -> "cancelled"
 
             statusBase == "in_progress" ||
                     statusBase == "en proceso" -> "in_progress"
@@ -63,12 +67,40 @@ internal fun crearPuntosJson(
             else -> "pending"
         }
 
+        val checkpointsDelPunto = checkpointsPorPunto[punto.idTargetPoint].orEmpty()
+
+        val severidad = calcularSeveridadPorPunto(
+            checkpointsPunto = checkpointsDelPunto,
+            catalogoPorId = catalogoPorId,
+            rangos = RangosSeveridad()
+        )
+
+        val colorSemaforo = when (statusFinal) {
+            "completed" -> severidad.nivelFinal.colorHex
+            "cancelled" -> "#6B7280"
+            else -> "#D98A00"
+        }
+
+        val textoSemaforo = when (statusFinal) {
+            "completed" -> severidad.nivelFinal.etiqueta
+            "cancelled" -> "Cancelado"
+            else -> "Pendiente"
+        }
+
         val obj = JSONObject()
         obj.put("idTargetPoint", punto.idTargetPoint)
         obj.put("lat", punto.lat)
         obj.put("lon", punto.lon)
         obj.put("radius", punto.radiusM)
+        obj.put("radiusM", punto.radiusM)
         obj.put("status", statusFinal)
+
+        // Semáforo GLOBAL por punto:
+        // suma plagas + enfermedades + todas sus fases del mismo punto.
+        obj.put("totalCantidadPunto", severidad.totalCantidadPunto)
+        obj.put("severityStatus", textoSemaforo)
+        obj.put("severityColor", colorSemaforo)
+        obj.put("severityLevel", severidad.nivelFinal.orden)
 
         array.put(obj)
     }
@@ -117,7 +149,6 @@ internal fun hayInternet(context: Context): Boolean {
 
         capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
                 capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-
     } catch (_: Exception) {
         false
     }

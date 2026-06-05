@@ -106,7 +106,9 @@ internal fun ItemFitosanitarioAdmin(
                 append(etapasTexto)
             }
             if (!esRegistroSistema && (item.minRefValue != null || item.maxRefValue != null)) {
-                append("  •  Ref: ${item.minRefValue ?: "-"} a ${item.maxRefValue ?: "-"}")
+                val menor = item.minRefValue ?: 10
+                val mayor = item.maxRefValue ?: 20
+                append("  •  Semáforo: amarillo 1-$menor, naranja ${menor + 1}-$mayor, rojo ${mayor + 1}+")
             }
             if (!item.description.isNullOrBlank()) {
                 append("  •  ${item.description}")
@@ -232,7 +234,7 @@ internal fun DialogoFitosanitarioAdmin(
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 DialogInfoText(
                     "Puedes dejarlo como general o asociarlo a un cultivo. " +
-                            "Las etapas ya están controladas por el sistema y solo puedes seleccionar las que correspondan al tipo."
+                            "Configura el semáforo: verde es 0, amarillo llega hasta el límite menor, naranja hasta el límite mayor y rojo supera el mayor."
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 AdminImagePickerField(photo = photo, guardando = guardando, onPhotoChange = { photo = it })
@@ -263,8 +265,8 @@ internal fun DialogoFitosanitarioAdmin(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AdminDialogNumberField(minRef, { minRef = it }, "Mín", guardando, Modifier.weight(1f))
-                    AdminDialogNumberField(maxRef, { maxRef = it }, "Máx", guardando, Modifier.weight(1f))
+                    AdminDialogNumberField(minRef, { minRef = it }, "Amarillo hasta", guardando, Modifier.weight(1f))
+                    AdminDialogNumberField(maxRef, { maxRef = it }, "Naranja hasta", guardando, Modifier.weight(1f))
                 }
                 Spacer(modifier = Modifier.height(10.dp))
 

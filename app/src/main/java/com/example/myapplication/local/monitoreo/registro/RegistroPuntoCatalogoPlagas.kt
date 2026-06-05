@@ -105,7 +105,11 @@ private fun FitoMiniCard(
                             .size(58.dp)
                             .clip(CircleShape)
                             .background(
-                                if (esEnfermedadRegistro(item.type)) Color(0xFFEAF4E7) else Color(0xFFFFEFEA)
+                                if (esEnfermedadRegistro(item.type)) {
+                                    Color(0xFFEAF4E7)
+                                } else {
+                                    Color(0xFFFFEFEA)
+                                }
                             )
                     )
 

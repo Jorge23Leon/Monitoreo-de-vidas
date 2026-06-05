@@ -39,6 +39,7 @@ internal fun TablaReporteCapturasUi(filas: List<FilaReporteCapturaUi>) {
             CeldaHeaderReporteUi("Tipo", 110)
             CeldaHeaderReporteUi("Fase", 120)
             CeldaHeaderReporteUi("Cantidad", 90)
+            CeldaHeaderReporteUi("point_severity", 140)
             CeldaHeaderReporteUi("Fecha", 150)
         }
 
@@ -65,6 +66,11 @@ internal fun TablaReporteCapturasUi(filas: List<FilaReporteCapturaUi>) {
                     CeldaTextoReporteUi(fila.tipo, 110)
                     CeldaTextoReporteUi(fila.fase, 120)
                     CeldaTextoReporteUi(fila.cantidad.toString(), 90)
+                    CeldaChipSeveridadReporteUi(
+                        texto = fila.severidad,
+                        colorHex = fila.colorSeveridadHex,
+                        ancho = 140
+                    )
                     CeldaTextoReporteUi(fila.fechaCaptura, 150)
                 }
             }
@@ -96,4 +102,36 @@ private fun CeldaTextoReporteUi(texto: String, ancho: Int) {
         textAlign = TextAlign.Center,
         maxLines = 3
     )
+}
+
+
+@Composable
+private fun CeldaChipSeveridadReporteUi(
+    texto: String,
+    colorHex: String,
+    ancho: Int
+) {
+    val color = colorDesdeHexReporteUi(colorHex)
+
+    Text(
+        text = texto,
+        modifier = Modifier
+            .width(ancho.dp)
+            .padding(horizontal = 7.dp)
+            .background(color.copy(alpha = 0.16f), RoundedCornerShape(10.dp))
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+        color = color,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Black,
+        textAlign = TextAlign.Center,
+        maxLines = 1
+    )
+}
+
+private fun colorDesdeHexReporteUi(hex: String): Color {
+    return try {
+        Color(android.graphics.Color.parseColor(hex))
+    } catch (_: Exception) {
+        Color(0xFF2E7D32)
+    }
 }

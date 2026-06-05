@@ -22,9 +22,10 @@ internal fun MapaMonitoreoWebViewSeguro(
     modifier: Modifier = Modifier,
     htmlMapa: String,
     ubicacionUsuario: Pair<Double, Double>?,
+    puntoLibreSeleccionado: Pair<Double, Double>?,
     internetDisponible: Boolean,
     onInternetDisponibleChange: (Boolean) -> Unit,
-    onPuntoValidoClick: (Long) -> Unit
+    onPuntoLibreSeleccionado: (Double, Double) -> Unit
 ) {
     AndroidView<View>(
         modifier = modifier,
@@ -34,8 +35,8 @@ internal fun MapaMonitoreoWebViewSeguro(
                     webViewClient = WebViewClient()
 
                     addJavascriptInterface(
-                        MapaBridge { idTargetPoint ->
-                            onPuntoValidoClick(idTargetPoint)
+                        MapaBridge { lat, lon ->
+                            onPuntoLibreSeleccionado(lat, lon)
                         },
                         "Android"
                     )
@@ -125,24 +126,41 @@ internal fun MapaMonitoreoWebViewSeguro(
 
                     view.postDelayed({
                         view.evaluateJavascript(js, null)
-                    }, 300)
+                    }, 250)
                 }
+
+                val selectedJs = puntoLibreSeleccionado?.let { punto ->
+                    """
+                        if (window.setSelectedFreePoint) {
+                            window.setSelectedFreePoint(${punto.first}, ${punto.second});
+                        }
+                    """.trimIndent()
+                } ?: """
+                    if (window.clearSelectedFreePoint) {
+                        window.clearSelectedFreePoint();
+                    }
+                """.trimIndent()
+
+                view.postDelayed({
+                    view.evaluateJavascript(selectedJs, null)
+                }, 250)
             }
         }
     )
 }
 
 private class MapaBridge(
-    private val onPuntoSeleccionado: (Long) -> Unit
+    private val onPuntoLibreSeleccionado: (Double, Double) -> Unit
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     @JavascriptInterface
-    fun onPuntoSeleccionado(idTargetPoint: String) {
-        val id = idTargetPoint.toLongOrNull() ?: return
+    fun onPuntoLibreSeleccionado(lat: String, lon: String) {
+        val latDouble = lat.toDoubleOrNull() ?: return
+        val lonDouble = lon.toDoubleOrNull() ?: return
 
         mainHandler.post {
-            onPuntoSeleccionado(id)
+            onPuntoLibreSeleccionado(latDouble, lonDouble)
         }
     }
 }

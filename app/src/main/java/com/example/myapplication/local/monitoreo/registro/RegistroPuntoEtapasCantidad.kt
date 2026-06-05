@@ -14,10 +14,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -25,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -161,7 +165,10 @@ private fun CircleCounterButtonModerno(
             containerColor = Color.White,
             disabledContainerColor = Color(0xFFF4F4F4)
         ),
-        border = BorderStroke(1.dp, if (enabled) Color(0xFFD9DEE6) else Color(0xFFE5E5E5)),
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (enabled) Color(0xFFD9DEE6) else Color(0xFFE5E5E5)
+        ),
         elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
     ) {
         Text(
@@ -172,4 +179,112 @@ private fun CircleCounterButtonModerno(
             textAlign = TextAlign.Center
         )
     }
+}
+
+@Composable
+internal fun SemaforoSeveridadCard(
+    mayorTexto: String,
+    totalSeleccionado: Int,
+    nivelTexto: String,
+    colorNivel: Color,
+    onMayorChange: (String) -> Unit
+) {
+    val mayor = mayorTexto.toIntOrNull()
+    val menorAutomatico = mayor?.let { maxOf(1, it / 2) }
+    val inicioMayor = menorAutomatico?.plus(1)
+    val inicioRojo = mayor?.plus(1)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Semáforo del punto",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFF1D2430)
+                    )
+
+                    Spacer(modifier = Modifier.height(3.dp))
+
+                    Text(
+                        text = "Captura la severidad mayor. Se conserva para los siguientes puntos de este monitoreo.",
+                        fontSize = 12.sp,
+                        color = Color(0xFF6E7580)
+                    )
+                }
+
+                Text(
+                    text = nivelTexto,
+                    modifier = Modifier
+                        .background(colorNivel.copy(alpha = 0.16f), RoundedCornerShape(14.dp))
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                    color = colorNivel,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Black
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            CampoNumeroSeveridad(
+                value = mayorTexto,
+                label = "Severidad mayor del monitoreo",
+                onValueChange = onMayorChange,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            val textoResumen = if (mayor != null && menorAutomatico != null && inicioMayor != null && inicioRojo != null) {
+                "Total del punto: $totalSeleccionado  •  Verde: 0  •  Menor: 1-$menorAutomatico  •  Mayor: $inicioMayor-$mayor  •  Rojo: $inicioRojo+"
+            } else {
+                "Captura la severidad mayor para calcular el semáforo."
+            }
+
+            Text(
+                text = textoResumen,
+                fontSize = 12.sp,
+                color = Color(0xFF4F5663),
+                lineHeight = 17.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun CampoNumeroSeveridad(
+    value: String,
+    label: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { nuevoValor ->
+            onValueChange(nuevoValor.filter { it.isDigit() }.take(4))
+        },
+        label = { Text(label) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = Color(0xFF0B6B20),
+            focusedLabelColor = Color(0xFF0B6B20),
+            cursorColor = Color(0xFF0B6B20)
+        ),
+        modifier = modifier
+    )
 }

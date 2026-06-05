@@ -3,6 +3,7 @@ package com.example.myapplication.local.monitoreo.filtros
 import androidx.compose.ui.graphics.Color
 import com.example.myapplication.local.entities.LocalAgroUnitEntity
 import com.example.myapplication.local.entities.LocalPlotEntity
+import com.example.myapplication.local.entities.LocalProgramEntity
 import com.example.myapplication.local.entities.LocalRanchEntity
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -150,4 +151,106 @@ internal fun cumpleEstadoFiltro(status: String, estadoFiltro: String): Boolean {
 
         else -> true
     }
+}
+
+internal fun textoCicloFiltro(ciclo: String?): String {
+    val limpio = normalizarCicloBaseFiltro(ciclo)
+
+    return when (limpio) {
+        "" -> "Sin ciclo"
+        "p v",
+        "pv",
+        "p.v",
+        "p v 2026",
+        "primavera verano",
+        "primavera verano 2026",
+        "ciclo primavera verano",
+        "ciclo primavera verano 2026" -> "Primavera-Verano"
+
+        "o i",
+        "oi",
+        "o.i",
+        "otono invierno",
+        "otoño invierno",
+        "otono invierno 2026",
+        "otoño invierno 2026",
+        "ciclo otono invierno",
+        "ciclo otoño invierno",
+        "ciclo otono invierno 2026",
+        "ciclo otoño invierno 2026" -> "Otoño-Invierno"
+
+        else -> ciclo
+            .orEmpty()
+            .trim()
+            .replace("_", " ")
+            .replace("-", " ")
+            .replace(Regex("\\s+"), " ")
+            .replaceFirstChar { char ->
+                if (char.isLowerCase()) char.titlecase(Locale.getDefault()) else char.toString()
+            }
+            .ifBlank { "Sin ciclo" }
+    }
+}
+
+internal fun claveCicloFiltro(ciclo: String?): String {
+    return when (val limpio = normalizarCicloBaseFiltro(ciclo)) {
+        "", "sin ciclo" -> "sin_ciclo"
+
+        "p v",
+        "pv",
+        "p.v",
+        "p v 2026",
+        "primavera verano",
+        "primavera verano 2026",
+        "ciclo primavera verano",
+        "ciclo primavera verano 2026" -> "primavera_verano"
+
+        "o i",
+        "oi",
+        "o.i",
+        "otono invierno",
+        "otoño invierno",
+        "otono invierno 2026",
+        "otoño invierno 2026",
+        "ciclo otono invierno",
+        "ciclo otoño invierno",
+        "ciclo otono invierno 2026",
+        "ciclo otoño invierno 2026" -> "otono_invierno"
+
+        else -> limpio
+    }
+}
+
+internal fun programasUnicosPorCicloFiltro(
+    programas: List<LocalProgramEntity>
+): List<LocalProgramEntity> {
+    return programas
+        .groupBy { programa -> claveCicloFiltro(programa.cycle) }
+        .mapNotNull { (_, programasDelMismoCiclo) ->
+            programasDelMismoCiclo.maxWithOrNull(
+                compareBy<LocalProgramEntity> { it.estStartDate ?: Long.MIN_VALUE }
+                    .thenBy { it.idProgram }
+            )
+        }
+        .sortedWith(
+            compareByDescending<LocalProgramEntity> { it.estStartDate ?: Long.MIN_VALUE }
+                .thenBy { textoCicloFiltro(it.cycle) }
+        )
+}
+
+private fun normalizarCicloBaseFiltro(ciclo: String?): String {
+    return ciclo
+        .orEmpty()
+        .trim()
+        .lowercase(Locale.getDefault())
+        .replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
+        .replace("_", " ")
+        .replace("-", " ")
+        .replace(".", " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
 }

@@ -42,11 +42,19 @@ internal fun descargarCsvReporteUi(
     )
 
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        guardarCsvEnDescargasMediaStore(
-            context = context,
-            nombreArchivo = nombreArchivo,
-            contenido = contenido
-        )
+        runCatching {
+            guardarCsvEnDescargasMediaStore(
+                context = context,
+                nombreArchivo = nombreArchivo,
+                contenido = contenido
+            )
+        }.getOrElse {
+            guardarCsvEnDescargasLegacy(
+                context = context,
+                nombreArchivo = nombreArchivo,
+                contenido = contenido
+            )
+        }
     } else {
         guardarCsvEnDescargasLegacy(
             context = context,
@@ -113,7 +121,7 @@ private fun crearContenidoCsvReporteUi(
 
         appendLine()
         appendLine("Monitoreos ")
-        appendLine("point_number,lat,lon,name,type,stage,qty,captured_at,notes")
+        appendLine("point_number,lat,lon,name,type,stage,qty,point_severity,notes")
 
         filas.forEach { fila ->
             appendLine(

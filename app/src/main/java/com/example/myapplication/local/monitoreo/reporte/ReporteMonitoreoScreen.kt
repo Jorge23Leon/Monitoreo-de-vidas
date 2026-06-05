@@ -44,6 +44,8 @@ import com.example.myapplication.local.entities.LocalPlotEntity
 import com.example.myapplication.local.entities.LocalPlotVertexEntity
 import com.example.myapplication.local.entities.LocalProgramEntity
 import com.example.myapplication.local.entities.LocalRanchEntity
+import com.example.myapplication.local.monitoreo.severidad.calcularSeveridadPorPunto
+import com.example.myapplication.local.monitoreo.severidad.limpiarMetadataRangosSeveridad
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -160,7 +162,18 @@ fun ReporteMonitoreoScreen(
 
     var detalleSuperiorExpandido by remember { mutableStateOf(false) }
 
-    val filasTabla = remember(checkpoints, puntosMap, catalogoMap, numeroPuntoMap) {
+    val severidadPorPuntoMap = remember(checkpoints, catalogoMap) {
+        checkpoints
+            .groupBy { checkpoint -> checkpoint.idTargetPoint }
+            .mapValues { (_, capturasPunto) ->
+                calcularSeveridadPorPunto(
+                    checkpointsPunto = capturasPunto,
+                    catalogoPorId = catalogoMap
+                )
+            }
+    }
+
+    val filasTabla = remember(checkpoints, puntosMap, catalogoMap, numeroPuntoMap, severidadPorPuntoMap) {
         checkpoints
             .sortedWith(
                 compareBy<LocalPhytomonitoringCheckpointEntity> {
@@ -172,6 +185,8 @@ fun ReporteMonitoreoScreen(
             .map { checkpoint ->
                 val punto = puntosMap[checkpoint.idTargetPoint]
                 val item = catalogoMap[checkpoint.idPhytosanitary]
+                val severidadPunto = severidadPorPuntoMap[checkpoint.idTargetPoint]
+                val nivelPunto = severidadPunto?.nivelFinal
 
                 FilaReporteCapturaUi(
                     numeroPunto = numeroPuntoMap[checkpoint.idTargetPoint] ?: 0,
@@ -186,8 +201,10 @@ fun ReporteMonitoreoScreen(
                     tipo = textoTipoCatalogo(item?.type),
                     fase = checkpoint.stage ?: "-",
                     cantidad = checkpoint.qty ?: 0,
+                    severidad = nivelPunto?.etiqueta ?: "Sin plaga",
+                    colorSeveridadHex = nivelPunto?.colorHex ?: "#16A34A",
                     fechaCaptura = formatearFechaOpcionalReporteUi(checkpoint.capturedAt),
-                    notas = checkpoint.notes ?: ""
+                    notas = limpiarMetadataRangosSeveridad(checkpoint.notes)
                 )
             }
     }
@@ -362,22 +379,30 @@ fun ReporteMonitoreoScreen(
 
                     Button(
                         onClick = {
-                            val ubicacionArchivo = descargarCsvReporteUi(
-                                context = context,
-                                header = header,
-                                nombreCia = nombreCia,
-                                productor = productor?.commercial_name ?: "-",
-                                rancho = rancho?.name ?: "-",
-                                parcela = parcela?.code ?: "-",
-                                cultivo = nombreCultivo,
-                                filas = filasTabla
-                            )
+                            try {
+                                val ubicacionArchivo = descargarCsvReporteUi(
+                                    context = context,
+                                    header = header,
+                                    nombreCia = nombreCia,
+                                    productor = productor?.commercial_name ?: "-",
+                                    rancho = rancho?.name ?: "-",
+                                    parcela = parcela?.code ?: "-",
+                                    cultivo = nombreCultivo,
+                                    filas = filasTabla
+                                )
 
-                            Toast.makeText(
-                                context,
-                                "CSV descargado en: $ubicacionArchivo",
-                                Toast.LENGTH_LONG
-                            ).show()
+                                Toast.makeText(
+                                    context,
+                                    "CSV descargado en: $ubicacionArchivo",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } catch (e: Exception) {
+                                Toast.makeText(
+                                    context,
+                                    "No se pudo descargar el CSV: ${e.message}",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
                         },
                         modifier = Modifier
                             .fillMaxWidth()

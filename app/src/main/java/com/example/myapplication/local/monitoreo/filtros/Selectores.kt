@@ -233,7 +233,7 @@ internal fun SelectorFiltroOpcionalPrograma(
                 )
 
                 Text(
-                    text = selected?.cycle ?: "Todos",
+                    text = selected?.let { textoCicloFiltro(it.cycle) } ?: "Todos",
                     fontSize = 12.sp,
                     color = Color.Black,
                     maxLines = 1,
@@ -267,7 +267,7 @@ internal fun SelectorFiltroOpcionalPrograma(
             items.forEach { programa ->
                 DropdownMenuItem(
                     text = {
-                        Text(programa.cycle)
+                        Text(textoCicloFiltro(programa.cycle))
                     },
                     onClick = {
                         onSelected(programa)

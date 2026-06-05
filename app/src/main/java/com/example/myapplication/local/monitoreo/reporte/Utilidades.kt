@@ -8,6 +8,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+
 internal fun textoTipoCatalogo(type: String?): String {
     return when (type?.lowercase()?.trim()) {
         "plaga" -> "Plaga"
@@ -63,6 +64,8 @@ internal data class FilaReporteCapturaUi(
     val tipo: String,
     val fase: String,
     val cantidad: Int,
+    val severidad: String,
+    val colorSeveridadHex: String,
     val fechaCaptura: String,
     val notas: String
 )

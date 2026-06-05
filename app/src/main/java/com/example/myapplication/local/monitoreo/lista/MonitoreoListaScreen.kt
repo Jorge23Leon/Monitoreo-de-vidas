@@ -149,10 +149,9 @@ fun MonitoreoListaScreen(
     }
 
     val programasPorParcela = remember(programas, idsProgramasPorParcela) {
-        programas
-            .filter { it.idProgram in idsProgramasPorParcela }
-            .distinctBy { it.idProgram }
-            .sortedByDescending { it.estStartDate }
+        programasUnicosPorCicloLista(
+            programas = programas.filter { it.idProgram in idsProgramasPorParcela }
+        )
     }
 
     var cicloFiltro by remember(idParcelaSeleccionada) {
@@ -179,10 +178,14 @@ fun MonitoreoListaScreen(
         cicloFiltro,
         fechaInicioMillis,
         fechaFinMillis,
-        estadoFiltro
+        estadoFiltro,
+        programasMap
     ) {
         monitoreosPorParcela.filter { header ->
-            val cumpleCiclo = cicloFiltro == null || header.idProgram == cicloFiltro?.idProgram
+            val cumpleCiclo = cicloFiltro == null ||
+                    claveCicloLista(programasMap[header.idProgram]?.cycle) ==
+                    claveCicloLista(cicloFiltro?.cycle)
+
             val inicioHeader = header.estStartDate ?: 0L
             val cumpleFechaInicio = fechaInicioMillis == null || inicioHeader >= fechaInicioMillis
             val cumpleFechaFin = fechaFinMillis == null || inicioHeader <= fechaFinMillis

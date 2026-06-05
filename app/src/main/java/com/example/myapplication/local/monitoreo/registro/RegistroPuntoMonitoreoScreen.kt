@@ -1,5 +1,6 @@
 package com.example.myapplication.local.monitoreo.registro
 
+import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -36,6 +37,12 @@ import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringTargetPointEntity
 import com.example.myapplication.local.entities.LocalPhytosanitaryCatalogEntity
 import com.example.myapplication.local.entities.LocalPhytostageEntity
+import com.example.myapplication.local.monitoreo.severidad.NivelSeveridad
+import com.example.myapplication.local.monitoreo.severidad.RangosSeveridad
+import com.example.myapplication.local.monitoreo.severidad.SEVERIDAD_MAYOR_DEFAULT
+import com.example.myapplication.local.monitoreo.severidad.agregarMetadataRangosSeveridad
+import com.example.myapplication.local.monitoreo.severidad.calcularNivelSeveridad
+import com.example.myapplication.local.monitoreo.severidad.rangosSeveridadDesdeTexto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -60,6 +67,14 @@ fun RegistroPuntoMonitoreoScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
+    val preferenciasSeveridad = remember(header.idHeader) {
+        context.getSharedPreferences("severidad_monitoreo", Context.MODE_PRIVATE)
+    }
+
+    val claveSeveridadMayor = remember(header.idHeader) {
+        "severidad_mayor_header_${header.idHeader}"
+    }
+
     var catalogo by remember { mutableStateOf<List<LocalPhytosanitaryCatalogEntity>>(emptyList()) }
     var etapas by remember { mutableStateOf<List<LocalPhytostageEntity>>(emptyList()) }
     var fitoSeleccionado by remember { mutableStateOf<LocalPhytosanitaryCatalogEntity?>(null) }
@@ -67,6 +82,14 @@ fun RegistroPuntoMonitoreoScreen(
     val etapasPorFito = remember { mutableStateMapOf<Long, List<LocalPhytostageEntity>>() }
     val cantidadesPorEtapa = remember { mutableStateMapOf<ClaveEtapaUi, Int>() }
     val fitosSinEtapasSeleccionados = remember { mutableStateMapOf<Long, Boolean>() }
+    var severidadMayorPunto by rememberSaveable(header.idHeader) {
+        mutableStateOf(
+            preferenciasSeveridad.getString(
+                claveSeveridadMayor,
+                SEVERIDAD_MAYOR_DEFAULT.toString()
+            ) ?: SEVERIDAD_MAYOR_DEFAULT.toString()
+        )
+    }
 
     var observaciones by rememberSaveable { mutableStateOf("") }
     var nombreCultivo by remember { mutableStateOf("Cultivo no identificado") }
@@ -202,6 +225,39 @@ fun RegistroPuntoMonitoreoScreen(
     val registrosPendientesSinEtapas = fitosSinEtapasSeleccionados.values.count { seleccionado -> seleccionado }
     val registrosPendientes = registrosPendientesPorEtapa + registrosPendientesSinEtapas
 
+    fun totalCantidadPuntoActual(): Int {
+        val totalEtapas = cantidadesPorEtapa.values.sum()
+        val presenciaGeneral = fitosSinEtapasSeleccionados.values.count { seleccionado -> seleccionado }
+
+        return totalEtapas + presenciaGeneral
+    }
+
+    fun rangosTextoValidosParaPunto(): RangosSeveridad? {
+        return rangosSeveridadDesdeTexto(severidadMayorPunto)
+    }
+
+    fun idsFitosPendientes(): Set<Long> {
+        val idsConCantidad = cantidadesPorEtapa
+            .filter { entrada -> entrada.value > 0 }
+            .keys
+            .map { clave -> clave.idPhytosanitary }
+
+        val idsSinEtapas = fitosSinEtapasSeleccionados
+            .filter { entrada -> entrada.value }
+            .keys
+
+        return (idsConCantidad + idsSinEtapas).toSet()
+    }
+
+    fun nivelColorRegistro(nivel: NivelSeveridad): Color {
+        return when (nivel) {
+            NivelSeveridad.VERDE -> Color(0xFF16A34A)
+            NivelSeveridad.AMARILLO -> Color(0xFFD6A100)
+            NivelSeveridad.NARANJA -> Color(0xFFF97316)
+            NivelSeveridad.ROJO -> Color(0xFFDC2626)
+        }
+    }
+
     fun registrarSinPlaga() {
         if (finalizando) return
         finalizando = true
@@ -290,19 +346,33 @@ fun RegistroPuntoMonitoreoScreen(
             return
         }
 
+        val rangosPunto = rangosTextoValidosParaPunto()
+        if (rangosPunto == null) {
+            Toast.makeText(
+                context,
+                "Revisa la severidad del punto: la severidad mayor debe ser un número mayor a 0",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
         finalizando = true
 
         coroutineScope.launch {
             try {
                 withContext(Dispatchers.IO) {
                     val ahora = System.currentTimeMillis()
+                    val notasConSeveridad = agregarMetadataRangosSeveridad(
+                        notas = observaciones.ifBlank { null },
+                        rangos = rangosPunto
+                    )
 
                     registrosConCantidad.forEach { (clave, cantidad) ->
                         val checkpoint = LocalPhytomonitoringCheckpointEntity(
                             qty = cantidad,
                             presenceStatus = 1,
                             stage = clave.stage,
-                            notes = observaciones.ifBlank { null },
+                            notes = notasConSeveridad,
                             capturedAt = ahora,
                             capturedByUserId = idUsuarioActual,
                             idTargetPoint = punto.idTargetPoint,
@@ -319,7 +389,7 @@ fun RegistroPuntoMonitoreoScreen(
                             qty = 1,
                             presenceStatus = 1,
                             stage = null,
-                            notes = observaciones.ifBlank { null },
+                            notes = notasConSeveridad,
                             capturedAt = ahora,
                             capturedByUserId = idUsuarioActual,
                             idTargetPoint = punto.idTargetPoint,
@@ -440,6 +510,34 @@ fun RegistroPuntoMonitoreoScreen(
                 Spacer(modifier = Modifier.height(14.dp))
 
                 ElementoSeleccionadoCard(fito = fitoSeleccionado)
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                val mayorTexto = severidadMayorPunto
+                val rangos = rangosSeveridadDesdeTexto(mayorTexto) ?: RangosSeveridad()
+                val totalPuntoActual = totalCantidadPuntoActual()
+                val nivel = calcularNivelSeveridad(
+                    cantidadTotal = totalPuntoActual,
+                    presenceStatus = if (totalPuntoActual > 0) 1 else 0,
+                    rangos = rangos
+                )
+
+                SemaforoSeveridadCard(
+                    mayorTexto = mayorTexto,
+                    totalSeleccionado = totalPuntoActual,
+                    nivelTexto = nivel.etiqueta,
+                    colorNivel = nivelColorRegistro(nivel),
+                    onMayorChange = { nuevo ->
+                        severidadMayorPunto = nuevo
+
+                        val mayor = nuevo.toIntOrNull()
+                        if (mayor != null && mayor > 0) {
+                            preferenciasSeveridad.edit()
+                                .putString(claveSeveridadMayor, nuevo)
+                                .apply()
+                        }
+                    }
+                )
 
                 Spacer(modifier = Modifier.height(14.dp))
 

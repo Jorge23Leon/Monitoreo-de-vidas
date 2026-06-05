@@ -13,6 +13,7 @@ import com.example.myapplication.local.entities.LocalPhytomonitoringCheckpointEn
 import com.example.myapplication.local.entities.LocalPhytomonitoringTargetPointEntity
 import com.example.myapplication.local.entities.LocalPhytosanitaryCatalogEntity
 import com.example.myapplication.local.entities.LocalPlotVertexEntity
+import com.example.myapplication.local.monitoreo.severidad.calcularSeveridadPorPunto
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -121,15 +122,23 @@ internal fun crearHtmlMapaReporteUi(
         puntosOrdenados.forEachIndexed { index, punto ->
             val capturas = checkpointsPorPunto[punto.idTargetPoint].orEmpty()
 
+            val severidadPunto = calcularSeveridadPorPunto(
+                checkpointsPunto = capturas,
+                catalogoPorId = catalogoMap
+            )
+            val nivelFinal = severidadPunto.nivelFinal
+            val totalCantidadPunto = severidadPunto.totalCantidadPunto
+
             val capturasArray = JSONArray().apply {
-                capturas.forEach { checkpoint ->
-                    val item = catalogoMap[checkpoint.idPhytosanitary]
+                severidadPunto.fitos.forEach { fito ->
                     put(JSONObject().apply {
-                        put("nombre", item?.name ?: "Sin identificar")
-                        put("tipo", textoTipoCatalogo(item?.type))
-                        put("fase", checkpoint.stage ?: "-")
-                        put("cantidad", checkpoint.qty ?: 0)
-                        put("fecha", formatearFechaOpcionalReporteUi(checkpoint.capturedAt))
+                        put("nombre", fito.nombre)
+                        put("tipo", textoTipoCatalogo(fito.tipo))
+                        put("fase", fito.etapasResumen)
+                        put("cantidad", fito.cantidadTotal)
+                        put("fecha", formatearFechaOpcionalReporteUi(fito.fechaUltimaCaptura))
+                        put("severidad", fito.nivel.etiqueta)
+                        put("color", fito.nivel.colorHex)
                     })
                 }
             }
@@ -148,6 +157,10 @@ internal fun crearHtmlMapaReporteUi(
                 put("lon", punto.lon)
                 put("radius", punto.radiusM)
                 put("status", statusFinal)
+                put("severity", nivelFinal.name.lowercase())
+                put("severityLabel", nivelFinal.etiqueta)
+                put("severityColor", nivelFinal.colorHex)
+                put("totalCantidad", totalCantidadPunto)
                 put("capturas", capturasArray)
             })
         }
@@ -276,15 +289,19 @@ internal fun crearHtmlMapaReporteUi(
                     return 'No monitoreado';
                 }
 
-                function colorEstado(status) {
-                    if (status === 'completed') return '#2E7D32';
-                    if (status === 'cancelled') return '#D32F2F';
-                    return '#D32F2F';
+                function colorEstado(status, p) {
+                    if (status === 'completed') return (p && p.severityColor) ? p.severityColor : '#16A34A';
+                    if (status === 'cancelled') return '#DC2626';
+                    return '#D98A00';
                 }
 
                 function crearPopupPunto(p) {
                     let html = '<div class="popup-title">Punto ' + p.numero + '</div>';
                     html += '<div class="popup-row"><b>Estado:</b> ' + textoEstado(p.status) + '</div>';
+                    if (p.status === 'completed') {
+                        html += '<div class="popup-row"><b>Severidad:</b> ' + (p.severityLabel || 'Sin plaga') + '</div>';
+                        html += '<div class="popup-row"><b>Total:</b> ' + (p.totalCantidad || 0) + '</div>';
+                    }
                     html += '<div class="popup-row"><b>Lat:</b> ' + p.lat + '</div>';
                     html += '<div class="popup-row"><b>Lon:</b> ' + p.lon + '</div>';
                     html += '<div class="popup-row"><b>Radio:</b> ' + p.radius + ' m</div>';
@@ -298,6 +315,7 @@ internal fun crearHtmlMapaReporteUi(
                             html += 'Tipo: ' + c.tipo + '<br>';
                             html += 'Fase: ' + c.fase + '<br>';
                             html += 'Cantidad: ' + c.cantidad + '<br>';
+                            html += 'Severidad: <span style="color:' + (c.color || '#333') + ';font-weight:bold">' + (c.severidad || '-') + '</span><br>';
                             html += 'Fecha: ' + c.fecha;
                             html += '</div>';
                         });
@@ -312,7 +330,7 @@ internal fun crearHtmlMapaReporteUi(
                         txt += '\nNo se realizó monitoreo en este punto.';
                     } else {
                         p.capturas.forEach(function(c) {
-                            txt += '\n\n' + c.nombre + '\nTipo: ' + c.tipo + '\nFase: ' + c.fase + '\nCantidad: ' + c.cantidad + '\nFecha: ' + c.fecha;
+                            txt += '\n\n' + c.nombre + '\nTipo: ' + c.tipo + '\nFase: ' + c.fase + '\nCantidad: ' + c.cantidad + '\nSeveridad: ' + (c.severidad || '-') + '\nFecha: ' + c.fecha;
                         });
                     }
                     return txt;
@@ -384,14 +402,13 @@ internal fun crearHtmlMapaReporteUi(
                     puntos.forEach(function(p) {
                         const px = x(p.lon).toFixed(2);
                         const py = y(p.lat).toFixed(2);
-                        const color = colorEstado(p.status);
+                        const color = colorEstado(p.status, p);
                         svg += '<circle cx="' + px + '" cy="' + py + '" r="3.4" fill="' + color + '" stroke="#1A1A1A" stroke-width="0.7" onclick="alert(\'' + escaparParaAlert(textoPlanoPunto(p)) + '\')" />';
                         svg += '<text x="' + px + '" y="' + (parseFloat(py) - 4.5).toFixed(2) + '" font-size="3.2" text-anchor="middle" fill="#123D1F" font-weight="bold">' + p.numero + '</text>';
                     });
 
                     svg += '</svg>';
-                    svg += '<div class="legend" style="position:absolute;left:12px;bottom:12px;z-index:2"><div class="legend-title">Estados</div><span class="dot" style="background:#2E7D32"></span>Monitoreado<br><span class="dot" style="background:#D32F2F"></span>No monitoreado</div>';
-
+                   svg += '<div class="legend" style="position:absolute;left:12px;bottom:12px;z-index:2"><div class="legend-title">Semáforo</div><span class="dot" style="background:#16A34A"></span>Verde: sin plaga<br><span class="dot" style="background:#FACC15"></span>Amarillo: severidad menor<br><span class="dot" style="background:#F97316"></span>Naranja: severidad mayor<br><span class="dot" style="background:#DC2626"></span>Rojo: supera severidad mayor</div>';
                     if (motivo) {
                         svg += '<div class="no-data-box" style="position:absolute;right:12px;top:12px;z-index:2"><b>Vista local</b><br>' + motivo + '</div>';
                     }
@@ -405,19 +422,26 @@ internal fun crearHtmlMapaReporteUi(
                         dibujarFallback('Leaflet local no cargó, pero se dibujó el polígono y los puntos con vista local.');
                     } else {
                         const map = L.map('map', {
-                            zoomControl: true,
-                            preferCanvas: true
-                        });
+                        zoomControl: true,
+                        preferCanvas: true,
+                        zoomSnap: 0.25,
+                        zoomDelta: 0.5,
+                        minZoom: 3,
+                        maxZoom: 18,
+                        bounceAtZoomLimits: false
+});
                         window.reporteMap = map;
 
                         const capaSatelital = L.tileLayer(
                             'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                             {
-                                maxZoom: 20,
-                                attribution: 'Tiles © Esri'
+                                minZoom: 3,
+                                maxZoom: 18,
+                                maxNativeZoom: 17,
+                                attribution: 'Tiles © Esri',
+                                errorTileUrl: ''
                             }
-                        );
-                        capaSatelital.addTo(map);
+                        ).addTo(map);
 
                         const polygonLatLng = vertices.map(function(v) {
                             return [v.lat, v.lon];
@@ -436,7 +460,7 @@ internal fun crearHtmlMapaReporteUi(
 
                             map.fitBounds(polygon.getBounds(), {
                                 padding: [30, 30],
-                                maxZoom: 19
+                                maxZoom: 17
                             });
                         } else if (puntos.length > 0) {
                             map.setView([puntos[0].lat, puntos[0].lon], 18);
@@ -453,7 +477,7 @@ internal fun crearHtmlMapaReporteUi(
                         }
 
                         puntos.forEach(function(p) {
-                            const color = colorEstado(p.status);
+                            const color = colorEstado(p.status, p);
 
                             L.circle([p.lat, p.lon], {
                                 radius: p.radius,
@@ -490,9 +514,11 @@ internal fun crearHtmlMapaReporteUi(
                         legend.onAdd = function() {
                             const div = L.DomUtil.create('div', 'legend');
                             div.innerHTML =
-                                '<div class="legend-title">Estados</div>' +
-                                '<span class="dot" style="background:#2E7D32"></span>Monitoreado<br>' +
-                                '<span class="dot" style="background:#D32F2F"></span>No monitoreado / Cancelado';
+                        '<div class="legend-title">Semáforo</div>' +
+                        '<span class="dot" style="background:#16A34A"></span>Verde: sin plaga<br>' +
+                        '<span class="dot" style="background:#FACC15"></span>Amarillo: severidad menor<br>' +
+                        '<span class="dot" style="background:#F97316"></span>Naranja: severidad mayor<br>' +
+                        '<span class="dot" style="background:#DC2626"></span>Rojo: supera severidad mayor';
                             return div;
                         };
                         legend.addTo(map);
@@ -502,7 +528,7 @@ internal fun crearHtmlMapaReporteUi(
                             if (polygonLatLng.length > 0) {
                                 map.fitBounds(L.latLngBounds(polygonLatLng), {
                                     padding: [30, 30],
-                                    maxZoom: 19
+                                    maxZoom: 17
                                 });
                             }
                         }, 500);

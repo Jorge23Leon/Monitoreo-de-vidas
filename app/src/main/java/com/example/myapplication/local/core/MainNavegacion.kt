@@ -3,6 +3,10 @@ package com.example.myapplication.local.core
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.example.myapplication.local.admin.agricola.AdminGestionAgricolaScreen
 import com.example.myapplication.local.admin.catalogos.AdminCatalogosScreen
@@ -23,10 +27,31 @@ import com.example.myapplication.local.monitoreo.reporte.ReporteMonitoreoScreen
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+
+
+private enum class AccionMenuTrabajo {
+    PERFIL,
+    MONITOREOS,
+    PANEL_ADMIN,
+    CAMBIAR_CIA,
+    CERRAR_SESION
+}
+
+private fun textoAccionMenuTrabajo(accion: AccionMenuTrabajo): String {
+    return when (accion) {
+        AccionMenuTrabajo.PERFIL -> "Perfil"
+        AccionMenuTrabajo.MONITOREOS -> "Monitoreos"
+        AccionMenuTrabajo.PANEL_ADMIN -> "Panel administrador"
+        AccionMenuTrabajo.CAMBIAR_CIA -> "Cambiar de CIA"
+        AccionMenuTrabajo.CERRAR_SESION -> "Cerrar sesión"
+    }
+}
 
 
 @Composable
@@ -36,11 +61,95 @@ fun MainNavegacion(
     uiState: MainUiState
 ) {
     val context = LocalContext.current
-    val cerrarSesionClick = {
-        mainViewModel.cerrarSesion()
+
+    var accionMenuPendiente by remember {
+        mutableStateOf<AccionMenuTrabajo?>(null)
     }
+
+    fun estaEnTrabajoDeMonitoreo(): Boolean {
+        return uiState.pantallaActual == PantallaActual.MAPA_MONITOREO ||
+                uiState.pantallaActual == PantallaActual.REGISTRO_PUNTO_MONITOREO
+    }
+
+    fun ejecutarAccionMenu(accion: AccionMenuTrabajo) {
+        when (accion) {
+            AccionMenuTrabajo.PERFIL -> {
+                mainViewModel.abrirPerfilDesdePantallaActual()
+            }
+
+            AccionMenuTrabajo.MONITOREOS -> {
+                mainViewModel.abrirMonitoreosDesdeEncabezado()
+            }
+
+            AccionMenuTrabajo.PANEL_ADMIN -> {
+                mainViewModel.abrirPanelAdministrador()
+            }
+
+            AccionMenuTrabajo.CAMBIAR_CIA -> {
+                mainViewModel.cambiarCiaDesdeMenu()
+            }
+
+            AccionMenuTrabajo.CERRAR_SESION -> {
+                mainViewModel.cerrarSesion()
+            }
+        }
+    }
+
+    fun solicitarAccionMenu(accion: AccionMenuTrabajo) {
+        if (estaEnTrabajoDeMonitoreo() && uiState.monitoreoSeleccionadoParaMapa != null) {
+            accionMenuPendiente = accion
+        } else {
+            ejecutarAccionMenu(accion)
+        }
+    }
+
+    val cerrarSesionClick = {
+        solicitarAccionMenu(AccionMenuTrabajo.CERRAR_SESION)
+    }
+
     val cambiarCiaClick = {
-        mainViewModel.cambiarCiaDesdeMenu()
+        solicitarAccionMenu(AccionMenuTrabajo.CAMBIAR_CIA)
+    }
+
+    accionMenuPendiente?.let { accion ->
+        AlertDialog(
+            onDismissRequest = {
+                accionMenuPendiente = null
+            },
+            title = {
+                Text("Salir del monitoreo")
+            },
+            text = {
+                Text(
+                    text = "Vas a abrir ${textoAccionMenuTrabajo(accion)}. " +
+                            "El monitoreo actual se pausará automáticamente para que puedas regresar después. " +
+                            "Si tienes datos escritos en este punto y todavía no los guardas, se perderán."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val accionConfirmada = accion
+                        accionMenuPendiente = null
+
+                        mainViewModel.pausarMonitoreoActualParaNavegar {
+                            ejecutarAccionMenu(accionConfirmada)
+                        }
+                    }
+                ) {
+                    Text("Pausar y salir")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        accionMenuPendiente = null
+                    }
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 
     when (uiState.pantallaActual) {
@@ -147,20 +256,18 @@ fun MainNavegacion(
                     mainViewModel.seleccionarCiaActual()
                 },
 
-                onCerrarSesionClick = {
-                    mainViewModel.cerrarSesion()
-                },
+                onCerrarSesionClick = cerrarSesionClick,
 
                 onPerfilClick = {
-                    mainViewModel.abrirPerfilDesdePantallaActual()
+                    solicitarAccionMenu(AccionMenuTrabajo.PERFIL)
                 },
 
                 onMonitoreosClick = {
-                    mainViewModel.abrirMonitoreosDesdeEncabezado()
+                    solicitarAccionMenu(AccionMenuTrabajo.MONITOREOS)
                 },
 
                 onAdminClick = {
-                    mainViewModel.abrirPanelAdministrador()
+                    solicitarAccionMenu(AccionMenuTrabajo.PANEL_ADMIN)
                 }
             )
         }
@@ -226,15 +333,15 @@ fun MainNavegacion(
                 },
 
                 onPerfilClick = {
-                    mainViewModel.abrirPerfilDesdePantallaActual()
+                    solicitarAccionMenu(AccionMenuTrabajo.PERFIL)
                 },
 
                 onMonitoreosClick = {
-                    mainViewModel.abrirMonitoreosDesdeEncabezado()
+                    solicitarAccionMenu(AccionMenuTrabajo.MONITOREOS)
                 },
 
                 onAdminClick = {
-                    mainViewModel.abrirPanelAdministrador()
+                    solicitarAccionMenu(AccionMenuTrabajo.PANEL_ADMIN)
                 },
                 onCambiarCiaClick = cambiarCiaClick,
 
@@ -277,15 +384,15 @@ fun MainNavegacion(
                 },
 
                 onPerfilClick = {
-                    mainViewModel.abrirPerfilDesdePantallaActual()
+                    solicitarAccionMenu(AccionMenuTrabajo.PERFIL)
                 },
 
                 onMonitoreosClick = {
-                    mainViewModel.abrirMonitoreosDesdeEncabezado()
+                    solicitarAccionMenu(AccionMenuTrabajo.MONITOREOS)
                 },
 
                 onAdminClick = {
-                    mainViewModel.abrirPanelAdministrador()
+                    solicitarAccionMenu(AccionMenuTrabajo.PANEL_ADMIN)
                 },
                 onCambiarCiaClick = cambiarCiaClick,
 
@@ -326,15 +433,15 @@ fun MainNavegacion(
                     },
 
                     onPerfilClick = {
-                        mainViewModel.abrirPerfilDesdePantallaActual()
+                        solicitarAccionMenu(AccionMenuTrabajo.PERFIL)
                     },
 
                     onMonitoreosClick = {
-                        mainViewModel.abrirMonitoreosDesdeEncabezado()
+                        solicitarAccionMenu(AccionMenuTrabajo.MONITOREOS)
                     },
 
                     onAdminClick = {
-                        mainViewModel.abrirPanelAdministrador()
+                        solicitarAccionMenu(AccionMenuTrabajo.PANEL_ADMIN)
                     },
 
                     onCambiarCiaClick = cambiarCiaClick,
@@ -370,15 +477,15 @@ fun MainNavegacion(
                     },
 
                     onPerfilClick = {
-                        mainViewModel.abrirPerfilDesdePantallaActual()
+                        solicitarAccionMenu(AccionMenuTrabajo.PERFIL)
                     },
 
                     onMonitoreosClick = {
-                        mainViewModel.abrirMonitoreosDesdeEncabezado()
+                        solicitarAccionMenu(AccionMenuTrabajo.MONITOREOS)
                     },
 
                     onAdminClick = {
-                        mainViewModel.abrirPanelAdministrador()
+                        solicitarAccionMenu(AccionMenuTrabajo.PANEL_ADMIN)
                     },
                     onCambiarCiaClick = cambiarCiaClick,
 
@@ -431,15 +538,15 @@ fun MainNavegacion(
                     },
 
                     onPerfilClick = {
-                        mainViewModel.abrirPerfilDesdePantallaActual()
+                        solicitarAccionMenu(AccionMenuTrabajo.PERFIL)
                     },
 
                     onMonitoreosClick = {
-                        mainViewModel.abrirMonitoreosDesdeEncabezado()
+                        solicitarAccionMenu(AccionMenuTrabajo.MONITOREOS)
                     },
 
                     onAdminClick = {
-                        mainViewModel.abrirPanelAdministrador()
+                        solicitarAccionMenu(AccionMenuTrabajo.PANEL_ADMIN)
                     },
                     onCambiarCiaClick = cambiarCiaClick,
 
@@ -481,15 +588,15 @@ fun MainNavegacion(
                     },
 
                     onPerfilClick = {
-                        mainViewModel.abrirPerfilDesdePantallaActual()
+                        solicitarAccionMenu(AccionMenuTrabajo.PERFIL)
                     },
 
                     onMonitoreosClick = {
-                        mainViewModel.abrirMonitoreosDesdeEncabezado()
+                        solicitarAccionMenu(AccionMenuTrabajo.MONITOREOS)
                     },
 
                     onAdminClick = {
-                        mainViewModel.abrirPanelAdministrador()
+                        solicitarAccionMenu(AccionMenuTrabajo.PANEL_ADMIN)
                     },
                     onCambiarCiaClick = cambiarCiaClick,
 
@@ -517,15 +624,15 @@ fun MainNavegacion(
                     },
 
                     onPerfilClick = {
-                        mainViewModel.abrirPerfilDesdePantallaActual()
+                        solicitarAccionMenu(AccionMenuTrabajo.PERFIL)
                     },
 
                     onMonitoreosClick = {
-                        mainViewModel.abrirMonitoreosDesdeEncabezado()
+                        solicitarAccionMenu(AccionMenuTrabajo.MONITOREOS)
                     },
 
                     onAdminClick = {
-                        mainViewModel.abrirPanelAdministrador()
+                        solicitarAccionMenu(AccionMenuTrabajo.PANEL_ADMIN)
                     },
 
                     onMensaje = { mensaje ->
@@ -563,15 +670,15 @@ fun MainNavegacion(
                     },
 
                     onPerfilClick = {
-                        mainViewModel.abrirPerfilDesdePantallaActual()
+                        solicitarAccionMenu(AccionMenuTrabajo.PERFIL)
                     },
 
                     onMonitoreosClick = {
-                        mainViewModel.abrirMonitoreosDesdeEncabezado()
+                        solicitarAccionMenu(AccionMenuTrabajo.MONITOREOS)
                     },
 
                     onAdminClick = {
-                        mainViewModel.abrirPanelAdministrador()
+                        solicitarAccionMenu(AccionMenuTrabajo.PANEL_ADMIN)
                     },
 
                     onMensaje = { mensaje ->
@@ -607,15 +714,15 @@ fun MainNavegacion(
                     },
 
                     onPerfilClick = {
-                        mainViewModel.abrirPerfilDesdePantallaActual()
+                        solicitarAccionMenu(AccionMenuTrabajo.PERFIL)
                     },
 
                     onMonitoreosClick = {
-                        mainViewModel.abrirMonitoreosDesdeEncabezado()
+                        solicitarAccionMenu(AccionMenuTrabajo.MONITOREOS)
                     },
 
                     onAdminClick = {
-                        mainViewModel.abrirPanelAdministrador()
+                        solicitarAccionMenu(AccionMenuTrabajo.PANEL_ADMIN)
                     },
 
                     onMensaje = { mensaje ->
@@ -659,12 +766,11 @@ fun MainNavegacion(
                     },
 
                     onMonitoreosClick = {
-                        mainViewModel.abrirMonitoreosDesdeEncabezado()
+                        solicitarAccionMenu(AccionMenuTrabajo.MONITOREOS)
                     },
 
                     onAdminClick = {
-                        mainViewModel.abrirPanelAdministrador()
-
+                        solicitarAccionMenu(AccionMenuTrabajo.PANEL_ADMIN)
                     },
 
                     onCambiarCiaClick = cambiarCiaClick,

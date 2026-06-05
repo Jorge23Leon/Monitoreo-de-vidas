@@ -346,10 +346,9 @@ fun MonitoreoFiltrosScreen(
                 .distinct()
                 .toSet()
 
-            programasResultado
-                .filter { it.idProgram in idsProgramas }
-                .distinctBy { it.idProgram }
-                .sortedByDescending { it.estStartDate }
+            programasUnicosPorCicloFiltro(
+                programas = programasResultado.filter { it.idProgram in idsProgramas }
+            )
         }
 
         val fechaInicioMillis = parseFechaInicioFiltro(fechaInicioTexto)
@@ -360,11 +359,13 @@ fun MonitoreoFiltrosScreen(
             cicloFiltro,
             fechaInicioMillis,
             fechaFinMillis,
-            estadoFiltro
+            estadoFiltro,
+            programasMap
         ) {
             monitoreos.filter { header ->
                 val cumpleCiclo = cicloFiltro == null ||
-                        header.idProgram == cicloFiltro?.idProgram
+                        claveCicloFiltro(programasMap[header.idProgram]?.cycle) ==
+                        claveCicloFiltro(cicloFiltro?.cycle)
 
                 val inicioHeader = header.estStartDate ?: 0L
 

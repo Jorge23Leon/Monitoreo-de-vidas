@@ -2413,6 +2413,76 @@ class MainViewModel(
 
         mostrarMensaje("Perfil actualizado")
     }
+
+    fun pausarMonitoreoActualParaNavegar(onListo: () -> Unit) {
+        val headerActual = uiState.monitoreoSeleccionadoParaMapa
+
+        if (headerActual == null) {
+            actualizarEstado {
+                it.copy(
+                    monitoreoSeleccionadoParaMapa = null,
+                    monitoreoSeleccionadoParaReporte = null,
+                    puntoSeleccionadoParaRegistro = null
+                )
+            }
+            onListo()
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                actualizarEstado { it.copy(cargando = true) }
+
+                val headerActualizado = withContext(Dispatchers.IO) {
+                    val dao = database.localphytomonitoringheaderDao()
+                    val fresco = dao.getHeaderById(headerActual.idHeader) ?: headerActual
+
+                    val yaPausado = fresco.additionalNotes
+                        .trim()
+                        .startsWith("PAUSADO", ignoreCase = true)
+
+                    val estaCerradoOCancelado = esEstadoCerradoVm(fresco.status) ||
+                            esEstadoCanceladoVm(fresco.status)
+
+                    if (yaPausado || estaCerradoOCancelado) {
+                        fresco
+                    } else {
+                        val nuevoHeader = fresco.copy(
+                            status = "Pendiente",
+                            startAt = fresco.startAt ?: System.currentTimeMillis(),
+                            finishedAt = null,
+                            additionalNotes = "PAUSADO"
+                        )
+
+                        dao.updateHeader(nuevoHeader)
+                        nuevoHeader
+                    }
+                }
+
+                actualizarHeaderEnLista(headerActualizado)
+
+                actualizarEstado {
+                    it.copy(
+                        cargando = false,
+                        monitoreoSeleccionadoParaMapa = null,
+                        monitoreoSeleccionadoParaReporte = null,
+                        puntoSeleccionadoParaRegistro = null
+                    )
+                }
+
+                if (headerActualizado.additionalNotes.trim().startsWith("PAUSADO", ignoreCase = true)) {
+                    mostrarMensaje("Monitoreo pausado. Puedes regresar después desde Monitoreos.")
+                }
+
+                onListo()
+            } catch (e: Exception) {
+                e.printStackTrace()
+                actualizarEstado { it.copy(cargando = false) }
+                mostrarMensaje("No se pudo salir del monitoreo: ${e.message}")
+            }
+        }
+    }
+
     fun cerrarSesion() {
         borrarSesionGuardada()
 

@@ -181,7 +181,7 @@ private fun FiltroCompactoCiclo(
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = "Ciclo", fontSize = 10.sp, color = Color.DarkGray, maxLines = 1)
                 Text(
-                    text = cicloFiltro?.cycle ?: "Todos",
+                    text = cicloFiltro?.let { textoCicloLista(it.cycle) } ?: "Todos",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.Black,
@@ -201,7 +201,7 @@ private fun FiltroCompactoCiclo(
             )
             programas.forEach { programa ->
                 DropdownMenuItem(
-                    text = { Text(programa.cycle) },
+                    text = { Text(textoCicloLista(programa.cycle)) },
                     onClick = {
                         onSelected(programa)
                         expanded = false

@@ -47,6 +47,7 @@ import com.example.myapplication.local.entities.LocalPhytomonitoringCheckpointEn
 import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringTargetPointEntity
 import com.example.myapplication.local.entities.LocalPlotVertexEntity
+import com.example.myapplication.local.entities.LocalPhytosanitaryCatalogEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -90,7 +91,15 @@ fun MonitoreoMapaScreen(
         mutableStateOf<List<LocalPhytomonitoringCheckpointEntity>>(emptyList())
     }
 
+    var catalogo by remember {
+        mutableStateOf<List<LocalPhytosanitaryCatalogEntity>>(emptyList())
+    }
+
     var ubicacionUsuario by remember {
+        mutableStateOf<Pair<Double, Double>?>(null)
+    }
+
+    var puntoLibreSeleccionado by remember {
         mutableStateOf<Pair<Double, Double>?>(null)
     }
 
@@ -103,6 +112,10 @@ fun MonitoreoMapaScreen(
     }
 
     var finalizandoMonitoreo by remember {
+        mutableStateOf(false)
+    }
+
+    var creandoPuntoLibre by remember {
         mutableStateOf(false)
     }
 
@@ -172,7 +185,9 @@ fun MonitoreoMapaScreen(
                     puntos = database.LocalPhytomonitoringTargetPointDao()
                         .getTargetPointsByHeader(header.idHeader),
                     checkpoints = database.localphytomonitoringcheckpointDao()
-                        .getCheckpointsByHeader(header.idHeader)
+                        .getCheckpointsByHeader(header.idHeader),
+                    catalogo = database.localphytosanitarycatalogDao()
+                        .getAllCatalogo()
                 )
             }
 
@@ -180,6 +195,7 @@ fun MonitoreoMapaScreen(
             vertices = resultado.vertices
             puntos = resultado.puntos
             checkpoints = resultado.checkpoints
+            catalogo = resultado.catalogo
         } catch (e: Exception) {
             error = "Error al cargar mapa: ${e.message}"
         } finally {
@@ -188,7 +204,7 @@ fun MonitoreoMapaScreen(
     }
 
     fun pausarMonitoreo() {
-        if (finalizandoMonitoreo) return
+        if (finalizandoMonitoreo || creandoPuntoLibre) return
 
         finalizandoMonitoreo = true
 
@@ -236,7 +252,7 @@ fun MonitoreoMapaScreen(
     }
 
     fun continuarMonitoreo() {
-        if (finalizandoMonitoreo) return
+        if (finalizandoMonitoreo || creandoPuntoLibre) return
 
         finalizandoMonitoreo = true
 
@@ -281,7 +297,7 @@ fun MonitoreoMapaScreen(
     }
 
     fun terminarMonitoreo() {
-        if (finalizandoMonitoreo) return
+        if (finalizandoMonitoreo || creandoPuntoLibre) return
 
         finalizandoMonitoreo = true
 
@@ -323,7 +339,77 @@ fun MonitoreoMapaScreen(
         }
     }
 
-    val capturasPuntosUnicos = remember(
+    fun cerrarMonitoreoAutomaticamentePorTiempo() {
+        if (finalizandoMonitoreo || creandoPuntoLibre) return
+
+        val cierreAutomaticoMs = obtenerCierreAutomaticoMs(headerActual.startAt) ?: return
+
+        if (System.currentTimeMillis() < cierreAutomaticoMs) return
+
+        finalizandoMonitoreo = true
+
+        coroutineScope.launch {
+            try {
+                val actualizado = withContext(Dispatchers.IO) {
+                    val fresco = database.localphytomonitoringheaderDao()
+                        .getHeaderById(headerActual.idHeader) ?: headerActual
+
+                    if (esEstadoCerradoMapa(fresco.status)) {
+                        null
+                    } else {
+                        val cierreMs = obtenerCierreAutomaticoMs(fresco.startAt)
+                            ?: System.currentTimeMillis()
+
+                        val notaAnterior = fresco.additionalNotes.trim()
+                        val notaAutomatica =
+                            "CERRADO_AUTOMATICO: Se cerró automáticamente porque se agotó el tiempo del monitoreo."
+
+                        val notaFinal = when {
+                            notaAnterior.isBlank() -> notaAutomatica
+                            notaAnterior.equals("PAUSADO", ignoreCase = true) -> notaAutomatica
+                            notaAnterior.contains("CERRADO_AUTOMATICO", ignoreCase = true) -> notaAnterior
+                            else -> "$notaAnterior\n$notaAutomatica"
+                        }
+
+                        val nuevoHeader = fresco.copy(
+                            status = "Completado",
+                            finishedAt = cierreMs,
+                            additionalNotes = notaFinal
+                        )
+
+                        database.localphytomonitoringheaderDao()
+                            .updateHeader(nuevoHeader)
+
+                        nuevoHeader
+                    }
+                }
+
+                if (actualizado != null) {
+                    headerActual = actualizado
+                    accionDialogoMapa = null
+                    puntoLibreSeleccionado = null
+
+                    Toast.makeText(
+                        context,
+                        "Tiempo agotado. El monitoreo se cerró automáticamente.",
+                        Toast.LENGTH_LONG
+                    ).show()
+
+                    onMonitoreoActualizadoActual("Completado")
+                }
+            } catch (e: Exception) {
+                Toast.makeText(
+                    context,
+                    "No se pudo cerrar por tiempo: ${e.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            } finally {
+                finalizandoMonitoreo = false
+            }
+        }
+    }
+
+    val idsPuntosCapturados = remember(
         checkpoints,
         puntos,
         headerActual.idHeader
@@ -339,8 +425,11 @@ fun MonitoreoMapaScreen(
             }
             .map { it.idTargetPoint }
             .distinct()
-            .size
+            .toSet()
     }
+
+    val puntosCapturados = idsPuntosCapturados.size
+    val numeroSiguientePunto = puntosCapturados + 1
 
     val estaPausado = esMonitoreoPausadoMapa(
         status = headerActual.status,
@@ -349,10 +438,103 @@ fun MonitoreoMapaScreen(
 
     val estaCerrado = esEstadoCerradoMapa(headerActual.status)
 
+    val tiempoAgotado = tiempoMonitoreoAgotado(
+        startAt = headerActual.startAt,
+        ahoraMs = ahoraMs
+    )
+
+    fun crearPuntoLibreYRegistrar() {
+        val puntoSeleccionado = puntoLibreSeleccionado ?: run {
+            Toast.makeText(
+                context,
+                "Toca el mapa donde quieres hacer el monitoreo",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        if (creandoPuntoLibre || finalizandoMonitoreo) return
+
+        if (tiempoAgotado) {
+            cerrarMonitoreoAutomaticamentePorTiempo()
+            Toast.makeText(
+                context,
+                "El tiempo del monitoreo ya se agotó",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        if (estaPausado || estaCerrado) {
+            Toast.makeText(
+                context,
+                "Este monitoreo no permite crear puntos en este estado",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        creandoPuntoLibre = true
+
+        coroutineScope.launch {
+            try {
+                val idNuevoPunto = withContext(Dispatchers.IO) {
+                    val fresco = database.localphytomonitoringheaderDao()
+                        .getHeaderById(headerActual.idHeader) ?: headerActual
+
+                    if (esEstadoCerradoMapa(fresco.status)) {
+                        throw IllegalStateException("El monitoreo ya está cerrado")
+                    }
+
+                    database.localphytomonitoringheaderDao()
+                        .iniciarMonitoreoSiEstaPendiente(
+                            idHeader = fresco.idHeader,
+                            now = System.currentTimeMillis()
+                        )
+
+                    database.LocalPhytomonitoringTargetPointDao()
+                        .insertTargetPoint(
+                            LocalPhytomonitoringTargetPointEntity(
+                                extId = null,
+                                radiusM = 5,
+                                lat = puntoSeleccionado.first,
+                                lon = puntoSeleccionado.second,
+                                status = "En proceso",
+                                idHeader = fresco.idHeader,
+                                idLocalPlot = fresco.idLocalPlot
+                            )
+                        )
+                }
+
+                puntoLibreSeleccionado = null
+                onPuntoValidoActual(idNuevoPunto)
+            } catch (e: Exception) {
+                Toast.makeText(
+                    context,
+                    "No se pudo crear el punto: ${e.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            } finally {
+                creandoPuntoLibre = false
+            }
+        }
+    }
+
     LaunchedEffect(headerActual.idHeader, estaCerrado) {
         while (!estaCerrado) {
             ahoraMs = System.currentTimeMillis()
-            delay(60_000L)
+            delay(1_000L)
+        }
+    }
+
+    LaunchedEffect(
+        headerActual.idHeader,
+        tiempoAgotado,
+        estaCerrado,
+        finalizandoMonitoreo
+    ) {
+        if (tiempoAgotado && !estaCerrado && !finalizandoMonitoreo) {
+            cerrarMonitoreoAutomaticamentePorTiempo()
         }
     }
 
@@ -364,6 +546,7 @@ fun MonitoreoMapaScreen(
         vertices,
         puntos,
         checkpoints,
+        catalogo,
         nombreMonitoreo,
         internetInicial
     ) {
@@ -372,6 +555,7 @@ fun MonitoreoMapaScreen(
             vertices = vertices,
             puntos = puntos,
             checkpoints = checkpoints,
+            catalogo = catalogo,
             ubicacionInicial = null,
             internetDisponible = internetInicial
         )
@@ -379,9 +563,10 @@ fun MonitoreoMapaScreen(
 
     fun solicitarRegreso() {
         when {
-            cargando || finalizandoMonitoreo -> Unit
+            cargando || finalizandoMonitoreo || creandoPuntoLibre -> Unit
             estaCerrado -> onBackClick()
             estaPausado -> onBackClick()
+            puntosCapturados <= 0 -> accionDialogoMapa = AccionDialogoMapa.REGRESAR
             else -> accionDialogoMapa = AccionDialogoMapa.REGRESAR
         }
     }
@@ -453,7 +638,7 @@ fun MonitoreoMapaScreen(
         DialogoAccionMapa(
             accion = accion,
             totalPuntos = puntos.size,
-            puntosCapturados = capturasPuntosUnicos,
+            puntosCapturados = puntosCapturados,
             finalizandoMonitoreo = finalizandoMonitoreo,
             onDismiss = {
                 accionDialogoMapa = null
@@ -536,16 +721,76 @@ fun MonitoreoMapaScreen(
                 }
 
                 else -> {
-                    ResumenMapaMonitoreo(
-                        totalVertices = vertices.size,
-                        totalPuntos = puntos.size,
-                        totalCapturas = capturasPuntosUnicos
+                    InstruccionMapaLibre(
+                        puntosCapturados = puntosCapturados
                     )
 
-                    if (!estaCerrado) {
+                    ChipPuntosMonitoreados(
+                        puntosCapturados = puntosCapturados
+                    )
+
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 8.dp),
+                        shape = RoundedCornerShape(22.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.White)
+                        ) {
+                            MapaMonitoreoWebViewSeguro(
+                                modifier = Modifier
+                                    .fillMaxSize(),
+                                htmlMapa = htmlMapa,
+                                ubicacionUsuario = ubicacionUsuario,
+                                puntoLibreSeleccionado = puntoLibreSeleccionado,
+                                internetDisponible = internetDisponible,
+                                onInternetDisponibleChange = {
+                                    // Se ignora para evitar recargar el WebView.
+                                },
+                                onPuntoLibreSeleccionado = { lat, lon ->
+                                    if (!tiempoAgotado && !estaPausado && !estaCerrado) {
+                                        puntoLibreSeleccionado = Pair(lat, lon)
+                                    } else {
+                                        Toast.makeText(
+                                            context,
+                                            "Este monitoreo no permite capturar puntos en este estado",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            )
+
+                            puntoLibreSeleccionado?.let {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .padding(horizontal = 4.dp, vertical = 4.dp)
+                                ) {
+                                    ConfirmarPuntoLibreCard(
+                                        numeroPunto = numeroSiguientePunto,
+                                        creandoPunto = creandoPuntoLibre,
+                                        onConfirmarClick = {
+                                            crearPuntoLibreYRegistrar()
+                                        },
+                                        onCancelarClick = {
+                                            puntoLibreSeleccionado = null
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (!estaCerrado && !tiempoAgotado) {
                         AccionesMapaMonitoreo(
                             totalPuntos = puntos.size,
-                            puntosCapturados = capturasPuntosUnicos,
+                            puntosCapturados = puntosCapturados,
                             estaPausado = estaPausado,
                             finalizandoMonitoreo = finalizandoMonitoreo,
                             onPausarClick = {
@@ -559,30 +804,6 @@ fun MonitoreoMapaScreen(
                             }
                         )
                     }
-
-                    MapaMonitoreoWebViewSeguro(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 18.dp),
-                        htmlMapa = htmlMapa,
-                        ubicacionUsuario = ubicacionUsuario,
-                        internetDisponible = internetDisponible,
-                        onInternetDisponibleChange = {
-                            // Se ignora para evitar recargar el WebView.
-                        },
-                        onPuntoValidoClick = { idTargetPoint ->
-                            if (!estaPausado && !estaCerrado) {
-                                onPuntoValidoActual(idTargetPoint)
-                            } else {
-                                Toast.makeText(
-                                    context,
-                                    "Este monitoreo no permite capturar puntos en este estado",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        }
-                    )
                 }
             }
         }
@@ -593,5 +814,6 @@ private data class MapaCargaResultado(
     val header: LocalPhytomonitoringHeaderEntity,
     val vertices: List<LocalPlotVertexEntity>,
     val puntos: List<LocalPhytomonitoringTargetPointEntity>,
-    val checkpoints: List<LocalPhytomonitoringCheckpointEntity>
+    val checkpoints: List<LocalPhytomonitoringCheckpointEntity>,
+    val catalogo: List<LocalPhytosanitaryCatalogEntity>
 )
