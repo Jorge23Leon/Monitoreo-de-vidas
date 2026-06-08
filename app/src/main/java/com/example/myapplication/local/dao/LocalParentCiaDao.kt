@@ -50,4 +50,37 @@ interface LocalParentCiaDao {
         FROM local_parent_cias
     """)
     suspend fun countParentCias(): Int
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertParentCiaApi(parentCia: LocalParentCiaEntity): Long
+
+    @Query("""
+    SELECT * 
+    FROM local_parent_cias 
+    WHERE ext_id = :extId 
+    LIMIT 1
+""")
+    suspend fun getParentCiaByExtId(extId: String): LocalParentCiaEntity?
+
+    @Query("""
+    UPDATE local_parent_cias
+    SET 
+        ext_id = :extId,
+        name = :name,
+        slug = :slug,
+        description = :description,
+        level = :level
+    WHERE idParentCia = :idParentCia
+""")
+    suspend fun updateParentCiaApiById(
+        idParentCia: Long,
+        extId: String?,
+        name: String,
+        slug: String,
+        description: String?,
+        level: Int
+    )
+
+
+
+
 }

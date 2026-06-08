@@ -12,7 +12,6 @@ import com.example.myapplication.local.entities.LocalCiaEntity
 import com.example.myapplication.local.entities.LocalCropCatalogEntity
 import com.example.myapplication.local.entities.LocalParentCiaEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
-import com.example.myapplication.local.entities.LocalPhytomonitoringTargetPointEntity
 import com.example.myapplication.local.entities.LocalPlotEntity
 import com.example.myapplication.local.entities.LocalProgramEntity
 import com.example.myapplication.local.entities.LocalRoleEntity
@@ -24,6 +23,20 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import com.example.myapplication.local.security.PasswordHasher
+import com.example.myapplication.local.api.auth.AuthRepository
+import com.example.myapplication.local.api.auth.ResultadoLoginApi
+import com.example.myapplication.local.api.auth.ResultadoRefreshApi
+import com.example.myapplication.local.api.core.TokenStorage
+import com.example.myapplication.local.api.users.ResultadoUsuarioMeApi
+import com.example.myapplication.local.api.users.UserRepository
+import com.example.myapplication.local.api.users.UsuarioMeResponse
+import com.example.myapplication.local.api.auth.ResultadoLogoutApi
+import com.example.myapplication.local.api.auth.ResultadoSignupApi
+import com.example.myapplication.local.api.organizations.CiaHijaApiItem
+import com.example.myapplication.local.api.organizations.CiaPadreApiItem
+import com.example.myapplication.local.api.organizations.OrganizationRepository
+import com.example.myapplication.local.api.organizations.ResultadoCiasApi
+import com.example.myapplication.local.entities.UserLocalParentCiaCrossRef
 
 private data class MainSesionRestauradaTemp(
     val sesion: UsuarioSesion,
@@ -49,6 +62,17 @@ private data class MainCatalogosFiltrosTemp(
     val ranchos: List<LocalRanchEntity>,
     val parcelas: List<LocalPlotEntity>
 )
+private sealed class MainLoginServidorTemp {
+    data class Exito(
+        val datos: MainLoginTemp,
+        val access: String?,
+        val refresh: String
+    ) : MainLoginServidorTemp()
+
+    data class Error(
+        val mensaje: String
+    ) : MainLoginServidorTemp()
+}
 
 
 class MainViewModel(
@@ -56,6 +80,10 @@ class MainViewModel(
 ) : AndroidViewModel(application) {
 
     private val database: AppDatabase = AppDatabase.getDatabase(application.applicationContext)
+    private val authRepository = AuthRepository(application.applicationContext)
+    private val tokenStorage = TokenStorage(application.applicationContext)
+    private val userRepository = UserRepository(application.applicationContext)
+    private val organizationRepository = OrganizationRepository(application.applicationContext)
 
     var uiState by mutableStateOf(MainUiState())
         private set
@@ -528,6 +556,14 @@ class MainViewModel(
         }
     }
 
+    private fun obtenerRolRegistroPermitido(roleInput: String): String {
+        return when (normalizarRolParaDb(roleInput)) {
+            "tecnico" -> "TECNICO"
+            "invitado" -> "INVITADO"
+            else -> "INVITADO"
+        }
+    }
+
     private fun nombreRolRealParaDb(rol: String): String {
         return when (normalizarRolParaDb(rol)) {
             "admin" -> "SUPER ADMIN"
@@ -553,6 +589,303 @@ class MainViewModel(
             else -> PantallaActual.LOGIN
         }
     }
+    private fun obtenerRolLocalDesdePerfilApi(
+        perfilApi: UsuarioMeResponse?
+    ): String {
+        val nombreRolApi = perfilApi?.userRole?.name
+            ?.trim()
+            .orEmpty()
+
+        if (nombreRolApi.isNotBlank()) {
+            return nombreRolRealParaDb(nombreRolApi)
+        }
+
+        val nivelRolApi = perfilApi?.userRole?.level ?: 0
+
+        return when {
+            nivelRolApi >= 5 -> "SUPER ADMIN"
+            nivelRolApi == 4 -> "GERENTE"
+            nivelRolApi == 3 -> "ING.Y SUPERVISION"
+            nivelRolApi == 2 -> "TECNICO"
+            nivelRolApi == 1 -> "INVITADO"
+            else -> "INVITADO" // Temporal para que el flujo local no se rompa
+        }
+    }
+    private suspend fun obtenerOCrearUsuarioLocalDespuesDeLoginApi(
+        username: String,
+        password: String,
+        perfilApi: UsuarioMeResponse?
+    ): UserEntity {
+        insertarRolesInicialesSiNoExisten()
+
+        val usernameServidor = perfilApi?.username
+            ?.takeIf { it.isNotBlank() }
+            ?: username
+
+        val emailServidor = perfilApi?.email
+            ?.takeIf { it.isNotBlank() }
+            ?: if (usernameServidor.contains("@")) {
+                usernameServidor
+            } else {
+                "$usernameServidor@local.app"
+            }
+
+        val firstNameApi = perfilApi?.individual?.firstName
+            ?.takeIf { it.isNotBlank() }
+
+        val lastNameApi = perfilApi?.individual?.lastName
+            ?.takeIf { it.isNotBlank() }
+
+        val nombreBase = firstNameApi
+            ?: usernameServidor
+                .substringBefore("@")
+                .replace(".", " ")
+                .replace("_", " ")
+                .replaceFirstChar { char -> char.uppercase() }
+                .ifBlank { "Usuario" }
+
+        val nombreRolLocal = obtenerRolLocalDesdePerfilApi(perfilApi)
+
+        val rolLocal = database.localRoleDao().getRoleByName(nombreRolLocal)
+            ?: database.localRoleDao().getRoleByName("SUPER ADMIN")
+            ?: throw IllegalStateException("No existe el rol local $nombreRolLocal")
+
+        val usuarioExistente = database.userDao().getUserByUsername(usernameServidor)
+            ?: database.userDao().getUserByUsername(username)
+            ?: database.userDao().getUserByEmail(emailServidor)
+
+        if (usuarioExistente != null) {
+            database.userDao().updateUser(
+                usuarioExistente.copy(
+                    firstName = nombreBase,
+                    lastName = lastNameApi,
+                    username = usernameServidor,
+                    email = emailServidor,
+                    password = PasswordHasher.generarHash(password),
+                    idRole = rolLocal.idRole
+                )
+            )
+
+            return database.userDao().getUserById(usuarioExistente.idUser)
+                ?: usuarioExistente
+        }
+
+        val idNuevoUsuario = database.userDao().insertUser(
+            UserEntity(
+                firstName = nombreBase,
+                lastName = lastNameApi,
+                username = usernameServidor,
+                email = emailServidor,
+                password = PasswordHasher.generarHash(password),
+                idRole = rolLocal.idRole
+            )
+        )
+
+        return database.userDao().getUserById(idNuevoUsuario)
+            ?: throw IllegalStateException("No se pudo crear usuario local")
+    }
+    private suspend fun sincronizarCiasDesdeApi(idUserLocal: Long): String? {
+        return when (val resultado = organizationRepository.obtenerCiasPadreEHijas()) {
+            is ResultadoCiasApi.Error -> {
+                resultado.mensaje
+            }
+
+            is ResultadoCiasApi.Exito -> {
+                val ciasHijas = resultado.ciasHijas
+
+                if (ciasHijas.isEmpty()) {
+                    return "El servidor no regresó CIAS para este usuario"
+                }
+
+                val padresInsertados = mutableMapOf<String, Long>()
+
+                ciasHijas.forEach { ciaHijaApi ->
+                    val idParentLocal = padresInsertados[ciaHijaApi.parent.extId]
+                        ?: guardarCiaPadreDesdeApi(ciaHijaApi.parent)
+
+                    padresInsertados[ciaHijaApi.parent.extId] = idParentLocal
+
+                    guardarCiaHijaDesdeApi(
+                        ciaHijaApi = ciaHijaApi,
+                        idParentCiaLocal = idParentLocal
+                    )
+                }
+
+                val refs = padresInsertados.values.distinct().map { idParentCia ->
+                    UserLocalParentCiaCrossRef(
+                        idUser = idUserLocal,
+                        idParentCia = idParentCia
+                    )
+                }
+
+                database.userLocalParentCiaDao()
+                    .asignarParentCiasAUsuario(refs)
+
+                null
+            }
+        }
+    }
+
+    private suspend fun guardarCiaPadreDesdeApi(
+        parentApi: CiaPadreApiItem
+    ): Long {
+        val existentePorExtId = database.localParentCiaDao()
+            .getParentCiaByExtId(parentApi.extId)
+
+        val existentePorSlug = database.localParentCiaDao()
+            .getParentCiaBySlug(parentApi.slug)
+
+        val existente = existentePorExtId ?: existentePorSlug
+
+        if (existente != null) {
+            database.localParentCiaDao().updateParentCiaApiById(
+                idParentCia = existente.idParentCia,
+                extId = parentApi.extId,
+                name = parentApi.name,
+                slug = parentApi.slug,
+                description = parentApi.description,
+                level = 1
+            )
+
+            return existente.idParentCia
+        }
+
+        val idInsertado = database.localParentCiaDao().insertParentCiaApi(
+            LocalParentCiaEntity(
+                extId = parentApi.extId,
+                name = parentApi.name,
+                slug = parentApi.slug,
+                description = parentApi.description,
+                level = 1
+            )
+        )
+
+        if (idInsertado > 0L) {
+            return idInsertado
+        }
+
+        return database.localParentCiaDao()
+            .getParentCiaByExtId(parentApi.extId)
+            ?.idParentCia
+            ?: database.localParentCiaDao()
+                .getParentCiaBySlug(parentApi.slug)
+                ?.idParentCia
+            ?: throw IllegalStateException("No se pudo guardar CIA padre ${parentApi.name}")
+    }
+
+    private suspend fun guardarCiaHijaDesdeApi(
+        ciaHijaApi: CiaHijaApiItem,
+        idParentCiaLocal: Long
+    ): Long {
+        val existentePorExtId = database.localCiaDao()
+            .getCiaByExtId(ciaHijaApi.extId)
+
+        val existentePorSlug = database.localCiaDao()
+            .getCiaBySlug(ciaHijaApi.slug)
+
+        val existente = existentePorExtId ?: existentePorSlug
+
+        if (existente != null) {
+            database.localCiaDao().updateCiaApiById(
+                idLocalCia = existente.idLocalCia,
+                extId = ciaHijaApi.extId,
+                name = ciaHijaApi.name,
+                slug = ciaHijaApi.slug,
+                description = ciaHijaApi.description,
+                idParentCia = idParentCiaLocal
+            )
+
+            return existente.idLocalCia
+        }
+
+        val idInsertado = database.localCiaDao().insertCiaApi(
+            LocalCiaEntity(
+                extId = ciaHijaApi.extId,
+                nombre = ciaHijaApi.name,
+                slug = ciaHijaApi.slug,
+                description = ciaHijaApi.description,
+                idParentCia = idParentCiaLocal
+            )
+        )
+
+        if (idInsertado > 0L) {
+            return idInsertado
+        }
+
+        return database.localCiaDao()
+            .getCiaByExtId(ciaHijaApi.extId)
+            ?.idLocalCia
+            ?: database.localCiaDao()
+                .getCiaBySlug(ciaHijaApi.slug)
+                ?.idLocalCia
+            ?: throw IllegalStateException("No se pudo guardar CIA hija ${ciaHijaApi.name}")
+    }
+    private suspend fun prepararLoginDesdeUsuarioLocal(
+        usuario: UserEntity
+    ): MainLoginTemp? {
+        val sesion = database.userDao()
+            .getSesionByIdUser(usuario.idUser)
+            ?: return null
+
+        val parentCias = if (sesion.esAdmin) {
+            database.localParentCiaDao().getAllParentCiasActivas()
+        } else {
+            database.userLocalParentCiaDao().getParentCiasByUser(sesion.idUser)
+        }
+
+        val ciasHijasUsuario = if (sesion.esSupervisor || sesion.esTecnico) {
+            database.userLocalParentCiaDao().getCiasHijasByUser(sesion.idUser)
+        } else {
+            emptyList()
+        }
+
+        val idCiaPreferente = obtenerCiaPreferente(sesion.idUser)
+        var parentCiaPreferente: LocalParentCiaEntity? = null
+        var ciasHijasPreferente: List<LocalCiaEntity> = emptyList()
+
+        val ciaPreferente = if (
+            idCiaPreferente > 0L &&
+            !sesion.esTecnico &&
+            !sesion.esInvitado
+        ) {
+            if (sesion.esSupervisor) {
+                ciasHijasUsuario.firstOrNull { cia ->
+                    cia.idLocalCia == idCiaPreferente
+                }
+            } else {
+                var ciaEncontrada: LocalCiaEntity? = null
+
+                for (parentCia in parentCias) {
+                    val hijas = database.localCiaDao()
+                        .getCiasByParentCia(parentCia.idParentCia)
+
+                    val candidata = hijas.firstOrNull { cia ->
+                        cia.idLocalCia == idCiaPreferente
+                    }
+
+                    if (candidata != null) {
+                        parentCiaPreferente = parentCia
+                        ciasHijasPreferente = hijas
+                        ciaEncontrada = candidata
+                        break
+                    }
+                }
+
+                ciaEncontrada
+            }
+        } else {
+            null
+        }
+
+        return MainLoginTemp(
+            sesion = sesion,
+            parentCias = parentCias,
+            ciasHijasUsuario = ciasHijasUsuario,
+            parentCiaPreferente = parentCiaPreferente,
+            ciasHijasPreferente = ciasHijasPreferente,
+            ciaPreferente = ciaPreferente
+        )
+    }
 
     fun onLoginClick(
         usernameInput: String,
@@ -572,173 +905,168 @@ class MainViewModel(
 
         viewModelScope.launch {
             try {
-                val resultado = withContext(Dispatchers.IO) {
-                    val usuario = database.userDao().getUserByUsername(username)
+                val resultadoServidor = withContext(Dispatchers.IO) {
+                    when (val loginApi = authRepository.login(username, password)) {
+                        is ResultadoLoginApi.Error -> {
+                            MainLoginServidorTemp.Error(loginApi.mensaje)
+                        }
 
-                    if (usuario == null) {
-                        null
-                    } else if (!PasswordHasher.verificarPassword(password, usuario.password)) {
-                        null
-                    } else {
-                        /*
-                         * Si el usuario todavía tenía contraseña en texto plano,
-                         * aquí se migra automáticamente a hash al iniciar sesión.
-                         */
-                        if (PasswordHasher.necesitaRehash(usuario.password)) {
-                            database.userDao().updateUser(
-                                usuario.copy(
-                                    password = PasswordHasher.generarHash(password)
+                        is ResultadoLoginApi.Exito -> {
+                            val refresh = loginApi.refresh
+
+                            if (refresh.isNullOrBlank()) {
+                                return@withContext MainLoginServidorTemp.Error(
+                                    "El servidor validó el login, pero no regresó refresh token"
                                 )
+                            }
+
+                            var access = loginApi.access
+
+                            if (access.isNullOrBlank()) {
+                                when (val refreshApi = authRepository.obtenerAccessConRefresh(refresh)) {
+                                    is ResultadoRefreshApi.Exito -> {
+                                        access = refreshApi.access
+                                    }
+
+                                    is ResultadoRefreshApi.Error -> {
+                                        return@withContext MainLoginServidorTemp.Error(refreshApi.mensaje)
+                                    }
+                                }
+                            }
+
+                            tokenStorage.guardarTokens(
+                                access = access,
+                                refresh = refresh
+                            )
+
+                            val perfilServidor = when (val perfilApi = userRepository.obtenerPerfilActual()) {
+                                is ResultadoUsuarioMeApi.Exito -> {
+                                    perfilApi.usuario
+                                }
+
+                                is ResultadoUsuarioMeApi.Error -> {
+                                    return@withContext MainLoginServidorTemp.Error(
+                                        "Login correcto, pero no se pudo obtener perfil: ${perfilApi.mensaje}"
+                                    )
+                                }
+                            }
+
+                            val usuarioLocal = obtenerOCrearUsuarioLocalDespuesDeLoginApi(
+                                username = username,
+                                password = password,
+                                perfilApi = perfilServidor
+                            )
+
+                            val errorCias = sincronizarCiasDesdeApi(usuarioLocal.idUser)
+
+                            if (errorCias != null) {
+                                return@withContext MainLoginServidorTemp.Error(errorCias)
+                            }
+
+                            val datosLogin = prepararLoginDesdeUsuarioLocal(usuarioLocal)
+                                ?: return@withContext MainLoginServidorTemp.Error(
+                                    "Login API correcto, pero no se pudo preparar la sesión local"
+                                )
+
+                            MainLoginServidorTemp.Exito(
+                                datos = datosLogin,
+                                access = access,
+                                refresh = refresh
                             )
                         }
-
-                        val sesion = database.userDao()
-                            .getSesionByIdUser(usuario.idUser)
-                            ?: return@withContext null
-
-                        val parentCias = if (sesion.esAdmin) {
-                            database.localParentCiaDao().getAllParentCiasActivas()
-                        } else {
-                            database.userLocalParentCiaDao().getParentCiasByUser(sesion.idUser)
-                        }
-
-                        val ciasHijasUsuario = if (sesion.esSupervisor || sesion.esTecnico) {
-                            database.userLocalParentCiaDao().getCiasHijasByUser(sesion.idUser)
-                        } else {
-                            emptyList()
-                        }
-
-                        val idCiaPreferente = obtenerCiaPreferente(sesion.idUser)
-                        var parentCiaPreferente: LocalParentCiaEntity? = null
-                        var ciasHijasPreferente: List<LocalCiaEntity> = emptyList()
-
-                        val ciaPreferente = if (
-                            idCiaPreferente > 0L &&
-                            !sesion.esTecnico &&
-                            !sesion.esInvitado
-                        ) {
-                            if (sesion.esSupervisor) {
-                                ciasHijasUsuario.firstOrNull { cia ->
-                                    cia.idLocalCia == idCiaPreferente
-                                }
-                            } else {
-                                var ciaEncontrada: LocalCiaEntity? = null
-
-                                for (parentCia in parentCias) {
-                                    val hijas = database.localCiaDao()
-                                        .getCiasByParentCia(parentCia.idParentCia)
-
-                                    val candidata = hijas.firstOrNull { cia ->
-                                        cia.idLocalCia == idCiaPreferente
-                                    }
-
-                                    if (candidata != null) {
-                                        parentCiaPreferente = parentCia
-                                        ciasHijasPreferente = hijas
-                                        ciaEncontrada = candidata
-                                        break
-                                    }
-                                }
-
-                                ciaEncontrada
-                            }
-                        } else {
-                            null
-                        }
-
-                        MainLoginTemp(
-                            sesion = sesion,
-                            parentCias = parentCias,
-                            ciasHijasUsuario = ciasHijasUsuario,
-                            parentCiaPreferente = parentCiaPreferente,
-                            ciasHijasPreferente = ciasHijasPreferente,
-                            ciaPreferente = ciaPreferente
-                        )
                     }
                 }
 
-                if (resultado == null) {
-                    mostrarMensaje("Usuario o contraseña incorrectos")
-                } else {
-                    val sesion = resultado.sesion
-                    val parentCias = resultado.parentCias
-                    val ciasHijasUsuario = resultado.ciasHijasUsuario
-                    guardarSesionBasica(sesion.idUser)
-
-                    actualizarEstado {
-                        it.copy(
-                            usuarioSesion = sesion,
-                            idUsuarioActual = sesion.idUser,
-                            nombreUsuarioActual = sesion.firstName,
-                            rolUsuarioActual = sesion.roleName,
-                            nivelRolUsuarioActual = sesion.level,
-
-                            parentCiasUsuario = parentCias,
-                            parentCiaSeleccionada = resultado.parentCiaPreferente,
-                            ciasUsuario = when {
-                                resultado.ciasHijasPreferente.isNotEmpty() -> resultado.ciasHijasPreferente
-                                sesion.esSupervisor || sesion.esTecnico -> ciasHijasUsuario
-                                else -> emptyList()
-                            },
-                            ciaSeleccionada = resultado.ciaPreferente,
-                            seleccionarPreferente = resultado.ciaPreferente != null,
-                            productores = emptyList(),
-                            ranchos = emptyList(),
-                            parcelas = emptyList(),
-                            ciclos = emptyList(),
-
-                            productorSeleccionado = null,
-                            ranchoSeleccionado = null,
-                            parcelaSeleccionada = null,
-                            cicloSeleccionado = null,
-
-                            monitoreosEncontrados = emptyList(),
-                            productoresResultado = emptyList(),
-                            ranchosResultado = emptyList(),
-                            parcelasResultado = emptyList(),
-                            programasResultado = emptyList(),
-                            cultivosResultado = emptyList(),
-
-                            pantallaActual = obtenerPantallaInicialPorRol(sesion)
-                        )
+                when (resultadoServidor) {
+                    is MainLoginServidorTemp.Error -> {
+                        mostrarMensaje(resultadoServidor.mensaje)
                     }
 
-                    if (sesion.esTecnico || sesion.esInvitado) {
-                        mostrarMensaje("Bienvenido ${sesion.firstName}. Cargando tus monitoreos asignados")
-                        cargarMonitoreosDirectoPorUsuario(sesion)
-                    } else {
-                        when {
-                            sesion.esSupervisor && ciasHijasUsuario.isEmpty() -> {
-                                mostrarMensaje("Bienvenido ${sesion.firstName}. No tienes CIAS hijas asignadas")
-                            }
+                    is MainLoginServidorTemp.Exito -> {
+                        val resultado = resultadoServidor.datos
+                        val sesion = resultado.sesion
+                        val parentCias = resultado.parentCias
+                        val ciasHijasUsuario = resultado.ciasHijasUsuario
 
-                            resultado.ciaPreferente != null -> {
-                                mostrarMensaje("Bienvenido ${sesion.firstName}. CIA preferente cargada: ${resultado.ciaPreferente.nombre}")
-                            }
+                        guardarSesionBasica(sesion.idUser)
 
-                            sesion.esSupervisor -> {
-                                mostrarMensaje("Bienvenido ${sesion.firstName}. Selecciona una CIA hija")
-                            }
+                        actualizarEstado {
+                            it.copy(
+                                usuarioSesion = sesion,
+                                idUsuarioActual = sesion.idUser,
+                                nombreUsuarioActual = sesion.firstName,
+                                rolUsuarioActual = sesion.roleName,
+                                nivelRolUsuarioActual = sesion.level,
 
-                            parentCias.isEmpty() -> {
-                                mostrarMensaje("Bienvenido ${sesion.firstName}. No tienes CIAS padre asignadas")
-                            }
+                                parentCiasUsuario = parentCias,
+                                parentCiaSeleccionada = resultado.parentCiaPreferente,
 
-                            else -> {
-                                mostrarMensaje("Bienvenido ${sesion.firstName} - Rol: ${sesion.roleName}")
+                                ciasUsuario = when {
+                                    resultado.ciasHijasPreferente.isNotEmpty() -> resultado.ciasHijasPreferente
+                                    sesion.esSupervisor || sesion.esTecnico -> ciasHijasUsuario
+                                    else -> emptyList()
+                                },
+
+                                ciaSeleccionada = resultado.ciaPreferente,
+                                seleccionarPreferente = resultado.ciaPreferente != null,
+
+                                productores = emptyList(),
+                                ranchos = emptyList(),
+                                parcelas = emptyList(),
+                                ciclos = emptyList(),
+
+                                productorSeleccionado = null,
+                                ranchoSeleccionado = null,
+                                parcelaSeleccionada = null,
+                                cicloSeleccionado = null,
+
+                                monitoreosEncontrados = emptyList(),
+                                productoresResultado = emptyList(),
+                                ranchosResultado = emptyList(),
+                                parcelasResultado = emptyList(),
+                                programasResultado = emptyList(),
+                                cultivosResultado = emptyList(),
+
+                                pantallaActual = obtenerPantallaInicialPorRol(sesion)
+                            )
+                        }
+
+                        if (sesion.esTecnico || sesion.esInvitado) {
+                            mostrarMensaje("Login API correcto. Cargando tus monitoreos")
+                            cargarMonitoreosDirectoPorUsuario(sesion)
+                        } else {
+                            when {
+                                sesion.esSupervisor && ciasHijasUsuario.isEmpty() -> {
+                                    mostrarMensaje("Login API correcto. No tienes CIAS hijas asignadas localmente")
+                                }
+
+                                resultado.ciaPreferente != null -> {
+                                    mostrarMensaje("Login API correcto. CIA preferente cargada: ${resultado.ciaPreferente.nombre}")
+                                }
+
+                                sesion.esSupervisor -> {
+                                    mostrarMensaje("Login API correcto. Selecciona una CIA hija")
+                                }
+
+                                parentCias.isEmpty() -> {
+                                    mostrarMensaje("Login API correcto. No tienes CIAS padre cargadas localmente")
+                                }
+
+                                else -> {
+                                    mostrarMensaje("Login API correcto - Rol local: ${sesion.roleName}")
+                                }
                             }
                         }
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                mostrarMensaje("Error al iniciar sesión: ${e.message}")
+                mostrarMensaje("Error al iniciar sesión con API: ${e.message}")
             } finally {
                 actualizarEstado { it.copy(cargando = false) }
             }
         }
     }
-
     fun registrarUsuario(
         firstNameInput: String,
         lastnameInput: String,
@@ -754,10 +1082,11 @@ class MainViewModel(
         val email = emailInput.trim()
         val password = passwordInput.trim()
         val confirmPassword = confirmPasswordInput.trim()
-        val roleNameDb = nombreRolRealParaDb(roleInput)
+        val roleNameDb = obtenerRolRegistroPermitido(roleInput)
 
         when {
             firstName.isBlank() ||
+                    lastname.isBlank() ||
                     username.isBlank() ||
                     email.isBlank() ||
                     password.isBlank() ||
@@ -776,29 +1105,63 @@ class MainViewModel(
 
                 viewModelScope.launch {
                     try {
-                        withContext(Dispatchers.IO) {
+                        val mensajeError = withContext(Dispatchers.IO) {
+                            val registroApi = authRepository.signup(
+                                username = username,
+                                email = email,
+                                password = password,
+                                firstName = firstName,
+                                lastName = lastname
+                            )
+
+                            if (registroApi is ResultadoSignupApi.Error) {
+                                return@withContext registroApi.mensaje
+                            }
+
                             insertarRolesInicialesSiNoExisten()
 
                             val rol = database.localRoleDao().getRoleByName(roleNameDb)
-                                ?: throw IllegalStateException("No existe el rol $roleNameDb")
+                                ?: return@withContext "No existe el rol local $roleNameDb"
 
-                            database.userDao().insertUser(
-                                UserEntity(
-                                    firstName = firstName,
-                                    lastName = lastname.ifBlank { null },
-                                    username = username,
-                                    email = email,
-                                    password = PasswordHasher.generarHash(password),
-                                    idRole = rol.idRole
+                            val usuarioExistente = database.userDao().getUserByUsername(username)
+                                ?: database.userDao().getUserByEmail(email)
+
+                            if (usuarioExistente != null) {
+                                database.userDao().updateUser(
+                                    usuarioExistente.copy(
+                                        firstName = firstName,
+                                        lastName = lastname,
+                                        username = username,
+                                        email = email,
+                                        password = PasswordHasher.generarHash(password),
+                                        idRole = rol.idRole
+                                    )
                                 )
-                            )
+                            } else {
+                                database.userDao().insertUser(
+                                    UserEntity(
+                                        firstName = firstName,
+                                        lastName = lastname,
+                                        username = username,
+                                        email = email,
+                                        password = PasswordHasher.generarHash(password),
+                                        idRole = rol.idRole
+                                    )
+                                )
+                            }
+
+                            null
                         }
 
-                        mostrarMensaje("Usuario registrado correctamente")
-                        irA(PantallaActual.LOGIN)
+                        if (mensajeError != null) {
+                            mostrarMensaje(mensajeError)
+                        } else {
+                            mostrarMensaje("Usuario registrado correctamente. Ahora inicia sesión")
+                            irA(PantallaActual.LOGIN)
+                        }
                     } catch (e: Exception) {
                         e.printStackTrace()
-                        mostrarMensaje("No se pudo registrar. Revisa si el usuario o correo ya existen")
+                        mostrarMensaje("No se pudo registrar: ${e.message}")
                     } finally {
                         actualizarEstado { it.copy(cargando = false) }
                     }
@@ -2484,12 +2847,50 @@ class MainViewModel(
     }
 
     fun cerrarSesion() {
-        borrarSesionGuardada()
+        if (uiState.cargando) return
 
-        uiState = MainUiState(
-            pantallaActual = PantallaActual.LOGIN,
-            mensaje = "Sesión cerrada"
-        )
+        val refreshToken = tokenStorage.obtenerRefreshToken()
+
+        viewModelScope.launch {
+            try {
+                actualizarEstado { it.copy(cargando = true) }
+
+                val mensajeLogout = withContext(Dispatchers.IO) {
+                    if (refreshToken.isNullOrBlank()) {
+                        "Sesión cerrada"
+                    } else {
+                        when (authRepository.logout(refreshToken)) {
+                            is ResultadoLogoutApi.Exito -> {
+                                "Sesión cerrada correctamente"
+                            }
+
+                            is ResultadoLogoutApi.Error -> {
+
+                                "Sesión cerrada localmente"
+                            }
+                        }
+                    }
+                }
+
+                borrarSesionGuardada()
+                tokenStorage.limpiarTokens()
+
+                uiState = MainUiState(
+                    pantallaActual = PantallaActual.LOGIN,
+                    mensaje = mensajeLogout
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+
+                borrarSesionGuardada()
+                tokenStorage.limpiarTokens()
+
+                uiState = MainUiState(
+                    pantallaActual = PantallaActual.LOGIN,
+                    mensaje = "Sesión cerrada localmente"
+                )
+            }
+        }
     }
 
     fun manejarBack() {

@@ -7,6 +7,7 @@ import androidx.room.Query
 import com.example.myapplication.local.entities.LocalAgroUnitEntity
 import com.example.myapplication.local.entities.LocalCiaEntity
 
+
 @Dao
 interface LocalCiaDao {
 
@@ -43,4 +44,34 @@ interface LocalCiaDao {
         """
     )
     suspend fun getProductoresByCia(idLocalCia: Long): List<LocalAgroUnitEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertCiaApi(cia: LocalCiaEntity): Long
+
+    @Query("""
+    SELECT * 
+    FROM local_cias 
+    WHERE ext_id = :extId 
+    LIMIT 1
+""")
+    suspend fun getCiaByExtId(extId: String): LocalCiaEntity?
+
+    @Query("""
+    UPDATE local_cias
+    SET 
+        ext_id = :extId,
+        name = :name,
+        slug = :slug,
+        description = :description,
+        idParentCia = :idParentCia
+    WHERE idLocalCia = :idLocalCia
+""")
+    suspend fun updateCiaApiById(
+        idLocalCia: Long,
+        extId: String?,
+        name: String,
+        slug: String,
+        description: String?,
+        idParentCia: Long
+    )
 }
