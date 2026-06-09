@@ -18,6 +18,8 @@ import com.example.myapplication.local.entities.LocalRoleEntity
 import com.example.myapplication.local.entities.LocalRanchEntity
 import com.example.myapplication.local.entities.UserEntity
 import com.example.myapplication.local.models.UsuarioSesion
+import com.example.myapplication.local.api.sync.AgroSyncRepository
+import com.example.myapplication.local.api.sync.ResultadoAgroSync
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -37,6 +39,8 @@ import com.example.myapplication.local.api.organizations.CiaPadreApiItem
 import com.example.myapplication.local.api.organizations.OrganizationRepository
 import com.example.myapplication.local.api.organizations.ResultadoCiasApi
 import com.example.myapplication.local.entities.UserLocalParentCiaCrossRef
+import com.example.myapplication.local.entities.UserLocalCiaCrossRef
+
 
 private data class MainSesionRestauradaTemp(
     val sesion: UsuarioSesion,
@@ -84,6 +88,11 @@ class MainViewModel(
     private val tokenStorage = TokenStorage(application.applicationContext)
     private val userRepository = UserRepository(application.applicationContext)
     private val organizationRepository = OrganizationRepository(application.applicationContext)
+
+    private val agroSyncRepository = AgroSyncRepository(
+        context = application.applicationContext,
+        database = database
+    )
 
     var uiState by mutableStateOf(MainUiState())
         private set
@@ -161,6 +170,7 @@ class MainViewModel(
             )
         }
     }
+
     fun volverDesdePerfil() {
         val pantallaDestino = uiState.pantallaAntesPerfil
         val pantallaFallback = when {
@@ -268,24 +278,12 @@ class MainViewModel(
                         if (sesion == null) {
                             null
                         } else {
-                            val parentCias = if (sesion.esAdmin) {
-                                database.localParentCiaDao().getAllParentCiasActivas()
-                            } else {
-                                database.userLocalParentCiaDao().getParentCiasByUser(sesion.idUser)
-                            }
+                            val parentCias = database.userLocalCiaDao()
+                                .getParentCiasByUser(sesion.idUser)
 
-                            val ciasHijasUsuario = if (sesion.esSupervisor || sesion.esTecnico) {
-                                database.userLocalParentCiaDao().getCiasHijasByUser(sesion.idUser)
-                            } else {
-                                emptyList()
-                            }
+                            val ciasHijasUsuario = database.userLocalCiaDao()
+                                .getCiasByUser(sesion.idUser)
 
-                            /*
-                             * Restauración de CIA:
-                             * - Supervisor: usa sus CIAS hijas asignadas directamente.
-                             * - Admin/Gerente: usa CIA padre guardada y busca sus CIAS hijas.
-                             * - Técnico/Invitado: no necesitan CIA guardada, entran directo a monitoreos.
-                             */
                             val parentCiaGuardada = if (
                                 idParentCiaGuardada > 0L &&
                                 !sesion.esSupervisor &&
@@ -305,8 +303,11 @@ class MainViewModel(
                                 }
 
                                 parentCiaGuardada != null -> {
-                                    database.localCiaDao()
-                                        .getCiasByParentCia(parentCiaGuardada.idParentCia)
+                                    database.userLocalCiaDao()
+                                        .getCiasByUserAndParent(
+                                            idUser = sesion.idUser,
+                                            idParentCia = parentCiaGuardada.idParentCia
+                                        )
                                 }
 
                                 else -> {
@@ -684,42 +685,72 @@ class MainViewModel(
         return database.userDao().getUserById(idNuevoUsuario)
             ?: throw IllegalStateException("No se pudo crear usuario local")
     }
-    private suspend fun sincronizarCiasDesdeApi(idUserLocal: Long): String? {
+    private suspend fun sincronizarCiasDesdeApi(
+        idUserLocal: Long,
+        perfilApi: UsuarioMeResponse
+    ): String? {
         return when (val resultado = organizationRepository.obtenerCiasPadreEHijas()) {
             is ResultadoCiasApi.Error -> {
                 resultado.mensaje
             }
 
             is ResultadoCiasApi.Exito -> {
-                val ciasHijas = resultado.ciasHijas
+                val datacentralIdsPermitidos = perfilApi.datacentrals
+                    ?.mapNotNull { datacentral ->
+                        datacentral.id?.takeIf { it.isNotBlank() }
+                    }
+                    ?.toSet()
+                    .orEmpty()
 
-                if (ciasHijas.isEmpty()) {
-                    return "El servidor no regresó CIAS para este usuario"
+                if (datacentralIdsPermitidos.isEmpty()) {
+                    return "Este usuario no tiene CIAS hijas asignadas en el servidor"
                 }
 
-                val padresInsertados = mutableMapOf<String, Long>()
+                val ciasHijasPermitidas = resultado.ciasHijas.filter { ciaHija ->
+                    ciaHija.extId in datacentralIdsPermitidos
+                }
 
-                ciasHijas.forEach { ciaHijaApi ->
-                    val idParentLocal = padresInsertados[ciaHijaApi.parent.extId]
-                        ?: guardarCiaPadreDesdeApi(ciaHijaApi.parent)
+                if (ciasHijasPermitidas.isEmpty()) {
+                    return "Las CIAS asignadas al usuario no se encontraron en el catálogo local/API"
+                }
 
-                    padresInsertados[ciaHijaApi.parent.extId] = idParentLocal
+                database.userLocalParentCiaDao()
+                    .quitarTodasLasParentCiasDelUsuario(idUserLocal)
 
-                    guardarCiaHijaDesdeApi(
+                database.userLocalCiaDao()
+                    .quitarTodasLasCiasDelUsuario(idUserLocal)
+
+                val refsParent = mutableListOf<UserLocalParentCiaCrossRef>()
+                val refsCias = mutableListOf<UserLocalCiaCrossRef>()
+
+                ciasHijasPermitidas.forEach { ciaHijaApi ->
+                    val idParentLocal = guardarCiaPadreDesdeApi(ciaHijaApi.parent)
+
+                    val idCiaLocal = guardarCiaHijaDesdeApi(
                         ciaHijaApi = ciaHijaApi,
                         idParentCiaLocal = idParentLocal
                     )
-                }
 
-                val refs = padresInsertados.values.distinct().map { idParentCia ->
-                    UserLocalParentCiaCrossRef(
-                        idUser = idUserLocal,
-                        idParentCia = idParentCia
+                    refsParent.add(
+                        UserLocalParentCiaCrossRef(
+                            idUser = idUserLocal,
+                            idParentCia = idParentLocal
+                        )
+                    )
+
+                    refsCias.add(
+                        UserLocalCiaCrossRef(
+                            idUser = idUserLocal,
+                            idLocalCia = idCiaLocal
+                        )
                     )
                 }
 
                 database.userLocalParentCiaDao()
-                    .asignarParentCiasAUsuario(refs)
+                    .asignarParentCiasAUsuario(refsParent.distinct())
+
+                database.userLocalCiaDao()
+                    .asignarCiasAUsuario(refsCias.distinct())
 
                 null
             }
@@ -827,17 +858,11 @@ class MainViewModel(
             .getSesionByIdUser(usuario.idUser)
             ?: return null
 
-        val parentCias = if (sesion.esAdmin) {
-            database.localParentCiaDao().getAllParentCiasActivas()
-        } else {
-            database.userLocalParentCiaDao().getParentCiasByUser(sesion.idUser)
-        }
+        val parentCias = database.userLocalCiaDao()
+            .getParentCiasByUser(sesion.idUser)
 
-        val ciasHijasUsuario = if (sesion.esSupervisor || sesion.esTecnico) {
-            database.userLocalParentCiaDao().getCiasHijasByUser(sesion.idUser)
-        } else {
-            emptyList()
-        }
+        val ciasHijasUsuario = database.userLocalCiaDao()
+            .getCiasByUser(sesion.idUser)
 
         val idCiaPreferente = obtenerCiaPreferente(sesion.idUser)
         var parentCiaPreferente: LocalParentCiaEntity? = null
@@ -856,8 +881,11 @@ class MainViewModel(
                 var ciaEncontrada: LocalCiaEntity? = null
 
                 for (parentCia in parentCias) {
-                    val hijas = database.localCiaDao()
-                        .getCiasByParentCia(parentCia.idParentCia)
+                    val hijas = database.userLocalCiaDao()
+                        .getCiasByUserAndParent(
+                            idUser = sesion.idUser,
+                            idParentCia = parentCia.idParentCia
+                        )
 
                     val candidata = hijas.firstOrNull { cia ->
                         cia.idLocalCia == idCiaPreferente
@@ -957,7 +985,10 @@ class MainViewModel(
                                 perfilApi = perfilServidor
                             )
 
-                            val errorCias = sincronizarCiasDesdeApi(usuarioLocal.idUser)
+                            val errorCias = sincronizarCiasDesdeApi(
+                                idUserLocal = usuarioLocal.idUser,
+                                perfilApi = perfilServidor
+                            )
 
                             if (errorCias != null) {
                                 return@withContext MainLoginServidorTemp.Error(errorCias)
@@ -1241,8 +1272,11 @@ class MainViewModel(
         viewModelScope.launch {
             try {
                 val ciasHijas = withContext(Dispatchers.IO) {
-                    database.localCiaDao()
-                        .getCiasByParentCia(parentCia.idParentCia)
+                    database.userLocalCiaDao()
+                        .getCiasByUserAndParent(
+                            idUser = sesion.idUser,
+                            idParentCia = parentCia.idParentCia
+                        )
                 }
 
                 val idCiaPreferente = obtenerCiaPreferente(sesion.idUser)
@@ -1340,16 +1374,51 @@ class MainViewModel(
         actualizarEstado {
             it.copy(
                 ciaSeleccionada = cia,
-                pantallaActual = PantallaActual.FILTROS_MONITOREO
+                pantallaActual = PantallaActual.FILTROS_MONITOREO,
+                cargando = true
             )
         }
 
-        cargarProductores(
-            idLocalCia = cia.idLocalCia,
-            idProductorRestaurar = idProductorRestaurar
-        )
-    }
+        viewModelScope.launch {
+            try {
+                val mensajeSync = withContext(Dispatchers.IO) {
+                    when (
+                        val resultado = agroSyncRepository.sincronizarProductoresRanchosParcelas(
+                            idLocalCia = cia.idLocalCia
+                        )
+                    ) {
+                        is ResultadoAgroSync.Exito -> {
+                            "Datos sincronizados: ${resultado.productores} productores, ${resultado.ranchos} ranchos, ${resultado.parcelas} parcelas"
+                        }
 
+                        is ResultadoAgroSync.Error -> {
+                            resultado.mensaje
+                        }
+                    }
+                }
+
+                cargarProductores(
+                    idLocalCia = cia.idLocalCia,
+                    idProductorRestaurar = idProductorRestaurar
+                )
+
+                mostrarMensaje(mensajeSync)
+            } catch (e: Exception) {
+                e.printStackTrace()
+
+                cargarProductores(
+                    idLocalCia = cia.idLocalCia,
+                    idProductorRestaurar = idProductorRestaurar
+                )
+
+                mostrarMensaje("No se pudo sincronizar filtros: ${e.message}")
+            } finally {
+                actualizarEstado {
+                    it.copy(cargando = false)
+                }
+            }
+        }
+    }
     fun seleccionarCiaActual() {
         val estado = uiState
         val cia = estado.ciaSeleccionada
@@ -1395,6 +1464,7 @@ class MainViewModel(
                 val resultado = withContext(Dispatchers.IO) {
                     val productoresCia = database.localCiaAgroUnitDao()
                         .getProductoresByCia(idLocalCia)
+                        .sortedBy { it.commercial_name }
 
                     val productorRestaurado = idProductorRestaurar
                         ?.takeIf { id -> id > 0L }
@@ -1404,42 +1474,33 @@ class MainViewModel(
                             }
                         }
 
-                    val programasCia = database.localprogramDao()
-                        .getProgramasByCia(idLocalCia)
+                    val productoresBase = productorRestaurado?.let { productor ->
+                        listOf(productor)
+                    } ?: productoresCia
 
-                    val programasBase = if (productorRestaurado != null) {
-                        programasCia.filter { programa ->
-                            programa.idLocalAgroUnit == productorRestaurado.idLocalAgroUnit
+                    val idsProductores = productoresBase
+                        .map { it.idLocalAgroUnit }
+                        .toSet()
+
+                    val ranchosFiltro = database.localRanchDao()
+                        .getAllRanches()
+                        .filter { rancho ->
+                            rancho.idLocalAgroUnit in idsProductores
                         }
-                    } else {
-                        programasCia
-                    }
+                        .sortedBy { rancho -> rancho.name }
 
-                    val idsRanchos = programasBase
-                        .map { programa -> programa.idLocalRanch }
-                        .distinct()
+                    val idsRanchos = ranchosFiltro
+                        .map { it.idLocalRanch }
+                        .toSet()
 
-                    val idsParcelas = programasBase
-                        .map { programa -> programa.idLocalPlot }
-                        .distinct()
-
-                    val ranchosFiltro = if (idsRanchos.isEmpty()) {
-                        emptyList()
-                    } else {
-                        database.localRanchDao()
-                            .getRanchosByIds(idsRanchos)
-                            .sortedBy { rancho -> rancho.name }
-                    }
-
-                    val parcelasFiltro = if (idsParcelas.isEmpty()) {
-                        emptyList()
-                    } else {
-                        database.localPlotDao()
-                            .getParcelasByIds(idsParcelas)
-                            .sortedBy { parcela ->
-                                parcela.code?.takeIf { it.isNotBlank() } ?: parcela.name
-                            }
-                    }
+                    val parcelasFiltro = database.localPlotDao()
+                        .getAllPlots()
+                        .filter { parcela ->
+                            parcela.idLocalRanch in idsRanchos
+                        }
+                        .sortedBy { parcela ->
+                            parcela.code?.takeIf { it.isNotBlank() } ?: parcela.name
+                        }
 
                     MainCatalogosFiltrosTemp(
                         productores = productoresCia,
@@ -1476,6 +1537,7 @@ class MainViewModel(
             }
         }
     }
+
 
     fun onProductorChange(productor: LocalAgroUnitEntity?) {
         if (productor == null) {
@@ -1524,42 +1586,34 @@ class MainViewModel(
         viewModelScope.launch {
             try {
                 val resultado = withContext(Dispatchers.IO) {
-                    val programasCia = database.localprogramDao()
-                        .getProgramasByCia(cia.idLocalCia)
+                    val productoresCia = database.localCiaAgroUnitDao()
+                        .getProductoresByCia(cia.idLocalCia)
 
-                    val programasBase = if (idProductorEsperado != null) {
-                        programasCia.filter { programa ->
-                            programa.idLocalAgroUnit == idProductorEsperado
+                    val idsProductoresBase = if (idProductorEsperado != null) {
+                        setOf(idProductorEsperado)
+                    } else {
+                        productoresCia.map { it.idLocalAgroUnit }.toSet()
+                    }
+
+                    val ranchosFiltro = database.localRanchDao()
+                        .getAllRanches()
+                        .filter { rancho ->
+                            rancho.idLocalAgroUnit in idsProductoresBase
                         }
-                    } else {
-                        programasCia
-                    }
+                        .sortedBy { it.name }
 
-                    val idsRanchos = programasBase
-                        .map { programa -> programa.idLocalRanch }
-                        .distinct()
+                    val idsRanchos = ranchosFiltro
+                        .map { it.idLocalRanch }
+                        .toSet()
 
-                    val idsParcelas = programasBase
-                        .map { programa -> programa.idLocalPlot }
-                        .distinct()
-
-                    val ranchosFiltro = if (idsRanchos.isEmpty()) {
-                        emptyList()
-                    } else {
-                        database.localRanchDao()
-                            .getRanchosByIds(idsRanchos)
-                            .sortedBy { rancho -> rancho.name }
-                    }
-
-                    val parcelasFiltro = if (idsParcelas.isEmpty()) {
-                        emptyList()
-                    } else {
-                        database.localPlotDao()
-                            .getParcelasByIds(idsParcelas)
-                            .sortedBy { parcela ->
-                                parcela.code?.takeIf { it.isNotBlank() } ?: parcela.name
-                            }
-                    }
+                    val parcelasFiltro = database.localPlotDao()
+                        .getAllPlots()
+                        .filter { parcela ->
+                            parcela.idLocalRanch in idsRanchos
+                        }
+                        .sortedBy { parcela ->
+                            parcela.code?.takeIf { it.isNotBlank() } ?: parcela.name
+                        }
 
                     ranchosFiltro to parcelasFiltro
                 }
@@ -1567,14 +1621,19 @@ class MainViewModel(
                 actualizarEstado { estadoActual ->
                     val productorActual = estadoActual.productorSeleccionado?.idLocalAgroUnit
 
-                    if (estadoActual.ciaSeleccionada?.idLocalCia != cia.idLocalCia ||
+                    if (
+                        estadoActual.ciaSeleccionada?.idLocalCia != cia.idLocalCia ||
                         productorActual != idProductorEsperado
                     ) {
                         estadoActual
                     } else {
                         estadoActual.copy(
                             ranchos = resultado.first,
-                            parcelas = resultado.second
+                            parcelas = resultado.second,
+                            ranchoSeleccionado = null,
+                            parcelaSeleccionada = null,
+                            ciclos = emptyList(),
+                            cicloSeleccionado = null
                         )
                     }
                 }
@@ -2180,7 +2239,7 @@ class MainViewModel(
 
                 val resultado = withContext(Dispatchers.IO) {
                     val ciasPermitidasTecnico = if (sesion.esTecnico) {
-                        database.userLocalParentCiaDao().getCiasHijasByUser(sesion.idUser)
+                        database.userLocalCiaDao().getCiasByUser(sesion.idUser)
                     } else {
                         emptyList()
                     }

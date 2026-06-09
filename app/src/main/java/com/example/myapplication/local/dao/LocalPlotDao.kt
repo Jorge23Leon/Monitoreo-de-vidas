@@ -75,4 +75,18 @@ interface LocalPlotDao {
         WHERE idLocalPlot IN (:ids)
     """)
     suspend fun getParcelasByIds(ids: List<Long>): List<LocalPlotEntity>
+    @Query("SELECT * FROM local_plots WHERE ext_id = :extId LIMIT 1")
+    suspend fun getPlotByExtId(extId: String): LocalPlotEntity?
+
+    @Query("""
+    SELECT *
+    FROM local_plots
+    WHERE idLocalRanch = :idLocalRanch
+      AND code = :code
+    LIMIT 1
+""")
+    suspend fun getPlotByCodeAndRanch(
+        idLocalRanch: Long,
+        code: String
+    ): LocalPlotEntity?
 }

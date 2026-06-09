@@ -345,6 +345,7 @@ fun MainNavegacion(
                 },
                 onCambiarCiaClick = cambiarCiaClick,
 
+
                 onCerrarSesionClick = cerrarSesionClick
             )
         }
@@ -395,6 +396,7 @@ fun MainNavegacion(
                     solicitarAccionMenu(AccionMenuTrabajo.PANEL_ADMIN)
                 },
                 onCambiarCiaClick = cambiarCiaClick,
+
 
                 onCerrarSesionClick = cerrarSesionClick
             )

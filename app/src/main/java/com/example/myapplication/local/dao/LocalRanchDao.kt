@@ -55,4 +55,18 @@ interface LocalRanchDao {
     WHERE idLocalRanch IN (:ids)
 """)
     suspend fun getRanchosByIds(ids: List<Long>): List<LocalRanchEntity>
+    @Query("SELECT * FROM local_ranches WHERE ext_id = :extId LIMIT 1")
+    suspend fun getRanchByExtId(extId: String): LocalRanchEntity?
+
+    @Query("""
+    SELECT *
+    FROM local_ranches
+    WHERE idLocalAgroUnit = :idLocalAgroUnit
+      AND code = :code
+    LIMIT 1
+""")
+    suspend fun getRanchByCodeAndAgroUnit(
+        idLocalAgroUnit: Long,
+        code: String
+    ): LocalRanchEntity?
 }

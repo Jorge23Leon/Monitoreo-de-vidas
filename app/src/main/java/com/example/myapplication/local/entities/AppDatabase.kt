@@ -20,6 +20,7 @@ import com.example.myapplication.local.dao.LocalProgramDao
 import com.example.myapplication.local.dao.LocalRanchDao
 import com.example.myapplication.local.dao.LocalRoleDao
 import com.example.myapplication.local.dao.UserDao
+import com.example.myapplication.local.dao.UserLocalCiaDao
 import com.example.myapplication.local.dao.UserLocalParentCiaDao
 
 @Database(
@@ -41,9 +42,10 @@ import com.example.myapplication.local.dao.UserLocalParentCiaDao
         LocalPhytosanitaryCatalogEntity::class,
         LocalPhytostageEntity::class,
         LocalPhytomonitoringCheckpointEntity::class,
+        UserLocalCiaCrossRef::class,
         LocalCiaAgroUnitCrossRef::class
     ],
-    version = 28,
+    version = 29,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -65,6 +67,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun localphytomonitoringcheckpointDao(): LocalPhytomonitoringCheckpointDao
     abstract fun LocalPhytomonitoringTargetPointDao(): LocalPhytomonitoringTargetPointDao
     abstract fun localCiaAgroUnitDao(): LocalCiaAgroUnitDao
+    abstract fun userLocalCiaDao(): UserLocalCiaDao
 
     companion object {
         @Volatile
