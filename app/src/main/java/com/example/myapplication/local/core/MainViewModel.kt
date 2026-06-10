@@ -40,6 +40,9 @@ import com.example.myapplication.local.api.organizations.OrganizationRepository
 import com.example.myapplication.local.api.organizations.ResultadoCiasApi
 import com.example.myapplication.local.entities.UserLocalParentCiaCrossRef
 import com.example.myapplication.local.entities.UserLocalCiaCrossRef
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 
 
 private data class MainSesionRestauradaTemp(
@@ -104,6 +107,19 @@ class MainViewModel(
 
     private fun actualizarEstado(transform: (MainUiState) -> MainUiState) {
         uiState = transform(uiState)
+    }
+    private fun hayConexionInternet(): Boolean {
+        val context = getApplication<Application>().applicationContext
+
+        val connectivityManager = context.getSystemService(
+            Context.CONNECTIVITY_SERVICE
+        ) as ConnectivityManager
+
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
 
@@ -619,6 +635,9 @@ class MainViewModel(
     ): UserEntity {
         insertarRolesInicialesSiNoExisten()
 
+        val extIdServidor = perfilApi?.id
+            ?.takeIf { it.isNotBlank() }
+
         val usernameServidor = perfilApi?.username
             ?.takeIf { it.isNotBlank() }
             ?: username
@@ -651,13 +670,17 @@ class MainViewModel(
             ?: database.localRoleDao().getRoleByName("SUPER ADMIN")
             ?: throw IllegalStateException("No existe el rol local $nombreRolLocal")
 
-        val usuarioExistente = database.userDao().getUserByUsername(usernameServidor)
+        val usuarioExistente = extIdServidor?.let { extId ->
+            database.userDao().getUserByExtId(extId)
+        }
+            ?: database.userDao().getUserByUsername(usernameServidor)
             ?: database.userDao().getUserByUsername(username)
             ?: database.userDao().getUserByEmail(emailServidor)
 
         if (usuarioExistente != null) {
             database.userDao().updateUser(
                 usuarioExistente.copy(
+                    extId = extIdServidor ?: usuarioExistente.extId,
                     firstName = nombreBase,
                     lastName = lastNameApi,
                     username = usernameServidor,
@@ -673,6 +696,7 @@ class MainViewModel(
 
         val idNuevoUsuario = database.userDao().insertUser(
             UserEntity(
+                extId = extIdServidor,
                 firstName = nombreBase,
                 lastName = lastNameApi,
                 username = usernameServidor,
@@ -691,10 +715,17 @@ class MainViewModel(
     ): String? {
         return when (val resultado = organizationRepository.obtenerCiasPadreEHijas()) {
             is ResultadoCiasApi.Error -> {
+                // No bloqueamos el login si falla la carga de CIAS.
                 resultado.mensaje
             }
 
             is ResultadoCiasApi.Exito -> {
+                val nombreRol = perfilApi.userRole?.name.orEmpty()
+                val nivelRol = perfilApi.userRole?.level ?: 0
+
+                val esSuperAdmin = nivelRol >= 5 ||
+                        normalizarRolParaDb(nombreRol) == "admin"
+
                 val datacentralIdsPermitidos = perfilApi.datacentrals
                     ?.mapNotNull { datacentral ->
                         datacentral.id?.takeIf { it.isNotBlank() }
@@ -702,23 +733,26 @@ class MainViewModel(
                     ?.toSet()
                     .orEmpty()
 
-                if (datacentralIdsPermitidos.isEmpty()) {
-                    return "Este usuario no tiene CIAS hijas asignadas en el servidor"
-                }
-
-                val ciasHijasPermitidas = resultado.ciasHijas.filter { ciaHija ->
-                    ciaHija.extId in datacentralIdsPermitidos
-                }
-
-                if (ciasHijasPermitidas.isEmpty()) {
-                    return "Las CIAS asignadas al usuario no se encontraron en el catálogo local/API"
-                }
-
+                // Primero limpiamos lo anterior para que no se queden CIAS viejas.
                 database.userLocalParentCiaDao()
                     .quitarTodasLasParentCiasDelUsuario(idUserLocal)
 
                 database.userLocalCiaDao()
                     .quitarTodasLasCiasDelUsuario(idUserLocal)
+
+                val ciasHijasPermitidas = if (esSuperAdmin) {
+                    resultado.ciasHijas
+                } else {
+                    resultado.ciasHijas.filter { ciaHija ->
+                        ciaHija.extId in datacentralIdsPermitidos
+                    }
+                }
+
+                // Aquí está la regla nueva:
+                // si no tiene CIAS, NO es error. Se loguea y la lista queda vacía.
+                if (ciasHijasPermitidas.isEmpty()) {
+                    return "Login correcto. No tienes CIAS asignadas."
+                }
 
                 val refsParent = mutableListOf<UserLocalParentCiaCrossRef>()
                 val refsCias = mutableListOf<UserLocalCiaCrossRef>()
@@ -985,14 +1019,10 @@ class MainViewModel(
                                 perfilApi = perfilServidor
                             )
 
-                            val errorCias = sincronizarCiasDesdeApi(
+                            sincronizarCiasDesdeApi(
                                 idUserLocal = usuarioLocal.idUser,
                                 perfilApi = perfilServidor
                             )
-
-                            if (errorCias != null) {
-                                return@withContext MainLoginServidorTemp.Error(errorCias)
-                            }
 
                             val datosLogin = prepararLoginDesdeUsuarioLocal(usuarioLocal)
                                 ?: return@withContext MainLoginServidorTemp.Error(
@@ -1381,6 +1411,28 @@ class MainViewModel(
 
         viewModelScope.launch {
             try {
+                /*
+                 * PRIMERO cargamos lo LOCAL.
+                 * Esto permite ver productores, ranchos y parcelas aunque no haya internet.
+                 */
+                cargarProductores(
+                    idLocalCia = cia.idLocalCia,
+                    idProductorRestaurar = idProductorRestaurar
+                )
+
+                actualizarEstado {
+                    it.copy(cargando = false)
+                }
+
+                if (!hayConexionInternet()) {
+                    mostrarMensaje("Sin internet. Mostrando datos locales guardados.")
+                    return@launch
+                }
+
+                /*
+                 * DESPUÉS intentamos sincronizar.
+                 * Si falla, NO bloquea la pantalla porque lo local ya se cargó.
+                 */
                 val mensajeSync = withContext(Dispatchers.IO) {
                     when (
                         val resultado = agroSyncRepository.sincronizarProductoresRanchosParcelas(
@@ -1392,26 +1444,33 @@ class MainViewModel(
                         }
 
                         is ResultadoAgroSync.Error -> {
-                            resultado.mensaje
+                            "No se pudo sincronizar. Se mantienen los datos locales."
                         }
                     }
                 }
 
+                /*
+                 * Recargamos desde Room por si la sincronización metió datos nuevos.
+                 */
                 cargarProductores(
                     idLocalCia = cia.idLocalCia,
                     idProductorRestaurar = idProductorRestaurar
                 )
 
                 mostrarMensaje(mensajeSync)
+
             } catch (e: Exception) {
                 e.printStackTrace()
 
+                /*
+                 * Aunque algo truene, intentamos volver a cargar Room.
+                 */
                 cargarProductores(
                     idLocalCia = cia.idLocalCia,
                     idProductorRestaurar = idProductorRestaurar
                 )
 
-                mostrarMensaje("No se pudo sincronizar filtros: ${e.message}")
+                mostrarMensaje("Sin conexión o error de servidor. Usando datos locales guardados.")
             } finally {
                 actualizarEstado {
                     it.copy(cargando = false)
