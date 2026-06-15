@@ -124,10 +124,14 @@ internal fun FiltrosPrincipalesCard(
                     SelectorFiltroConTodos(
                         label = "Rancho",
                         selected = ranchoSeleccionado,
-                        allText = "Todos",
+                        allText = if (productorSeleccionado == null) {
+                            "Primero selecciona productor"
+                        } else {
+                            "Todos"
+                        },
                         items = ranchos,
                         itemText = { it.name },
-                        enabled = ranchos.isNotEmpty(),
+                        enabled = productorSeleccionado != null && ranchos.isNotEmpty(),
                         modifier = Modifier.weight(1f),
                         onSelected = { rancho ->
                             onRanchoChange(rancho)
@@ -137,10 +141,14 @@ internal fun FiltrosPrincipalesCard(
                     SelectorFiltroConTodos(
                         label = "Parcela",
                         selected = parcelaSeleccionada,
-                        allText = "Todas",
+                        allText = if (ranchoSeleccionado == null) {
+                            "Primero selecciona rancho"
+                        } else {
+                            "Todas"
+                        },
                         items = parcelas,
                         itemText = { obtenerNombreParcelaFiltro(it) },
-                        enabled = parcelas.isNotEmpty(),
+                        enabled = ranchoSeleccionado != null && parcelas.isNotEmpty(),
                         modifier = Modifier.weight(1f),
                         onSelected = { parcela ->
                             onParcelaChange(parcela)

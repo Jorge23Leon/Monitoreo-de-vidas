@@ -57,9 +57,18 @@ interface LocalPhytomonitoringHeaderDao {
         WHERE idProgram = :idProgram
         ORDER BY est_start_date DESC
     """)
+
     suspend fun getHeadersByProgram(
+
         idProgram: Long
     ): List<LocalPhytomonitoringHeaderEntity>
+    @Query("""
+    SELECT *
+    FROM local_phytomonitoring_headers
+    WHERE ext_id = :extId
+    LIMIT 1
+""")
+    suspend fun getHeaderByExtId(extId: String): LocalPhytomonitoringHeaderEntity?
 
     @Query("""
         SELECT *

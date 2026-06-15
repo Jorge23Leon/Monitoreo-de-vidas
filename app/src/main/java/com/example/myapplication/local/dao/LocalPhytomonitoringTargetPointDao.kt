@@ -25,6 +25,17 @@ interface LocalPhytomonitoringTargetPointDao {
     suspend fun getTargetPointsByPlot(idLocalPlot: Long): List<LocalPhytomonitoringTargetPointEntity>
 
     @Query("""
+    SELECT *
+    FROM local_phytomonitoring_target_points
+    WHERE ext_id = :extId
+    LIMIT 1
+""")
+    suspend fun getTargetPointByExtId(extId: String): LocalPhytomonitoringTargetPointEntity?
+
+    @androidx.room.Update
+    suspend fun updateTargetPoint(targetPoint: LocalPhytomonitoringTargetPointEntity)
+
+    @Query("""
     UPDATE local_phytomonitoring_target_points
     SET status = :status
     WHERE idTargetPoint = :idTargetPoint

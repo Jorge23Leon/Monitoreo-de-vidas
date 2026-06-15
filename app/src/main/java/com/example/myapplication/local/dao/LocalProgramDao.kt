@@ -40,6 +40,13 @@ interface LocalProgramDao {
 
     @Query("SELECT * FROM local_programs WHERE idLocalPlot = :idLocalPlot ORDER BY est_start_date ASC")
     suspend fun getProgramsByPlot(idLocalPlot: Long): List<LocalProgramEntity>
+    @Query("""
+    SELECT *
+    FROM local_programs
+    WHERE ext_id = :extId
+    LIMIT 1
+""")
+    suspend fun getProgramByExtId(extId: String): LocalProgramEntity?
 
     @Query("""
         SELECT * FROM local_programs 

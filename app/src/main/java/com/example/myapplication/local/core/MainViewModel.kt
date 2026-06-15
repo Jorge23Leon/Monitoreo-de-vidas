@@ -43,6 +43,9 @@ import com.example.myapplication.local.entities.UserLocalCiaCrossRef
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import com.example.myapplication.local.api.monitoreosync.MonitoreoSyncRepository
+import com.example.myapplication.local.api.monitoreosync.ResultadoMonitoreoSync
+
 
 
 private data class MainSesionRestauradaTemp(
@@ -96,6 +99,11 @@ class MainViewModel(
         context = application.applicationContext,
         database = database
     )
+    private val monitoreoSyncRepository = MonitoreoSyncRepository(
+        context = application.applicationContext,
+        database = database
+    )
+
 
     var uiState by mutableStateOf(MainUiState())
         private set
@@ -118,13 +126,25 @@ class MainViewModel(
         val network = connectivityManager.activeNetwork ?: return false
         val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
 
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
 
     private fun mostrarMensaje(mensaje: String) {
-        actualizarEstado { it.copy(mensaje = mensaje) }
+        val context = getApplication<Application>().applicationContext
+
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(
+                context,
+                mensaje,
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+
+            actualizarEstado { it.copy(mensaje = mensaje) }
+        }
     }
     private fun obtenerPrefsSesion() =
         getApplication<Application>().getSharedPreferences(
@@ -150,7 +170,6 @@ class MainViewModel(
             .remove("id_parcela")
             .apply()
     }
-
     private fun guardarCiaSesion(
         idParentCia: Long?,
         idLocalCia: Long
@@ -419,7 +438,6 @@ class MainViewModel(
                             idProductorRestaurar = obtenerProductorSesion()
                         )
 
-                        mostrarMensaje("Sesión restaurada: ${sesion.firstName} - CIA: ${resultado.ciaGuardada.nombre}")
                     }
 
                     else -> {
@@ -429,7 +447,6 @@ class MainViewModel(
                             )
                         }
 
-                        mostrarMensaje("Sesión restaurada: ${sesion.firstName}. Selecciona una CIA")
                     }
                 }
 
@@ -1093,7 +1110,6 @@ class MainViewModel(
                         }
 
                         if (sesion.esTecnico || sesion.esInvitado) {
-                            mostrarMensaje("Login API correcto. Cargando tus monitoreos")
                             cargarMonitoreosDirectoPorUsuario(sesion)
                         } else {
                             when {
@@ -1102,11 +1118,9 @@ class MainViewModel(
                                 }
 
                                 resultado.ciaPreferente != null -> {
-                                    mostrarMensaje("Login API correcto. CIA preferente cargada: ${resultado.ciaPreferente.nombre}")
                                 }
 
                                 sesion.esSupervisor -> {
-                                    mostrarMensaje("Login API correcto. Selecciona una CIA hija")
                                 }
 
                                 parentCias.isEmpty() -> {
@@ -1114,7 +1128,6 @@ class MainViewModel(
                                 }
 
                                 else -> {
-                                    mostrarMensaje("Login API correcto - Rol local: ${sesion.roleName}")
                                 }
                             }
                         }
@@ -1411,66 +1424,59 @@ class MainViewModel(
 
         viewModelScope.launch {
             try {
-                /*
-                 * PRIMERO cargamos lo LOCAL.
-                 * Esto permite ver productores, ranchos y parcelas aunque no haya internet.
-                 */
                 cargarProductores(
                     idLocalCia = cia.idLocalCia,
                     idProductorRestaurar = idProductorRestaurar
                 )
 
-                actualizarEstado {
-                    it.copy(cargando = false)
-                }
-
                 if (!hayConexionInternet()) {
-                    mostrarMensaje("Sin internet. Mostrando datos locales guardados.")
+                    mostrarMensaje("Sin internet. Mostrando datos locales.")
+                    cargarMonitoreosPorFiltrosProgresivos()
                     return@launch
                 }
 
-                /*
-                 * DESPUÉS intentamos sincronizar.
-                 * Si falla, NO bloquea la pantalla porque lo local ya se cargó.
-                 */
-                val mensajeSync = withContext(Dispatchers.IO) {
+                val mensajeAgroSync = withContext(Dispatchers.IO) {
                     when (
-                        val resultado = agroSyncRepository.sincronizarProductoresRanchosParcelas(
-                            idLocalCia = cia.idLocalCia
-                        )
+                        val resultado = kotlinx.coroutines.withTimeoutOrNull(15000L) {
+                            agroSyncRepository.sincronizarProductoresRanchosParcelas(
+                                idLocalCia = cia.idLocalCia
+                            )
+                        }
                     ) {
-                        is ResultadoAgroSync.Exito -> {
-                            "Datos sincronizados: ${resultado.productores} productores, ${resultado.ranchos} ranchos, ${resultado.parcelas} parcelas"
-                        }
-
-                        is ResultadoAgroSync.Error -> {
-                            "No se pudo sincronizar. Se mantienen los datos locales."
-                        }
+                        null -> "La actualización de productores/ranchos/parcelas tardó demasiado"
+                        is ResultadoAgroSync.Exito -> null
+                        is ResultadoAgroSync.Error -> resultado.mensaje
                     }
                 }
 
-                /*
-                 * Recargamos desde Room por si la sincronización metió datos nuevos.
-                 */
+                val mensajeMonitoreoSync = withContext(Dispatchers.IO) {
+                    when (
+                        val resultado = kotlinx.coroutines.withTimeoutOrNull(15000L) {
+                            monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
+                                idLocalCia = cia.idLocalCia
+                            )
+                        }
+                    ) {
+                        null -> "La actualización de monitoreos tardó demasiado"
+                        is ResultadoMonitoreoSync.Exito -> null
+                        is ResultadoMonitoreoSync.Error -> resultado.mensaje
+                    }
+                }
+
                 cargarProductores(
                     idLocalCia = cia.idLocalCia,
                     idProductorRestaurar = idProductorRestaurar
                 )
 
-                mostrarMensaje(mensajeSync)
+                cargarMonitoreosPorFiltrosProgresivos()
+
+                val mensajeError = mensajeAgroSync ?: mensajeMonitoreoSync
+                if (mensajeError != null) {
+                    mostrarMensaje("No se pudieron actualizar todos los datos: $mensajeError")
+                }
 
             } catch (e: Exception) {
-                e.printStackTrace()
-
-                /*
-                 * Aunque algo truene, intentamos volver a cargar Room.
-                 */
-                cargarProductores(
-                    idLocalCia = cia.idLocalCia,
-                    idProductorRestaurar = idProductorRestaurar
-                )
-
-                mostrarMensaje("Sin conexión o error de servidor. Usando datos locales guardados.")
+                mostrarMensaje("No se pudieron cargar los datos: ${e.message ?: "detalle no disponible"}")
             } finally {
                 actualizarEstado {
                     it.copy(cargando = false)
@@ -1479,41 +1485,34 @@ class MainViewModel(
         }
     }
     fun seleccionarCiaActual() {
-        val estado = uiState
-        val cia = estado.ciaSeleccionada
+        try {
+            val estado = uiState
+            val cia = estado.ciaSeleccionada
 
-        if (cia == null) {
-            mostrarMensaje("Este usuario no tiene CIAS hijas asignadas")
-            return
-        }
+            if (cia == null) {
+                mostrarMensaje("Este usuario no tiene CIAS hijas asignadas")
+                return
+            }
 
-        if (estado.seleccionarPreferente) {
-            guardarCiaPreferente(
-                idUser = estado.idUsuarioActual,
+            if (estado.seleccionarPreferente) {
+                guardarCiaPreferente(
+                    idUser = estado.idUsuarioActual,
+                    idLocalCia = cia.idLocalCia
+                )
+            }
+
+            guardarCiaSesion(
+                idParentCia = estado.parentCiaSeleccionada?.idParentCia,
                 idLocalCia = cia.idLocalCia
             )
+
+            abrirFiltrosMonitoreoConCia(cia)
+        } catch (t: Throwable) {
+            mostrarMensaje(
+                "No se pudo seleccionar la CIA: ${t.message ?: "detalle no disponible"}"
+            )
         }
-
-        /*
-         * Guardamos siempre la CIA seleccionada para restaurarla
-         * después si el usuario no cierra sesión.
-         */
-        guardarCiaSesion(
-            idParentCia = estado.parentCiaSeleccionada?.idParentCia,
-            idLocalCia = cia.idLocalCia
-        )
-
-        abrirFiltrosMonitoreoConCia(cia)
-
-        val extraPreferente = if (estado.seleccionarPreferente) {
-            " como preferente"
-        } else {
-            ""
-        }
-
-        mostrarMensaje("CIA seleccionada$extraPreferente: ${cia.nombre}")
     }
-
     fun cargarProductores(
         idLocalCia: Long,
         idProductorRestaurar: Long? = null
@@ -1533,39 +1532,22 @@ class MainViewModel(
                             }
                         }
 
-                    val productoresBase = productorRestaurado?.let { productor ->
-                        listOf(productor)
-                    } ?: productoresCia
-
-                    val idsProductores = productoresBase
-                        .map { it.idLocalAgroUnit }
-                        .toSet()
-
-                    val ranchosFiltro = database.localRanchDao()
-                        .getAllRanches()
-                        .filter { rancho ->
-                            rancho.idLocalAgroUnit in idsProductores
-                        }
-                        .sortedBy { rancho -> rancho.name }
-
-                    val idsRanchos = ranchosFiltro
-                        .map { it.idLocalRanch }
-                        .toSet()
-
-                    val parcelasFiltro = database.localPlotDao()
-                        .getAllPlots()
-                        .filter { parcela ->
-                            parcela.idLocalRanch in idsRanchos
-                        }
-                        .sortedBy { parcela ->
-                            parcela.code?.takeIf { it.isNotBlank() } ?: parcela.name
-                        }
+                    val ranchosFiltro = if (productorRestaurado != null) {
+                        database.localRanchDao()
+                            .getAllRanches()
+                            .filter { rancho ->
+                                rancho.idLocalAgroUnit == productorRestaurado.idLocalAgroUnit
+                            }
+                            .sortedBy { rancho -> rancho.name }
+                    } else {
+                        emptyList()
+                    }
 
                     MainCatalogosFiltrosTemp(
                         productores = productoresCia,
                         productorRestaurado = productorRestaurado,
                         ranchos = ranchosFiltro,
-                        parcelas = parcelasFiltro
+                        parcelas = emptyList()
                     )
                 }
 
@@ -1577,7 +1559,7 @@ class MainViewModel(
                         ranchos = resultado.ranchos,
                         ranchoSeleccionado = null,
 
-                        parcelas = resultado.parcelas,
+                        parcelas = emptyList(),
                         parcelaSeleccionada = null,
 
                         ciclos = emptyList(),
@@ -1610,14 +1592,18 @@ class MainViewModel(
             actualizarEstado {
                 it.copy(
                     productorSeleccionado = null,
+
+                    ranchos = emptyList(),
                     ranchoSeleccionado = null,
+
+                    parcelas = emptyList(),
                     parcelaSeleccionada = null,
+
                     cicloSeleccionado = null,
                     ciclos = emptyList()
                 )
             }
 
-            cargarRanchosYParcelasParaFiltros(productor = null)
             cargarMonitoreosPorFiltrosProgresivos()
             return
         }
@@ -1627,14 +1613,19 @@ class MainViewModel(
         actualizarEstado {
             it.copy(
                 productorSeleccionado = productor,
+
+                ranchos = emptyList(),
                 ranchoSeleccionado = null,
+
+                parcelas = emptyList(),
                 parcelaSeleccionada = null,
+
                 cicloSeleccionado = null,
                 ciclos = emptyList()
             )
         }
 
-        cargarRanchosYParcelasParaFiltros(productor = productor)
+        cargarRanchos(productor.idLocalAgroUnit)
         cargarMonitoreosPorFiltrosProgresivos()
     }
 
@@ -1731,23 +1722,36 @@ class MainViewModel(
             }
         }
     }
-
     fun onRanchoChange(rancho: LocalRanchEntity?) {
-        guardarRanchoSesion(rancho?.idLocalRanch)
+        val productorActual = uiState.productorSeleccionado
 
-        if (rancho == null) {
-            val productorActual = uiState.productorSeleccionado
-
+        if (productorActual == null) {
+            mostrarMensaje("Primero selecciona un productor")
             actualizarEstado {
                 it.copy(
                     ranchoSeleccionado = null,
+                    parcelas = emptyList(),
+                    parcelaSeleccionada = null,
+                    ciclos = emptyList(),
+                    cicloSeleccionado = null
+                )
+            }
+            return
+        }
+
+        guardarRanchoSesion(rancho?.idLocalRanch)
+
+        if (rancho == null) {
+            actualizarEstado {
+                it.copy(
+                    ranchoSeleccionado = null,
+                    parcelas = emptyList(),
                     parcelaSeleccionada = null,
                     cicloSeleccionado = null,
                     ciclos = emptyList()
                 )
             }
 
-            cargarRanchosYParcelasParaFiltros(productor = productorActual)
             cargarMonitoreosPorFiltrosProgresivos()
             return
         }
@@ -1755,9 +1759,9 @@ class MainViewModel(
         actualizarEstado {
             it.copy(
                 ranchoSeleccionado = rancho,
+                parcelas = emptyList(),
                 parcelaSeleccionada = null,
                 cicloSeleccionado = null,
-                parcelas = emptyList(),
                 ciclos = emptyList()
             )
         }
@@ -1809,9 +1813,34 @@ class MainViewModel(
     }
 
     fun onParcelaChange(parcela: LocalPlotEntity?) {
-        guardarParcelaSesion(parcela?.idLocalPlot)
-
         val productor = uiState.productorSeleccionado
+        val rancho = uiState.ranchoSeleccionado
+
+        if (productor == null) {
+            mostrarMensaje("Primero selecciona un productor")
+            actualizarEstado {
+                it.copy(
+                    parcelaSeleccionada = null,
+                    ciclos = emptyList(),
+                    cicloSeleccionado = null
+                )
+            }
+            return
+        }
+
+        if (rancho == null) {
+            mostrarMensaje("Primero selecciona un rancho")
+            actualizarEstado {
+                it.copy(
+                    parcelaSeleccionada = null,
+                    ciclos = emptyList(),
+                    cicloSeleccionado = null
+                )
+            }
+            return
+        }
+
+        guardarParcelaSesion(parcela?.idLocalPlot)
 
         if (parcela == null) {
             actualizarEstado {
@@ -1821,6 +1850,7 @@ class MainViewModel(
                     ciclos = emptyList()
                 )
             }
+
             cargarMonitoreosPorFiltrosProgresivos()
             return
         }
@@ -1833,12 +1863,10 @@ class MainViewModel(
             )
         }
 
-        if (productor != null) {
-            cargarCiclos(
-                idProductor = productor.idLocalAgroUnit,
-                idPlot = parcela.idLocalPlot
-            )
-        }
+        cargarCiclos(
+            idProductor = productor.idLocalAgroUnit,
+            idPlot = parcela.idLocalPlot
+        )
 
         cargarMonitoreosPorFiltrosProgresivos()
     }
