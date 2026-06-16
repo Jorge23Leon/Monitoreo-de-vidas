@@ -41,6 +41,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.example.myapplication.local.api.phytomonitoring.PhytoMonitoringRepository
+import com.example.myapplication.local.api.phytomonitoring.ResultadoActualizarHeaderApi
 import com.example.myapplication.local.common.EncabezadoApp
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.LocalPhytomonitoringCheckpointEntity
@@ -52,6 +54,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 @Composable
 fun MonitoreoMapaScreen(
@@ -71,6 +77,10 @@ fun MonitoreoMapaScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+
+    val phytoRepository = remember(context) {
+        PhytoMonitoringRepository(context)
+    }
 
     val onPuntoValidoActual by rememberUpdatedState(onPuntoValidoClick)
     val onMonitoreoActualizadoActual by rememberUpdatedState(onMonitoreoActualizado)
@@ -140,6 +150,84 @@ fun MonitoreoMapaScreen(
         )
     }
 
+    fun fechaIsoApi(ms: Long?): String? {
+        if (ms == null) return null
+
+        return try {
+            val sdf = SimpleDateFormat(
+                "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+                Locale.US
+            )
+            sdf.timeZone = TimeZone.getTimeZone("UTC")
+            sdf.format(Date(ms))
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    suspend fun actualizarHeaderEnServidorSilencioso(
+        headerLocal: LocalPhytomonitoringHeaderEntity,
+        statusApi: String,
+        startedAt: Long? = null,
+        finishedAt: Long? = null,
+        additionalNotes: String? = null
+    ) {
+        val extId = headerLocal.extId
+            ?.takeIf { it.isNotBlank() }
+            ?: return
+
+        when (
+            val resultado = phytoRepository.actualizarHeaderServidor(
+                idHeaderExt = extId,
+                status = statusApi,
+                startedAt = fechaIsoApi(startedAt),
+                finishedAt = fechaIsoApi(finishedAt),
+                additionalNotes = additionalNotes
+            )
+        ) {
+            is ResultadoActualizarHeaderApi.Exito -> Unit
+
+            is ResultadoActualizarHeaderApi.Error -> {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        context,
+                        "Estado local guardado, pero no se pudo actualizar servidor: ${resultado.mensaje}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
+    suspend fun actualizarHeaderLocalYServidor(
+        headerBase: LocalPhytomonitoringHeaderEntity,
+        statusLocal: String,
+        statusApi: String,
+        startAt: Long?,
+        finishedAt: Long?,
+        additionalNotes: String?
+    ): LocalPhytomonitoringHeaderEntity {
+        val nuevoHeader = headerBase.copy(
+            status = statusLocal,
+            startAt = startAt,
+            finishedAt = finishedAt,
+            additionalNotes = additionalNotes.orEmpty()
+        )
+
+        database.localphytomonitoringheaderDao()
+            .updateHeader(nuevoHeader)
+
+        actualizarHeaderEnServidorSilencioso(
+            headerLocal = nuevoHeader,
+            statusApi = statusApi,
+            startedAt = nuevoHeader.startAt,
+            finishedAt = nuevoHeader.finishedAt,
+            additionalNotes = nuevoHeader.additionalNotes
+        )
+
+        return nuevoHeader
+    }
+
     val permisoUbicacionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -168,11 +256,17 @@ fun MonitoreoMapaScreen(
                 val estaCerrado = esEstadoCerradoMapa(headerFresco.status)
 
                 if (!estaPausado && !estaCerrado) {
-                    database.localphytomonitoringheaderDao()
-                        .iniciarMonitoreoSiEstaPendiente(
-                            idHeader = headerFresco.idHeader,
-                            now = System.currentTimeMillis()
-                        )
+                    val ahora = System.currentTimeMillis()
+                    val inicioReal = headerFresco.startAt ?: ahora
+
+                    actualizarHeaderLocalYServidor(
+                        headerBase = headerFresco,
+                        statusLocal = "in_progress",
+                        statusApi = "in_progress",
+                        startAt = inicioReal,
+                        finishedAt = null,
+                        additionalNotes = headerFresco.additionalNotes
+                    )
                 }
 
                 val headerFinal = database.localphytomonitoringheaderDao()
@@ -216,17 +310,14 @@ fun MonitoreoMapaScreen(
 
                     val inicioReal = fresco.startAt ?: System.currentTimeMillis()
 
-                    val nuevoHeader = fresco.copy(
-                        status = "Pendiente",
+                    actualizarHeaderLocalYServidor(
+                        headerBase = fresco,
+                        statusLocal = "in_progress",
+                        statusApi = "in_progress",
                         startAt = inicioReal,
                         finishedAt = null,
                         additionalNotes = "PAUSADO"
                     )
-
-                    database.localphytomonitoringheaderDao()
-                        .updateHeader(nuevoHeader)
-
-                    nuevoHeader
                 }
 
                 headerActual = actualizado
@@ -238,7 +329,7 @@ fun MonitoreoMapaScreen(
                     Toast.LENGTH_SHORT
                 ).show()
 
-                onMonitoreoActualizadoActual("Pausado")
+                onMonitoreoActualizadoActual("in_progress")
             } catch (e: Exception) {
                 Toast.makeText(
                     context,
@@ -262,20 +353,20 @@ fun MonitoreoMapaScreen(
                     val fresco = database.localphytomonitoringheaderDao()
                         .getHeaderById(headerActual.idHeader) ?: headerActual
 
-                    val nuevoHeader = fresco.copy(
-                        status = "En proceso",
-                        startAt = fresco.startAt ?: System.currentTimeMillis(),
+                    val inicioReal = fresco.startAt ?: System.currentTimeMillis()
+
+                    actualizarHeaderLocalYServidor(
+                        headerBase = fresco,
+                        statusLocal = "in_progress",
+                        statusApi = "in_progress",
+                        startAt = inicioReal,
                         finishedAt = null,
                         additionalNotes = ""
                     )
-
-                    database.localphytomonitoringheaderDao()
-                        .updateHeader(nuevoHeader)
-
-                    nuevoHeader
                 }
 
                 headerActual = actualizado
+                accionDialogoMapa = null
 
                 Toast.makeText(
                     context,
@@ -305,19 +396,21 @@ fun MonitoreoMapaScreen(
             try {
                 val terminadoMs = System.currentTimeMillis()
 
-                withContext(Dispatchers.IO) {
-                    database.localphytomonitoringheaderDao()
-                        .finalizarMonitoreo(
-                            idHeader = headerActual.idHeader,
-                            finishedAt = terminadoMs
-                        )
+                val actualizado = withContext(Dispatchers.IO) {
+                    val fresco = database.localphytomonitoringheaderDao()
+                        .getHeaderById(headerActual.idHeader) ?: headerActual
+
+                    actualizarHeaderLocalYServidor(
+                        headerBase = fresco,
+                        statusLocal = "completed",
+                        statusApi = "completed",
+                        startAt = fresco.startAt,
+                        finishedAt = terminadoMs,
+                        additionalNotes = fresco.additionalNotes
+                    )
                 }
 
-                headerActual = headerActual.copy(
-                    status = "Completado",
-                    finishedAt = terminadoMs
-                )
-
+                headerActual = actualizado
                 accionDialogoMapa = null
 
                 Toast.makeText(
@@ -326,7 +419,7 @@ fun MonitoreoMapaScreen(
                     Toast.LENGTH_SHORT
                 ).show()
 
-                onMonitoreoActualizadoActual("Completado")
+                onMonitoreoActualizadoActual("completed")
             } catch (e: Exception) {
                 Toast.makeText(
                     context,
@@ -371,16 +464,14 @@ fun MonitoreoMapaScreen(
                             else -> "$notaAnterior\n$notaAutomatica"
                         }
 
-                        val nuevoHeader = fresco.copy(
-                            status = "Completado",
+                        actualizarHeaderLocalYServidor(
+                            headerBase = fresco,
+                            statusLocal = "completed",
+                            statusApi = "completed",
+                            startAt = fresco.startAt,
                             finishedAt = cierreMs,
                             additionalNotes = notaFinal
                         )
-
-                        database.localphytomonitoringheaderDao()
-                            .updateHeader(nuevoHeader)
-
-                        nuevoHeader
                     }
                 }
 
@@ -395,7 +486,7 @@ fun MonitoreoMapaScreen(
                         Toast.LENGTH_LONG
                     ).show()
 
-                    onMonitoreoActualizadoActual("Completado")
+                    onMonitoreoActualizadoActual("completed")
                 }
             } catch (e: Exception) {
                 Toast.makeText(
@@ -486,11 +577,27 @@ fun MonitoreoMapaScreen(
                         throw IllegalStateException("El monitoreo ya está cerrado")
                     }
 
-                    database.localphytomonitoringheaderDao()
-                        .iniciarMonitoreoSiEstaPendiente(
-                            idHeader = fresco.idHeader,
-                            now = System.currentTimeMillis()
-                        )
+                    val ahora = System.currentTimeMillis()
+                    val inicioReal = fresco.startAt ?: ahora
+
+                    val notasFinales = if (
+                        fresco.additionalNotes.equals("PAUSADO", ignoreCase = true)
+                    ) {
+                        ""
+                    } else {
+                        fresco.additionalNotes
+                    }
+
+                    val nuevoHeader = actualizarHeaderLocalYServidor(
+                        headerBase = fresco,
+                        statusLocal = "in_progress",
+                        statusApi = "in_progress",
+                        startAt = inicioReal,
+                        finishedAt = null,
+                        additionalNotes = notasFinales
+                    )
+
+                    headerActual = nuevoHeader
 
                     database.LocalPhytomonitoringTargetPointDao()
                         .insertTargetPoint(
@@ -499,7 +606,7 @@ fun MonitoreoMapaScreen(
                                 radiusM = 5,
                                 lat = puntoSeleccionado.first,
                                 lon = puntoSeleccionado.second,
-                                status = "En proceso",
+                                status = "in_progress",
                                 idHeader = fresco.idHeader,
                                 idLocalPlot = fresco.idLocalPlot
                             )
@@ -733,7 +840,12 @@ fun MonitoreoMapaScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
-                            .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 8.dp),
+                            .padding(
+                                start = 12.dp,
+                                end = 12.dp,
+                                top = 6.dp,
+                                bottom = 8.dp
+                            ),
                         shape = RoundedCornerShape(22.dp),
                         colors = CardDefaults.cardColors(containerColor = Color.White),
                         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
@@ -744,8 +856,7 @@ fun MonitoreoMapaScreen(
                                 .background(Color.White)
                         ) {
                             MapaMonitoreoWebViewSeguro(
-                                modifier = Modifier
-                                    .fillMaxSize(),
+                                modifier = Modifier.fillMaxSize(),
                                 htmlMapa = htmlMapa,
                                 ubicacionUsuario = ubicacionUsuario,
                                 puntoLibreSeleccionado = puntoLibreSeleccionado,

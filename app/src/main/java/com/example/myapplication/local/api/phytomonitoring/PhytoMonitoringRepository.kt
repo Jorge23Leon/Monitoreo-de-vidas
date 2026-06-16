@@ -28,7 +28,9 @@ class PhytoMonitoringRepository(
                 }
 
                 val body = response.body()
-                    ?: return ResultadoPhytoHeadersApi.Error("El servidor respondió vacío en headers fitosanitarios")
+                    ?: return ResultadoPhytoHeadersApi.Error(
+                        "El servidor respondió vacío en headers fitosanitarios"
+                    )
 
                 todos.addAll(body.results)
 
@@ -63,7 +65,9 @@ class PhytoMonitoringRepository(
                 }
 
                 val body = response.body()
-                    ?: return ResultadoPhytoTargetPointsApi.Error("El servidor respondió vacío en puntos objetivo")
+                    ?: return ResultadoPhytoTargetPointsApi.Error(
+                        "El servidor respondió vacío en puntos objetivo"
+                    )
 
                 todos.addAll(body.results)
 
@@ -81,6 +85,54 @@ class PhytoMonitoringRepository(
             )
         }
     }
+
+    suspend fun actualizarHeaderServidor(
+        idHeaderExt: String,
+        status: String? = null,
+        startedAt: String? = null,
+        finishedAt: String? = null,
+        additionalNotes: String? = null
+    ): ResultadoActualizarHeaderApi {
+        return try {
+            val response = api.actualizarHeader(
+                id = idHeaderExt,
+                body = PhytoHeaderPatchRequest(
+                    status = status,
+                    startedAt = startedAt,
+                    finishedAt = finishedAt,
+                    additionalNotes = additionalNotes
+                )
+            )
+
+            if (!response.isSuccessful) {
+                val error = response.errorBody()?.string()
+                return ResultadoActualizarHeaderApi.Error(
+                    "Error actualizando header: ${response.code()} ${error ?: response.message()}"
+                )
+            }
+
+            val body = response.body()
+                ?: return ResultadoActualizarHeaderApi.Error(
+                    "Servidor respondió vacío al actualizar header"
+                )
+
+            ResultadoActualizarHeaderApi.Exito(body)
+        } catch (e: Exception) {
+            ResultadoActualizarHeaderApi.Error(
+                "No se pudo actualizar header en servidor: ${e.message}"
+            )
+        }
+    }
+}
+
+sealed class ResultadoActualizarHeaderApi {
+    data class Exito(
+        val header: PhytoHeaderApiItem
+    ) : ResultadoActualizarHeaderApi()
+
+    data class Error(
+        val mensaje: String
+    ) : ResultadoActualizarHeaderApi()
 }
 
 sealed class ResultadoPhytoHeadersApi {

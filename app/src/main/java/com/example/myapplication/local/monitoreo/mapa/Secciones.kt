@@ -52,7 +52,11 @@ internal fun esMonitoreoPausadoMapa(
 ): Boolean {
     val estado = status.trim().lowercase(Locale.getDefault())
 
-    return (estado == "pendiente" || estado == "pending") &&
+    val estadoValidoParaPausa = estado == "in_progress" ||
+            estado == "en proceso" ||
+            estado == "vigente"
+
+    return estadoValidoParaPausa &&
             additionalNotes.trim().startsWith("PAUSADO", ignoreCase = true)
 }
 

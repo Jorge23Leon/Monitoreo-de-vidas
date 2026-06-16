@@ -92,24 +92,24 @@ private fun EtapaRowModerna(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(62.dp)
+            .height(76.dp)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         ImageUriBox(
             photo = etapa.photo,
             fallbackIcon = iconoEtapaRegistro(nombreEtapa),
-            sizeDp = 42,
+            sizeDp = 56,
             modifier = Modifier
-                .size(42.dp)
+                .size(56.dp)
                 .clip(CircleShape)
                 .background(colorIconoEtapaRegistro(nombreEtapa))
         )
 
         Text(
             text = nombreEtapa,
-            fontSize = 18.sp,
+            fontSize = 20.sp,
             color = Color(0xFF1D2430),
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.weight(1f)

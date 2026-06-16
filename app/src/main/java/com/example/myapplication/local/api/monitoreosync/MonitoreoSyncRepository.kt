@@ -23,12 +23,18 @@ import java.util.TimeZone
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import com.example.myapplication.local.entities.LocalCiaAgroUnitCrossRef
+import com.example.myapplication.local.api.agrocatalogs.ResultadoCatalogoFitoSync
+import com.example.myapplication.local.api.core.ApiConfig
+import com.google.gson.JsonElement
 
 class MonitoreoSyncRepository(
     context: Context,
     private val database: AppDatabase
 ) {
-    private val agroCatalogsRepository = AgroCatalogsRepository(context)
+    private val agroCatalogsRepository = AgroCatalogsRepository(
+        context = context,
+        database = database
+    )
     private val fieldOpsRepository = FieldOpsRepository(context)
     private val phytoMonitoringRepository = PhytoMonitoringRepository(context)
 
@@ -60,6 +66,19 @@ class MonitoreoSyncRepository(
                 } catch (_: Exception) {
                 }
             }
+            val resultadoCatalogoFito = kotlinx.coroutines.withTimeoutOrNull(10000L) {
+                agroCatalogsRepository.sincronizarCatalogoFitosanitario()
+            } ?: return ResultadoMonitoreoSync.Error(
+                "Timeout catálogo fitosanitario: /api/v1/agro-catalogs/phytosanitary/ tardó más de 10 segundos"
+            )
+
+            when (resultadoCatalogoFito) {
+                is ResultadoCatalogoFitoSync.Exito -> Unit
+                is ResultadoCatalogoFitoSync.Error -> return ResultadoMonitoreoSync.Error(
+                    resultadoCatalogoFito.mensaje
+                )
+            }
+
 
             val ciaExtId = idLocalCia
                 ?.let { id -> database.localCiaDao().getCiaById(id) }
@@ -155,6 +174,8 @@ class MonitoreoSyncRepository(
             ?: cultivoApi.code
             ?: "Cultivo $extId"
 
+        val fotoCultivo = obtenerFotoCultivo(cultivoApi)
+
         val existente = database.localCropCatalogDao()
             .getCropByExtId(extId)
 
@@ -166,7 +187,7 @@ class MonitoreoSyncRepository(
                     variedad = cultivoApi.variety,
                     code = cultivoApi.code,
                     description = cultivoApi.description,
-                    photo = cultivoApi.photo
+                    photo = fotoCultivo
                 )
             )
 
@@ -179,9 +200,104 @@ class MonitoreoSyncRepository(
                     variedad = cultivoApi.variety,
                     code = cultivoApi.code,
                     description = cultivoApi.description,
-                    photo = cultivoApi.photo
+                    photo = fotoCultivo
                 )
             )
+        }
+    }
+    private fun obtenerFotoCultivo(
+        cultivoApi: AgroCropApiItem
+    ): String? {
+        return normalizarUrlImagen(
+            cultivoApi.photo
+                ?: buscarUrlEnJson(cultivoApi.attachmentsUrl)
+                ?: buscarUrlEnJson(cultivoApi.additionalParams)
+        )
+    }
+
+    private fun buscarUrlEnJson(element: JsonElement?): String? {
+        if (element == null || element.isJsonNull) return null
+
+        return when {
+            element.isJsonPrimitive -> {
+                val text = runCatching { element.asString }.getOrNull()
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+
+                if (pareceImagen(text)) text else null
+            }
+
+            element.isJsonArray -> {
+                element.asJsonArray.firstNotNullOfOrNull { child ->
+                    buscarUrlEnJson(child)
+                }
+            }
+
+            element.isJsonObject -> {
+                val obj = element.asJsonObject
+
+                val campos = listOf(
+                    "url",
+                    "file",
+                    "image",
+                    "photo",
+                    "path",
+                    "href",
+                    "attachment_url",
+                    "image_url",
+                    "photo_url"
+                )
+
+                campos.firstNotNullOfOrNull { key ->
+                    val value = if (obj.has(key) && !obj.get(key).isJsonNull) obj.get(key) else null
+                    buscarUrlEnJson(value)
+                } ?: obj.entrySet().firstNotNullOfOrNull { entry ->
+                    buscarUrlEnJson(entry.value)
+                }
+            }
+
+            else -> null
+        }
+    }
+
+    private fun pareceImagen(value: String?): Boolean {
+        if (value.isNullOrBlank()) return false
+
+        val text = value.lowercase(Locale.getDefault())
+
+        return text.startsWith("http://") ||
+                text.startsWith("https://") ||
+                text.startsWith("/media/") ||
+                text.startsWith("media/") ||
+                text.endsWith(".jpg") ||
+                text.endsWith(".jpeg") ||
+                text.endsWith(".png") ||
+                text.endsWith(".webp")
+    }
+
+    private fun normalizarUrlImagen(value: String?): String? {
+        val clean = value
+            ?.trim()
+            ?.trim('"')
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+
+        val base = ApiConfig.BASE_URL.trimEnd('/')
+
+        return when {
+            clean.startsWith("http://localhost:8500") ->
+                clean.replace("http://localhost:8500", base)
+
+            clean.startsWith("http://127.0.0.1:8500") ->
+                clean.replace("http://127.0.0.1:8500", base)
+
+            clean.startsWith("/") ->
+                "$base$clean"
+
+            clean.startsWith("media/") ->
+                "$base/$clean"
+
+            else -> clean
         }
     }
 

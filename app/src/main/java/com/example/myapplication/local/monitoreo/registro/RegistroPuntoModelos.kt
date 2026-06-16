@@ -85,3 +85,65 @@ internal fun colorIconoEtapaRegistro(stage: String): Color {
         else -> Color(0xFFEDEDED)
     }
 }
+internal fun ordenarEtapasParaRegistro(
+    etapas: List<LocalPhytostageEntity>,
+    tipoFito: String?
+): List<LocalPhytostageEntity> {
+    return if (esEnfermedadRegistro(tipoFito)) {
+        etapas.sortedBy { etapa ->
+            val nombre = etapa.stage.trim().lowercase()
+
+            when {
+                nombre.contains("avanz") -> 0
+                nombre.contains("inicio") -> 1
+                nombre.contains("desarrollo") -> 2
+                nombre.contains("terminal") -> 3
+                else -> 99
+            }
+        }
+    } else {
+        etapas.sortedBy { etapa ->
+            val nombre = etapa.stage.trim().lowercase()
+
+            when {
+                nombre == "adulto" -> 0
+                nombre.contains("adulto") && !nombre.contains("alas") -> 0
+                nombre.contains("adulto") && nombre.contains("alas") -> 1
+                nombre.contains("huev") -> 2
+                nombre.contains("larva") || nombre.contains("joven") -> 3
+                nombre.contains("pupa") -> 4
+                else -> 99
+            }
+        }
+    }
+}
+
+internal fun fotoRepresentativaFitoRegistro(
+    fito: LocalPhytosanitaryCatalogEntity,
+    etapas: List<LocalPhytostageEntity>
+): String? {
+    if (etapas.isEmpty()) return fito.photo
+
+    val esEnfermedad = esEnfermedadRegistro(fito.type)
+
+    val fotoPreferida = if (esEnfermedad) {
+        etapas.firstOrNull { etapa ->
+            val nombre = etapa.stage.trim().lowercase()
+            nombre.contains("avanz")
+        }?.photo
+    } else {
+        etapas.firstOrNull { etapa ->
+            val nombre = etapa.stage.trim().lowercase()
+            nombre.contains("adulto") && !nombre.contains("alas")
+        }?.photo
+            ?: etapas.firstOrNull { etapa ->
+                val nombre = etapa.stage.trim().lowercase()
+                nombre.contains("adulto")
+            }?.photo
+    }
+
+    return fotoPreferida
+        ?.takeIf { it.isNotBlank() }
+        ?: etapas.firstOrNull { !it.photo.isNullOrBlank() }?.photo
+        ?: fito.photo
+}

@@ -2605,22 +2605,6 @@ class MainViewModel(
                     return@launch
                 }
 
-                if (esEstadoCerradoVm(headerActualizado.status)) {
-                    mandarAReportePorMonitoreoCerrado(
-                        header = headerActualizado,
-                        mensaje = "Este monitoreo ya está cerrado. Solo puedes ver el reporte."
-                    )
-                    return@launch
-                }
-
-                if (sesion.esGerente || sesion.esSupervisor) {
-                    mandarAReportePorMonitoreoCerrado(
-                        header = headerActualizado,
-                        mensaje = "Tu rol solo puede consultar la información del monitoreo."
-                    )
-                    return@launch
-                }
-
                 actualizarEstado {
                     it.copy(
                         monitoreoSeleccionadoParaMapa = headerActualizado,
@@ -2660,22 +2644,18 @@ class MainViewModel(
             try {
                 actualizarEstado { it.copy(cargando = true) }
 
-
                 val headerActualizado = obtenerHeaderFrescoSeguro(headerActual)
                 actualizarHeaderEnLista(headerActualizado)
+
+                if (esEstadoCanceladoVm(headerActualizado.status)) {
+                    mostrarMensaje("Este monitoreo está cancelado. No se pueden registrar puntos.")
+                    return@launch
+                }
 
                 if (esEstadoCerradoVm(headerActualizado.status)) {
                     mandarAReportePorMonitoreoCerrado(
                         header = headerActualizado,
                         mensaje = "Este monitoreo ya está cerrado. No se pueden registrar más puntos."
-                    )
-                    return@launch
-                }
-
-                if (sesion.esGerente || sesion.esSupervisor) {
-                    mandarAReportePorMonitoreoCerrado(
-                        header = headerActualizado,
-                        mensaje = "Tu rol solo puede consultar monitoreos."
                     )
                     return@launch
                 }

@@ -308,7 +308,8 @@ class AgroSyncRepository(
                     "nombre",
                     "plot_name",
                     "plotName"
-                ) ?: "Parcela"
+                ) ?: item.stringOrNull("code", "codigo", "slug")
+                ?: "Parcela"
 
                 val code = item.stringOrNull(
                     "code",
@@ -316,8 +317,13 @@ class AgroSyncRepository(
                     "slug"
                 ) ?: crearSlug(nombre)
 
+                val centroide = centroideSimpleDesdeGeometry(item)
+
                 val lat = item.doubleOrNull("lat", "latitude")
+                    ?: centroide?.first
+
                 val lon = item.doubleOrNull("lon", "lng", "longitude")
+                    ?: centroide?.second
 
                 val existente = database.localPlotDao()
                     .getAllPlots()
@@ -329,7 +335,7 @@ class AgroSyncRepository(
                                         )
                     }
 
-                if (existente != null) {
+                val idParcelaLocal = if (existente != null) {
                     database.localPlotDao().updatePlot(
                         existente.copy(
                             extId = extId,
@@ -340,6 +346,8 @@ class AgroSyncRepository(
                             idLocalRanch = idRanchoLocal
                         )
                     )
+
+                    existente.idLocalPlot
                 } else {
                     database.localPlotDao().insertPlot(
                         LocalPlotEntity(
@@ -352,6 +360,12 @@ class AgroSyncRepository(
                         )
                     )
                 }
+
+                guardarVerticesParcelaDesdeGeometry(
+                    item = item,
+                    idLocalPlot = idParcelaLocal,
+                    extIdParcela = extId
+                )
 
                 parcelasGuardadas++
             }
@@ -366,6 +380,7 @@ class AgroSyncRepository(
             ResultadoAgroSync.Error("Error sincronizando filtros: ${e.message}")
         }
     }
+
     private fun normalizarItemApi(element: JsonElement): JsonObject? {
         if (!element.isJsonObject) return null
 
@@ -390,6 +405,10 @@ class AgroSyncRepository(
                 ?.takeIf { it.isJsonObject }
                 ?.asJsonObject
 
+            if (geometry != null && !salida.has("geometry")) {
+                salida.add("geometry", geometry)
+            }
+
             val tipoGeometria = geometry
                 ?.stringOrNull("type")
                 ?.normalizarTexto()
@@ -404,12 +423,15 @@ class AgroSyncRepository(
             ) {
                 val coords = coordinates.asJsonArray
 
-                if (!salida.has("lon")) {
-                    salida.addProperty("lon", coords[0].asDouble)
+                val lon = coords.elementOrNull(0).doubleValueOrNull()
+                val lat = coords.elementOrNull(1).doubleValueOrNull()
+
+                if (!salida.has("lon") && lon != null) {
+                    salida.addProperty("lon", lon)
                 }
 
-                if (!salida.has("lat")) {
-                    salida.addProperty("lat", coords[1].asDouble)
+                if (!salida.has("lat") && lat != null) {
+                    salida.addProperty("lat", lat)
                 }
             }
 
@@ -466,6 +488,7 @@ class AgroSyncRepository(
             else -> emptyList()
         }
     }
+
     private fun esProductor(item: JsonObject): Boolean {
         val tipo = item.textoTipoOrNull(
             "type",
@@ -535,6 +558,123 @@ class AgroSyncRepository(
         if (encontrados.isEmpty()) return true
 
         return encontrados.any { it == ciaExtId }
+    }
+
+    private fun guardarVerticesParcelaDesdeGeometry(
+        item: JsonObject,
+        idLocalPlot: Long,
+        extIdParcela: String
+    ) {
+        val anillo = extraerPrimerAnilloPoligono(item)
+
+        if (anillo == null || anillo.size() < 3) {
+            return
+        }
+
+        database.runInTransaction {
+            val db = database.openHelper.writableDatabase
+
+            db.execSQL(
+                "DELETE FROM local_plot_vertexes WHERE idLocalPlot = ?",
+                arrayOf(idLocalPlot)
+            )
+
+            anillo.forEachIndexed { index, punto ->
+                if (!punto.isJsonArray) return@forEachIndexed
+
+                val coordenada = punto.asJsonArray
+
+                val lon = coordenada.elementOrNull(0).doubleValueOrNull()
+                    ?: return@forEachIndexed
+
+                val lat = coordenada.elementOrNull(1).doubleValueOrNull()
+                    ?: return@forEachIndexed
+
+                val level = index + 1
+                val extIdVertice = "${extIdParcela}_v_$level"
+
+                db.execSQL(
+                    """
+                    INSERT OR REPLACE INTO local_plot_vertexes
+                    (ext_id, level, lat, lon, idLocalPlot)
+                    VALUES (?, ?, ?, ?, ?)
+                    """.trimIndent(),
+                    arrayOf(
+                        extIdVertice,
+                        level,
+                        lat,
+                        lon,
+                        idLocalPlot
+                    )
+                )
+            }
+        }
+    }
+
+    private fun extraerPrimerAnilloPoligono(
+        item: JsonObject
+    ): JsonArray? {
+        val geometry = item.getOrNull("geometry")
+            ?.takeIf { it.isJsonObject }
+            ?.asJsonObject
+            ?: return null
+
+        val tipo = geometry.stringOrNull("type")
+            ?.normalizarTexto()
+            ?: return null
+
+        val coordinates = geometry.getOrNull("coordinates")
+            ?.takeIf { it.isJsonArray }
+            ?.asJsonArray
+            ?: return null
+
+        return when (tipo) {
+            "polygon" -> {
+                coordinates
+                    .elementOrNull(0)
+                    ?.takeIf { it.isJsonArray }
+                    ?.asJsonArray
+            }
+
+            "multipolygon" -> {
+                coordinates
+                    .elementOrNull(0)
+                    ?.takeIf { it.isJsonArray }
+                    ?.asJsonArray
+                    ?.elementOrNull(0)
+                    ?.takeIf { it.isJsonArray }
+                    ?.asJsonArray
+            }
+
+            else -> null
+        }
+    }
+
+    private fun centroideSimpleDesdeGeometry(
+        item: JsonObject
+    ): Pair<Double, Double>? {
+        val anillo = extraerPrimerAnilloPoligono(item) ?: return null
+
+        val puntos = anillo.mapNotNull { punto ->
+            if (!punto.isJsonArray) return@mapNotNull null
+
+            val coordenada = punto.asJsonArray
+
+            val lon = coordenada.elementOrNull(0).doubleValueOrNull()
+                ?: return@mapNotNull null
+
+            val lat = coordenada.elementOrNull(1).doubleValueOrNull()
+                ?: return@mapNotNull null
+
+            lat to lon
+        }
+
+        if (puntos.isEmpty()) return null
+
+        val latPromedio = puntos.map { it.first }.average()
+        val lonPromedio = puntos.map { it.second }.average()
+
+        return latPromedio to lonPromedio
     }
 
     private fun crearSlug(valor: String): String {
@@ -655,14 +795,27 @@ private fun JsonObject.doubleOrNull(vararg keys: String): Double? {
     for (key in keys) {
         val value = getOrNull(key) ?: continue
 
-        if (value.isJsonPrimitive) {
-            val text = value.asString?.trim()
-            val number = text?.toDoubleOrNull()
-            if (number != null) return number
-        }
+        val number = value.doubleValueOrNull()
+        if (number != null) return number
     }
 
     return null
+}
+
+private fun JsonArray.elementOrNull(index: Int): JsonElement? {
+    return if (index >= 0 && index < size()) {
+        get(index)
+    } else {
+        null
+    }
+}
+
+private fun JsonElement?.doubleValueOrNull(): Double? {
+    if (this == null || isJsonNull || !isJsonPrimitive) return null
+
+    return runCatching {
+        asDouble
+    }.getOrNull()
 }
 
 private fun String.normalizarTexto(): String {

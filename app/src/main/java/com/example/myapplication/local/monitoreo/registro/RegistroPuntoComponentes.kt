@@ -114,8 +114,9 @@ internal fun RegistroPuntoSuperiorCard(
 
 @Composable
 internal fun ElementoSeleccionadoCard(
-    fito: LocalPhytosanitaryCatalogEntity?
-) {
+    fito: LocalPhytosanitaryCatalogEntity?,
+    fotoRepresentativa: String?
+){
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -151,7 +152,7 @@ internal fun ElementoSeleccionadoCard(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     ImageUriBox(
-                        photo = fito.photo,
+                        photo = fotoRepresentativa ?: fito.photo,
                         fallbackIcon = iconoTipoFitoRegistro(fito.type),
                         sizeDp = 72,
                         modifier = Modifier

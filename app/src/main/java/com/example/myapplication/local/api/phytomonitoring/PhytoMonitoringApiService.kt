@@ -3,6 +3,9 @@ package com.example.myapplication.local.api.phytomonitoring
 import retrofit2.Response
 import retrofit2.http.GET
 import retrofit2.http.Query
+import retrofit2.http.Body
+import retrofit2.http.PATCH
+import retrofit2.http.Path
 
 interface PhytoMonitoringApiService {
 
@@ -20,4 +23,10 @@ interface PhytoMonitoringApiService {
     suspend fun listarTargetPoints(
         @Query("page") page: Int? = null
     ): Response<PhytoPaginatedResponse<PhytoTargetPointApiItem>>
+
+    @PATCH("api/v1/monitoring/phyto/headers/{id}/update/")
+    suspend fun actualizarHeader(
+        @Path("id") id: String,
+        @Body body: PhytoHeaderPatchRequest
+    ): Response<PhytoHeaderApiItem>
 }

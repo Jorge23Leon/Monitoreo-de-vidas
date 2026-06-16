@@ -80,6 +80,7 @@ fun RegistroPuntoMonitoreoScreen(
     var fitoSeleccionado by remember { mutableStateOf<LocalPhytosanitaryCatalogEntity?>(null) }
 
     val etapasPorFito = remember { mutableStateMapOf<Long, List<LocalPhytostageEntity>>() }
+    val fotosRepresentativasPorFito = remember { mutableStateMapOf<Long, String?>() }
     val cantidadesPorEtapa = remember { mutableStateMapOf<ClaveEtapaUi, Int>() }
     val fitosSinEtapasSeleccionados = remember { mutableStateMapOf<Long, Boolean>() }
     var severidadMayorPunto by rememberSaveable(header.idHeader) {
@@ -178,6 +179,16 @@ fun RegistroPuntoMonitoreoScreen(
             fotoCultivo = resultado.fotoCultivo
             numeroPuntoVisible = resultado.numeroPuntoVisible
             registrosAgregados = resultado.totalPlagasAgregadas
+            resultado.catalogo.forEach { fito ->
+                val etapasFito = withContext(Dispatchers.IO) {
+                    database.localphytostageDao()
+                        .getStagesByPhytosanitary(fito.idPhytosanitary)
+                }
+
+                etapasPorFito[fito.idPhytosanitary] = etapasFito
+                fotosRepresentativasPorFito[fito.idPhytosanitary] =
+                    fotoRepresentativaFitoRegistro(fito, etapasFito)
+            }
         } catch (e: Exception) {
             error = "Error al cargar datos: ${e.message}"
         } finally {
@@ -199,12 +210,19 @@ fun RegistroPuntoMonitoreoScreen(
                         etapasPorFito[fito.idPhytosanitary] = etapasCargadas
                     }
 
-                etapas = etapasDb
+                val etapasOrdenadas = ordenarEtapasParaRegistro(
+                    etapas = etapasDb,
+                    tipoFito = fito.type
+                )
+                fotosRepresentativasPorFito[fito.idPhytosanitary] =
+                    fotoRepresentativaFitoRegistro(fito, etapasDb)
 
-                if (etapasDb.isEmpty()) {
+                etapas = etapasOrdenadas
+
+                if (etapasOrdenadas.isEmpty()) {
                     fitosSinEtapasSeleccionados[fito.idPhytosanitary] = true
                 } else {
-                    etapasDb.forEach { etapa ->
+                    etapasOrdenadas.forEach { etapa ->
                         val clave = ClaveEtapaUi(
                             idPhytosanitary = fito.idPhytosanitary,
                             stage = etapa.stage
@@ -509,7 +527,12 @@ fun RegistroPuntoMonitoreoScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                ElementoSeleccionadoCard(fito = fitoSeleccionado)
+                ElementoSeleccionadoCard(
+                    fito = fitoSeleccionado,
+                    fotoRepresentativa = fitoSeleccionado?.let {
+                        fotosRepresentativasPorFito[it.idPhytosanitary]
+                    }
+                )
 
                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -558,6 +581,7 @@ fun RegistroPuntoMonitoreoScreen(
                         CatalogoPlagasHorizontal(
                             catalogo = catalogo,
                             fitoSeleccionado = fitoSeleccionado,
+                            fotosRepresentativas = fotosRepresentativasPorFito,
                             onSelected = { item -> fitoSeleccionado = item }
                         )
                     }

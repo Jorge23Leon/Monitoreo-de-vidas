@@ -58,3 +58,15 @@ data class PhytoGeomApi(
     val type: String?,
     val coordinates: List<Double>?
 )
+data class PhytoHeaderPatchRequest(
+    val status: String? = null,
+
+    @SerializedName("started_at")
+    val startedAt: String? = null,
+
+    @SerializedName("finished_at")
+    val finishedAt: String? = null,
+
+    @SerializedName("additional_notes")
+    val additionalNotes: String? = null
+)

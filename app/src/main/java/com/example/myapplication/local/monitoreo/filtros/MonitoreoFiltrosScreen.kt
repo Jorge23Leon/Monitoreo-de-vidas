@@ -97,7 +97,7 @@ fun MonitoreoFiltrosScreen(
     val esSupervisor = rolParaPermisos.contains("supervisor") ||
             rolParaPermisos.contains("supervision")
 
-    val soloConsulta = esGerente || esSupervisor
+    val soloConsulta = false
 
     val productoresMap = remember(productoresResultado) {
         productoresResultado.associateBy { it.idLocalAgroUnit }
@@ -529,8 +529,8 @@ fun MonitoreoFiltrosScreen(
                             fotoCultivo = cultivo?.photo,
                             nombreCultivo = cultivo?.name,
 
-                            mostrarAbrir = esAdmin && !cerrado && !cancelado,
-                            mostrarReporte = (soloConsulta || esAdmin || cerrado) && !cancelado,
+                            mostrarAbrir = (esAdmin || esGerente || esSupervisor) && !cerrado && !cancelado,
+                            mostrarReporte = cerrado && !cancelado,
 
                             puedeCancelar = (esAdmin || esGerente || esSupervisor) &&
                                     estadoPendiente &&
@@ -545,7 +545,7 @@ fun MonitoreoFiltrosScreen(
                                     return@TarjetaMonitoreoConsulta
                                 }
 
-                                if (soloConsulta || cerrado) {
+                                if (cerrado) {
                                     onAbrirReporteClick(header)
                                 } else {
                                     onAbrirMapaClick(header)

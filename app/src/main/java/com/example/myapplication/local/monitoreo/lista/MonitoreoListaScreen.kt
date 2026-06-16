@@ -79,7 +79,7 @@ fun MonitoreoListaScreen(
             rolParaPermisos.contains("supervision")
     val esTecnico = rolParaPermisos.contains("tecnico")
     val esInvitado = rolParaPermisos.contains("invitado")
-    val soloConsulta = esGerente || esSupervisor
+    val soloConsulta = false
 
     var monitoreoParaCancelar by remember {
         mutableStateOf<LocalPhytomonitoringHeaderEntity?>(null)
@@ -500,15 +500,15 @@ fun MonitoreoListaScreen(
                         additionalNotes = header.additionalNotes,
                         fechaInicio = header.estStartDate,
                         fechaFin = header.estFinishDate,
-                        puedeAbrir = (esAdmin || esTecnico || esInvitado) && !monitoreoCerrado,
+                        puedeAbrir = (esAdmin || esGerente || esSupervisor || esTecnico || esInvitado) && !monitoreoCerrado,
                         soloConsulta = soloConsulta,
-                        puedeCancelar = (esAdmin || esTecnico || esInvitado) &&
+                        puedeCancelar = (esAdmin || esGerente || esSupervisor || esTecnico || esInvitado) &&
                                 estadoPendiente &&
                                 !monitoreoYaIniciado &&
                                 !monitoreoCerrado &&
                                 !monitoreoCancelado,
                         onAbrirClick = {
-                            if (soloConsulta || monitoreoCerrado) {
+                            if (monitoreoCerrado) {
                                 onAbrirReporteClick(header)
                             } else {
                                 monitoreoParaIniciar = header
