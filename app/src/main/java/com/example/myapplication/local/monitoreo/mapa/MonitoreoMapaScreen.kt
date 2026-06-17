@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.example.myapplication.local.api.phytomonitoring.PhytoCheckpointSyncRepository
 import com.example.myapplication.local.api.phytomonitoring.PhytoMonitoringRepository
 import com.example.myapplication.local.api.phytomonitoring.ResultadoActualizarHeaderApi
 import com.example.myapplication.local.common.EncabezadoApp
@@ -172,6 +173,10 @@ fun MonitoreoMapaScreen(
         finishedAt: Long? = null,
         additionalNotes: String? = null
     ) {
+        if (!hayInternet(context)) {
+            return
+        }
+
         val extId = headerLocal.extId
             ?.takeIf { it.isNotBlank() }
             ?: return
@@ -217,6 +222,9 @@ fun MonitoreoMapaScreen(
         database.localphytomonitoringheaderDao()
             .updateHeader(nuevoHeader)
 
+        database.localprogramDao()
+            .recalcularEstadoDesdeHeaders(nuevoHeader.idProgram)
+
         actualizarHeaderEnServidorSilencioso(
             headerLocal = nuevoHeader,
             statusApi = statusApi,
@@ -226,6 +234,33 @@ fun MonitoreoMapaScreen(
         )
 
         return nuevoHeader
+    }
+
+    suspend fun sincronizarCapturasPendientesSilencioso(
+        headerLocal: LocalPhytomonitoringHeaderEntity
+    ): String? {
+        if (!hayInternet(context)) {
+            return "Sin internet: las capturas quedan pendientes para sincronizar."
+        }
+
+        if (headerLocal.extId.isNullOrBlank()) {
+            return "El monitoreo no tiene id del servidor; queda pendiente para sincronizar."
+        }
+
+        val resultado = runCatching {
+            kotlinx.coroutines.withTimeoutOrNull(20000L) {
+                PhytoCheckpointSyncRepository(
+                    context = context.applicationContext,
+                    database = database
+                ).sincronizarHeaderCsv(headerLocal)
+            }
+        }.getOrNull()
+
+        return when (resultado) {
+            null -> "No se pudo sincronizar ahora; queda pendiente para reintentar."
+            is com.example.myapplication.local.api.phytomonitoring.ResultadoCheckpointSync.Exito -> null
+            is com.example.myapplication.local.api.phytomonitoring.ResultadoCheckpointSync.Error -> resultado.mensaje
+        }
     }
 
     val permisoUbicacionLauncher = rememberLauncherForActivityResult(
@@ -396,11 +431,16 @@ fun MonitoreoMapaScreen(
             try {
                 val terminadoMs = System.currentTimeMillis()
 
-                val actualizado = withContext(Dispatchers.IO) {
+                val (actualizado, avisoSync) = withContext(Dispatchers.IO) {
                     val fresco = database.localphytomonitoringheaderDao()
                         .getHeaderById(headerActual.idHeader) ?: headerActual
 
-                    actualizarHeaderLocalYServidor(
+                    // Antes de cerrar el monitoreo intentamos mandar todas las capturas pendientes
+                    // al backend. Si no hay internet, NO se borra nada local: queda pendiente
+                    // para el botón de sincronizar del reporte.
+                    val aviso = sincronizarCapturasPendientesSilencioso(fresco)
+
+                    val headerActualizado = actualizarHeaderLocalYServidor(
                         headerBase = fresco,
                         statusLocal = "completed",
                         statusApi = "completed",
@@ -408,6 +448,8 @@ fun MonitoreoMapaScreen(
                         finishedAt = terminadoMs,
                         additionalNotes = fresco.additionalNotes
                     )
+
+                    headerActualizado to aviso
                 }
 
                 headerActual = actualizado
@@ -415,8 +457,9 @@ fun MonitoreoMapaScreen(
 
                 Toast.makeText(
                     context,
-                    "Monitoreo terminado correctamente",
-                    Toast.LENGTH_SHORT
+                    avisoSync?.let { "Monitoreo terminado localmente. $it" }
+                        ?: "Monitoreo terminado y sincronizado con servidor",
+                    Toast.LENGTH_LONG
                 ).show()
 
                 onMonitoreoActualizadoActual("completed")
@@ -463,6 +506,10 @@ fun MonitoreoMapaScreen(
                             notaAnterior.contains("CERRADO_AUTOMATICO", ignoreCase = true) -> notaAnterior
                             else -> "$notaAnterior\n$notaAutomatica"
                         }
+
+                        // Intento de subida antes del cierre automático. Si falla,
+                        // las capturas quedan locales para sincronizar después.
+                        sincronizarCapturasPendientesSilencioso(fresco)
 
                         actualizarHeaderLocalYServidor(
                             headerBase = fresco,

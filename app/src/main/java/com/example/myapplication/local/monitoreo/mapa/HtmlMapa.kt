@@ -248,26 +248,97 @@ internal fun crearHtmlMapaMonitoreo(
                 }
 
                 function agregarCapaBase() {
-                    if (internetDisponible) {
-                        L.tileLayer(
-                            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                            {
-                                maxZoom: 19,
-                                maxNativeZoom: 19,
-                                attribution: 'Tiles © Esri'
+                    /*
+                     * Primero se dibuja un fondo local bonito.
+                     * Después se agrega la capa satelital de Esri.
+                     *
+                     * En Android, WebMapa.kt intercepta estos tiles:
+                     * - con internet: los descarga y los guarda en filesDir/map_tiles
+                     * - sin internet: sirve los tiles guardados
+                     *
+                     * Si no existe el tile en cache, se queda visible este fondo local.
+                     */
+                    const MapaLocal = L.GridLayer.extend({
+                        createTile: function(coords) {
+                            const tile = document.createElement('canvas');
+                            const size = this.getTileSize();
+
+                            tile.width = size.x;
+                            tile.height = size.y;
+
+                            const ctx = tile.getContext('2d');
+
+                            ctx.fillStyle = '#E7F0DC';
+                            ctx.fillRect(0, 0, size.x, size.y);
+
+                            const grad = ctx.createLinearGradient(0, 0, size.x, size.y);
+                            grad.addColorStop(0, 'rgba(139, 195, 74, 0.20)');
+                            grad.addColorStop(0.45, 'rgba(255, 255, 255, 0.18)');
+                            grad.addColorStop(1, 'rgba(76, 175, 80, 0.18)');
+                            ctx.fillStyle = grad;
+                            ctx.fillRect(0, 0, size.x, size.y);
+
+                            ctx.strokeStyle = 'rgba(27, 94, 32, 0.10)';
+                            ctx.lineWidth = 1;
+
+                            for (let x = -size.x; x < size.x * 2; x += 44) {
+                                ctx.beginPath();
+                                ctx.moveTo(x, 0);
+                                ctx.lineTo(x + size.x, size.y);
+                                ctx.stroke();
                             }
-                        ).addTo(map);
-                    } else {
-                        L.tileLayer(
-                            'file:///android_asset/leaflet/tiles/{z}/{x}/{y}.png',
-                            {
-                                minZoom: 0,
-                                maxZoom: 19,
-                                maxNativeZoom: 19,
-                                attribution: 'Mapa local'
+
+                            ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+                            ctx.lineWidth = 1;
+
+                            for (let x = 0; x <= size.x; x += 64) {
+                                ctx.beginPath();
+                                ctx.moveTo(x, 0);
+                                ctx.lineTo(x, size.y);
+                                ctx.stroke();
                             }
-                        ).addTo(map);
-                    }
+
+                            for (let y = 0; y <= size.y; y += 64) {
+                                ctx.beginPath();
+                                ctx.moveTo(0, y);
+                                ctx.lineTo(size.x, y);
+                                ctx.stroke();
+                            }
+
+                            ctx.strokeStyle = 'rgba(27, 94, 32, 0.08)';
+                            ctx.lineWidth = 3;
+
+                            ctx.beginPath();
+                            ctx.moveTo(0, size.y * 0.35);
+                            ctx.lineTo(size.x, size.y * 0.25);
+                            ctx.stroke();
+
+                            ctx.beginPath();
+                            ctx.moveTo(0, size.y * 0.72);
+                            ctx.lineTo(size.x, size.y * 0.62);
+                            ctx.stroke();
+
+                            return tile;
+                        }
+                    });
+
+                    new MapaLocal({
+                        tileSize: 256,
+                        minZoom: 0,
+                        maxZoom: 22,
+                        attribution: 'Mapa local'
+                    }).addTo(map);
+
+                    L.tileLayer(
+                        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                        {
+                            maxZoom: 19,
+                            maxNativeZoom: 19,
+                            attribution: internetDisponible ? 'Tiles © Esri' : 'Mapa en cache',
+                            opacity: 1,
+                            errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lCjQ9wAAAABJRU5ErkJggg=='
+                        }
+                    ).addTo(map);
                 }
 
                 function puntoDentroPoligono(lat, lon) {

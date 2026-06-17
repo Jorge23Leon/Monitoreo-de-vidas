@@ -24,6 +24,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.myapplication.local.api.phytomonitoring.PhytoCheckpointSyncRepository
 import com.example.myapplication.local.common.EncabezadoApp
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.LocalAgroUnitEntity
@@ -47,6 +49,7 @@ import com.example.myapplication.local.entities.LocalRanchEntity
 import com.example.myapplication.local.monitoreo.severidad.calcularSeveridadPorPunto
 import com.example.myapplication.local.monitoreo.severidad.limpiarMetadataRangosSeveridad
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Suppress("UNUSED_PARAMETER")
@@ -69,8 +72,10 @@ fun ReporteMonitoreoScreen(
     onAdminClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     var cargando by remember { mutableStateOf(true) }
+    var sincronizandoApi by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
     var puntos by remember { mutableStateOf<List<LocalPhytomonitoringTargetPointEntity>>(emptyList()) }
@@ -80,43 +85,92 @@ fun ReporteMonitoreoScreen(
     var nombreCultivo by remember { mutableStateOf("Cultivo no identificado") }
     var fotoCultivo by remember { mutableStateOf<String?>(null) }
 
+    suspend fun cargarReporteDesdeRoomYApi(): ReporteDataUi {
+        return withContext(Dispatchers.IO) {
+            val headerFresco = database.localphytomonitoringheaderDao()
+                .getHeaderById(header.idHeader) ?: header
+
+            // Al abrir el reporte primero se intenta subir lo local pendiente y luego
+            // bajar los checkpoints desde API. Si no hay internet, se usa Room.
+            runCatching {
+                kotlinx.coroutines.withTimeoutOrNull(20000L) {
+                    PhytoCheckpointSyncRepository(
+                        context = context.applicationContext,
+                        database = database
+                    ).sincronizarHeaderCsv(headerFresco)
+                }
+            }
+
+            val puntosDb = database.LocalPhytomonitoringTargetPointDao()
+                .getTargetPointsByHeader(headerFresco.idHeader)
+
+            val checkpointsDb = database.localphytomonitoringcheckpointDao()
+                .getCheckpointsByHeader(headerFresco.idHeader)
+
+            val verticesDb = database.LocalPlotVertexDao()
+                .getVerticesByPlot(headerFresco.idLocalPlot)
+
+            val catalogoDb = database.localphytosanitarycatalogDao()
+                .getAllCatalogo()
+
+            val cultivoDb = database.localCropCatalogDao()
+                .getCropById(headerFresco.idCrop)
+
+            ReporteDataUi(
+                puntos = puntosDb,
+                checkpoints = checkpointsDb,
+                vertices = verticesDb,
+                catalogo = catalogoDb,
+                cultivo = cultivoDb?.name ?: "Cultivo no identificado",
+                fotoCultivo = cultivoDb?.photo
+            )
+        }
+    }
+
+    fun aplicarDataReporte(data: ReporteDataUi) {
+        puntos = data.puntos
+        checkpoints = data.checkpoints
+        vertices = data.vertices
+        catalogo = data.catalogo
+        nombreCultivo = data.cultivo
+        fotoCultivo = data.fotoCultivo
+    }
+
+    fun sincronizarReporteManual() {
+        if (sincronizandoApi || cargando) return
+
+        sincronizandoApi = true
+        error = null
+
+        coroutineScope.launch {
+            try {
+                val data = cargarReporteDesdeRoomYApi()
+                aplicarDataReporte(data)
+
+                Toast.makeText(
+                    context,
+                    "Reporte sincronizado con API",
+                    Toast.LENGTH_SHORT
+                ).show()
+            } catch (e: Exception) {
+                Toast.makeText(
+                    context,
+                    "No se pudo sincronizar: ${e.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            } finally {
+                sincronizandoApi = false
+            }
+        }
+    }
+
     LaunchedEffect(header.idHeader) {
         cargando = true
         error = null
 
         try {
-            val data = withContext(Dispatchers.IO) {
-                val puntosDb = database.LocalPhytomonitoringTargetPointDao()
-                    .getTargetPointsByHeader(header.idHeader)
-
-                val checkpointsDb = database.localphytomonitoringcheckpointDao()
-                    .getCheckpointsByHeader(header.idHeader)
-
-                val verticesDb = database.LocalPlotVertexDao()
-                    .getVerticesByPlot(header.idLocalPlot)
-
-                val catalogoDb = database.localphytosanitarycatalogDao()
-                    .getAllCatalogo()
-
-                val cultivoDb = database.localCropCatalogDao()
-                    .getCropById(header.idCrop)
-
-                ReporteDataUi(
-                    puntos = puntosDb,
-                    checkpoints = checkpointsDb,
-                    vertices = verticesDb,
-                    catalogo = catalogoDb,
-                    cultivo = cultivoDb?.name ?: "Cultivo no identificado",
-                    fotoCultivo = cultivoDb?.photo
-                )
-            }
-
-            puntos = data.puntos
-            checkpoints = data.checkpoints
-            vertices = data.vertices
-            catalogo = data.catalogo
-            nombreCultivo = data.cultivo
-            fotoCultivo = data.fotoCultivo
+            val data = cargarReporteDesdeRoomYApi()
+            aplicarDataReporte(data)
         } catch (e: Exception) {
             e.printStackTrace()
             error = "Error al cargar reporte: ${e.javaClass.simpleName} - ${e.message}"
@@ -377,45 +431,69 @@ fun ReporteMonitoreoScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    Button(
-                        onClick = {
-                            try {
-                                val ubicacionArchivo = descargarCsvReporteUi(
-                                    context = context,
-                                    header = header,
-                                    nombreCia = nombreCia,
-                                    productor = productor?.commercial_name ?: "-",
-                                    rancho = rancho?.name ?: "-",
-                                    parcela = parcela?.code ?: "-",
-                                    cultivo = nombreCultivo,
-                                    filas = filasTabla
-                                )
-
-                                Toast.makeText(
-                                    context,
-                                    "CSV descargado en: $ubicacionArchivo",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            } catch (e: Exception) {
-                                Toast.makeText(
-                                    context,
-                                    "No se pudo descargar el CSV: ${e.message}",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(54.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20)),
-                        shape = RoundedCornerShape(22.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = "⬇ Descargar CSV del reporte",
-                            color = Color.White,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 15.sp
-                        )
+                        Button(
+                            onClick = { sincronizarReporteManual() },
+                            enabled = !sincronizandoApi && !cargando,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(54.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                            shape = RoundedCornerShape(22.dp)
+                        ) {
+                            Text(
+                                text = if (sincronizandoApi) "↻ Sincronizando..." else "↻ Sincronizar API",
+                                color = Color.White,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                try {
+                                    val ubicacionArchivo = descargarCsvReporteUi(
+                                        context = context,
+                                        header = header,
+                                        nombreCia = nombreCia,
+                                        productor = productor?.commercial_name ?: "-",
+                                        rancho = rancho?.name ?: "-",
+                                        parcela = parcela?.code ?: "-",
+                                        cultivo = nombreCultivo,
+                                        filas = filasTabla
+                                    )
+
+                                    Toast.makeText(
+                                        context,
+                                        "CSV descargado en: $ubicacionArchivo",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                } catch (e: Exception) {
+                                    Toast.makeText(
+                                        context,
+                                        "No se pudo descargar el CSV: ${e.message}",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(54.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20)),
+                            shape = RoundedCornerShape(22.dp)
+                        ) {
+                            Text(
+                                text = "⬇ Descargar CSV",
+                                color = Color.White,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))

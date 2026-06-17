@@ -86,6 +86,72 @@ class PhytoMonitoringRepository(
         }
     }
 
+
+    suspend fun obtenerHeaderPorExtId(idHeaderExt: String): ResultadoHeaderDetalleApi {
+        return try {
+            val response = api.obtenerHeaderDetalle(idHeaderExt)
+
+            if (!response.isSuccessful) {
+                val error = response.errorBody()?.string()
+                return ResultadoHeaderDetalleApi.Error(
+                    "Error detalle header: ${response.code()} ${error ?: response.message()}"
+                )
+            }
+
+            val body = response.body()
+                ?: return ResultadoHeaderDetalleApi.Error(
+                    "El servidor respondió vacío en detalle header"
+                )
+
+            ResultadoHeaderDetalleApi.Exito(body)
+        } catch (e: Exception) {
+            ResultadoHeaderDetalleApi.Error(
+                "No se pudo cargar detalle header: ${e.message}"
+            )
+        }
+    }
+
+    suspend fun obtenerHeadersCompletados(): ResultadoPhytoHeadersApi {
+        return obtenerHeadersPorEstado("completed")
+    }
+
+    private suspend fun obtenerHeadersPorEstado(status: String): ResultadoPhytoHeadersApi {
+        return try {
+            val todos = mutableListOf<PhytoHeaderApiItem>()
+            var page = 1
+
+            while (true) {
+                val response = api.listarHeaders(status = status, page = page)
+
+                if (!response.isSuccessful) {
+                    val error = response.errorBody()?.string()
+                    return ResultadoPhytoHeadersApi.Error(
+                        "Error headers $status: ${response.code()} ${error ?: response.message()}"
+                    )
+                }
+
+                val body = response.body()
+                    ?: return ResultadoPhytoHeadersApi.Error(
+                        "El servidor respondió vacío en headers $status"
+                    )
+
+                todos.addAll(body.results)
+
+                if (body.next.isNullOrBlank()) {
+                    break
+                }
+
+                page++
+            }
+
+            ResultadoPhytoHeadersApi.Exito(todos)
+        } catch (e: Exception) {
+            ResultadoPhytoHeadersApi.Error(
+                "No se pudieron cargar headers $status: ${e.message}"
+            )
+        }
+    }
+
     suspend fun actualizarHeaderServidor(
         idHeaderExt: String,
         status: String? = null,
@@ -123,6 +189,16 @@ class PhytoMonitoringRepository(
             )
         }
     }
+}
+
+sealed class ResultadoHeaderDetalleApi {
+    data class Exito(
+        val header: PhytoHeaderApiItem
+    ) : ResultadoHeaderDetalleApi()
+
+    data class Error(
+        val mensaje: String
+    ) : ResultadoHeaderDetalleApi()
 }
 
 sealed class ResultadoActualizarHeaderApi {

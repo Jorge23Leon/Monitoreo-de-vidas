@@ -1,11 +1,16 @@
 package com.example.myapplication.local.api.phytomonitoring
 
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import retrofit2.Response
-import retrofit2.http.GET
-import retrofit2.http.Query
 import retrofit2.http.Body
+import retrofit2.http.GET
+import retrofit2.http.Multipart
 import retrofit2.http.PATCH
+import retrofit2.http.POST
+import retrofit2.http.Part
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 interface PhytoMonitoringApiService {
 
@@ -19,10 +24,28 @@ interface PhytoMonitoringApiService {
         @Query("page") page: Int? = null
     ): Response<PhytoPaginatedResponse<PhytoHeaderApiItem>>
 
+    @GET("api/v1/monitoring/phyto/headers/{id}/")
+    suspend fun obtenerHeaderDetalle(
+        @Path("id") id: String
+    ): Response<PhytoHeaderApiItem>
+
     @GET("api/v1/monitoring/phyto/target-points/")
     suspend fun listarTargetPoints(
         @Query("page") page: Int? = null
     ): Response<PhytoPaginatedResponse<PhytoTargetPointApiItem>>
+
+    @GET("api/v1/monitoring/phyto/checkpoints/")
+    suspend fun listarCheckpoints(
+        @Query("header") header: String? = null,
+        @Query("page") page: Int? = null
+    ): Response<PhytoPaginatedResponse<PhytoCheckpointApiItem>>
+
+    @Multipart
+    @POST("api/v1/monitoring/phyto/checkpoints/import/")
+    suspend fun importarCheckpointsCsv(
+        @Part("header") header: RequestBody,
+        @Part csv_file: MultipartBody.Part
+    ): Response<PhytoCheckpointImportResponse>
 
     @PATCH("api/v1/monitoring/phyto/headers/{id}/update/")
     suspend fun actualizarHeader(

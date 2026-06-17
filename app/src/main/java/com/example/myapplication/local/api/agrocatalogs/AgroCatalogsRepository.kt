@@ -10,6 +10,7 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import java.util.Locale
+import retrofit2.Response
 
 class AgroCatalogsRepository(
     context: Context,
@@ -61,17 +62,9 @@ class AgroCatalogsRepository(
             )
 
         return try {
-            val response = api.listarCatalogoFitosanitario()
-
-            if (!response.isSuccessful) {
-                return ResultadoCatalogoFitoSync.Error(
-                    "Error catálogo fitosanitario: ${response.code()} ${
-                        response.errorBody()?.string() ?: response.message()
-                    }"
-                )
+            val items = cargarTodasLasPaginasJson("catálogo fitosanitario") { page ->
+                api.listarCatalogoFitosanitario(page = page)
             }
-
-            val items = extraerLista(response.body())
 
             var catalogoGuardado = 0
             var etapasGuardadas = 0
@@ -151,6 +144,51 @@ class AgroCatalogsRepository(
                 "Error sincronizando catálogo fitosanitario: ${e.message}"
             )
         }
+    }
+
+    private suspend fun cargarTodasLasPaginasJson(
+        nombre: String,
+        request: suspend (Int) -> Response<JsonElement>
+    ): List<JsonObject> {
+        val todos = mutableListOf<JsonObject>()
+        var page = 1
+
+        while (true) {
+            val response = request(page)
+
+            if (!response.isSuccessful) {
+                val error = response.errorBody()?.string()
+                throw IllegalStateException(
+                    "Error $nombre: ${response.code()} ${error ?: response.message()}"
+                )
+            }
+
+            val root = response.body()
+                ?: throw IllegalStateException("El servidor respondió vacío en $nombre")
+
+            todos.addAll(extraerLista(root))
+
+            if (!tienePaginaSiguiente(root)) {
+                break
+            }
+
+            page++
+
+            if (page > 200) {
+                throw IllegalStateException("Se detuvo $nombre porque superó 200 páginas")
+            }
+        }
+
+        return todos
+    }
+
+    private fun tienePaginaSiguiente(root: JsonElement?): Boolean {
+        if (root == null || !root.isJsonObject) return false
+
+        val next = root.asJsonObject.get("next")
+        if (next == null || next.isJsonNull || !next.isJsonPrimitive) return false
+
+        return runCatching { next.asString.trim().isNotBlank() }.getOrDefault(false)
     }
 
     private suspend fun guardarCatalogo(

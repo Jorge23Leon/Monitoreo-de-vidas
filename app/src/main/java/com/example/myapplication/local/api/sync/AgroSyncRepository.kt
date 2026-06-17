@@ -13,6 +13,7 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import java.util.Locale
+import retrofit2.Response
 
 class AgroSyncRepository(
     context: Context,
@@ -45,17 +46,17 @@ class AgroSyncRepository(
                 )
             }
 
-            val asignacionesResponse = organizationApi.listarAsignacionesDataCentralAgroUnit()
-
-            if (!asignacionesResponse.isSuccessful) {
+            val asignacionesJson = try {
+                cargarTodasLasPaginasJson("asignaciones datacentral-productor") { page ->
+                    organizationApi.listarAsignacionesDataCentralAgroUnit(page = page)
+                }
+            } catch (_: Exception) {
                 return ResultadoAgroSync.Exito(
                     productores = 0,
                     ranchos = 0,
                     parcelas = 0
                 )
             }
-
-            val asignacionesJson = extraerLista(asignacionesResponse.body())
 
             val productoresPermitidosExtId = asignacionesJson.mapNotNull { item ->
                 val dataCentralExtId = item.relacionIdOrNull(
@@ -91,39 +92,17 @@ class AgroSyncRepository(
                 )
             }
 
-            val productoresResponse = organizationApi.listarUnidadesAgroeconomicas()
-
-            if (!productoresResponse.isSuccessful) {
-                return ResultadoAgroSync.Error(
-                    "Error productores: ${productoresResponse.code()} ${
-                        productoresResponse.errorBody()?.string() ?: productoresResponse.message()
-                    }"
-                )
+            val productoresJson = cargarTodasLasPaginasJson("productores") { page ->
+                organizationApi.listarUnidadesAgroeconomicas(page = page)
             }
 
-            val ranchosResponse = geoAssetsApi.listarRanchos()
-
-            if (!ranchosResponse.isSuccessful) {
-                return ResultadoAgroSync.Error(
-                    "Error ranchos: ${ranchosResponse.code()} ${
-                        ranchosResponse.errorBody()?.string() ?: ranchosResponse.message()
-                    }"
-                )
+            val ranchosJson = cargarTodasLasPaginasJson("ranchos") { page ->
+                geoAssetsApi.listarRanchos(page = page)
             }
 
-            val parcelasResponse = geoAssetsApi.listarParcelas()
-
-            if (!parcelasResponse.isSuccessful) {
-                return ResultadoAgroSync.Error(
-                    "Error parcelas: ${parcelasResponse.code()} ${
-                        parcelasResponse.errorBody()?.string() ?: parcelasResponse.message()
-                    }"
-                )
+            val parcelasJson = cargarTodasLasPaginasJson("parcelas") { page ->
+                geoAssetsApi.listarParcelas(page = page)
             }
-
-            val productoresJson = extraerLista(productoresResponse.body())
-            val ranchosJson = extraerLista(ranchosResponse.body())
-            val parcelasJson = extraerLista(parcelasResponse.body())
 
             var productoresGuardados = 0
             var ranchosGuardados = 0
@@ -379,6 +358,51 @@ class AgroSyncRepository(
             e.printStackTrace()
             ResultadoAgroSync.Error("Error sincronizando filtros: ${e.message}")
         }
+    }
+
+    private suspend fun cargarTodasLasPaginasJson(
+        nombre: String,
+        request: suspend (Int) -> Response<JsonElement>
+    ): List<JsonObject> {
+        val todos = mutableListOf<JsonObject>()
+        var page = 1
+
+        while (true) {
+            val response = request(page)
+
+            if (!response.isSuccessful) {
+                val error = response.errorBody()?.string()
+                throw IllegalStateException(
+                    "Error $nombre: ${response.code()} ${error ?: response.message()}"
+                )
+            }
+
+            val root = response.body()
+                ?: throw IllegalStateException("El servidor respondió vacío en $nombre")
+
+            todos.addAll(extraerLista(root))
+
+            if (!tienePaginaSiguiente(root)) {
+                break
+            }
+
+            page++
+
+            if (page > 200) {
+                throw IllegalStateException("Se detuvo $nombre porque superó 200 páginas")
+            }
+        }
+
+        return todos
+    }
+
+    private fun tienePaginaSiguiente(root: JsonElement?): Boolean {
+        if (root == null || !root.isJsonObject) return false
+
+        val next = root.asJsonObject.get("next")
+        if (next == null || next.isJsonNull || !next.isJsonPrimitive) return false
+
+        return runCatching { next.asString.trim().isNotBlank() }.getOrDefault(false)
     }
 
     private fun normalizarItemApi(element: JsonElement): JsonObject? {

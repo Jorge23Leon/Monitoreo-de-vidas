@@ -22,13 +22,13 @@ import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import com.example.myapplication.local.entities.LocalCiaAgroUnitCrossRef
 import com.example.myapplication.local.api.agrocatalogs.ResultadoCatalogoFitoSync
 import com.example.myapplication.local.api.core.ApiConfig
 import com.google.gson.JsonElement
+import com.example.myapplication.local.common.ImageCache
 
 class MonitoreoSyncRepository(
-    context: Context,
+    private val context: Context,
     private val database: AppDatabase
 ) {
     private val agroCatalogsRepository = AgroCatalogsRepository(
@@ -47,10 +47,10 @@ class MonitoreoSyncRepository(
             var headersGuardados = 0
             var puntosGuardados = 0
 
-            val resultadoCultivos = kotlinx.coroutines.withTimeoutOrNull(10000L) {
+            val resultadoCultivos = kotlinx.coroutines.withTimeoutOrNull(60000L) {
                 agroCatalogsRepository.obtenerTodosLosCultivos()
             } ?: return ResultadoMonitoreoSync.Error(
-                "Timeout cultivos: /api/v1/agro-catalogs/crops/ tardó más de 10 segundos"
+                "Timeout cultivos: /api/v1/agro-catalogs/crops/ tardó más de 60 segundos"
             )
 
             val cultivosApi = when (resultadoCultivos) {
@@ -66,10 +66,10 @@ class MonitoreoSyncRepository(
                 } catch (_: Exception) {
                 }
             }
-            val resultadoCatalogoFito = kotlinx.coroutines.withTimeoutOrNull(10000L) {
+            val resultadoCatalogoFito = kotlinx.coroutines.withTimeoutOrNull(60000L) {
                 agroCatalogsRepository.sincronizarCatalogoFitosanitario()
             } ?: return ResultadoMonitoreoSync.Error(
-                "Timeout catálogo fitosanitario: /api/v1/agro-catalogs/phytosanitary/ tardó más de 10 segundos"
+                "Timeout catálogo fitosanitario: /api/v1/agro-catalogs/phytosanitary/ tardó más de 60 segundos"
             )
 
             when (resultadoCatalogoFito) {
@@ -85,25 +85,61 @@ class MonitoreoSyncRepository(
                 ?.extId
                 ?.takeIf { it.isNotBlank() }
 
-            val resultadoProgramas = kotlinx.coroutines.withTimeoutOrNull(10000L) {
+            // Primero intentamos bajar los programas de la CIA seleccionada.
+            // Después bajamos también todos los programas como respaldo, porque algunos
+            // headers completed vienen apuntando a field_task que no siempre aparece con
+            // el filtro datacentral. Si no guardamos ese programa, el header del reporte
+            // se descarta por llaves foráneas y la lista queda vacía.
+            val programasFiltradosPorCia = mutableListOf<FieldTaskApiItem>()
+
+            val resultadoProgramasCia = kotlinx.coroutines.withTimeoutOrNull(60000L) {
                 fieldOpsRepository.obtenerTodosLosProgramasCampo(
                     datacentral = ciaExtId
                 )
             } ?: return ResultadoMonitoreoSync.Error(
-                "Timeout programas: /api/v1/field_ops/tasks/ tardó más de 10 segundos"
+                "Timeout programas: /api/v1/field_ops/tasks/ tardó más de 60 segundos"
             )
 
-            val programasApi = when (resultadoProgramas) {
-                is ResultadoFieldOpsApi.Exito -> resultadoProgramas.programas
-                is ResultadoFieldOpsApi.Error -> return ResultadoMonitoreoSync.Error(resultadoProgramas.mensaje)
+            when (resultadoProgramasCia) {
+                is ResultadoFieldOpsApi.Exito -> programasFiltradosPorCia.addAll(resultadoProgramasCia.programas)
+                is ResultadoFieldOpsApi.Error -> return ResultadoMonitoreoSync.Error(resultadoProgramasCia.mensaje)
             }
+
+            val programasRespaldo = mutableListOf<FieldTaskApiItem>()
+
+            if (ciaExtId != null) {
+                when (
+                    val resultadoProgramasTodos = kotlinx.coroutines.withTimeoutOrNull(60000L) {
+                        fieldOpsRepository.obtenerTodosLosProgramasCampo(
+                            datacentral = null
+                        )
+                    }
+                ) {
+                    null -> Unit
+                    is ResultadoFieldOpsApi.Exito -> programasRespaldo.addAll(resultadoProgramasTodos.programas)
+                    is ResultadoFieldOpsApi.Error -> Unit
+                }
+            }
+
+            val idsProgramasCia = programasFiltradosPorCia
+                .map { it.id }
+                .filter { it.isNotBlank() }
+                .toSet()
+
+            val programasApi = (programasFiltradosPorCia + programasRespaldo)
+                .distinctBy { it.id }
 
             programasApi.forEach { programaApi ->
                 try {
                     if (
                         guardarOCrearPrograma(
                             programaApi = programaApi,
-                            idLocalCia = idLocalCia
+                            // Importante:
+                            // MonitoreoSync NO debe crear relaciones CIA ↔ Productor.
+                            // Esa relación debe venir de AgroSync/datacentrals-assignments.
+                            // Si aquí se relacionan programas de respaldo, se mezclan productores
+                            // de otras CIAS en los filtros.
+                            idLocalCia = null
                         ) != null
                     ) {
                         programasGuardados++
@@ -112,10 +148,10 @@ class MonitoreoSyncRepository(
                 }
             }
 
-            val resultadoHeaders = kotlinx.coroutines.withTimeoutOrNull(10000L) {
+            val resultadoHeaders = kotlinx.coroutines.withTimeoutOrNull(60000L) {
                 phytoMonitoringRepository.obtenerTodosLosHeaders()
             } ?: return ResultadoMonitoreoSync.Error(
-                "Timeout headers: /api/v1/monitoring/phyto/headers/ tardó más de 10 segundos"
+                "Timeout headers: /api/v1/monitoring/phyto/headers/ tardó más de 60 segundos"
             )
 
             val headersApi = when (resultadoHeaders) {
@@ -125,6 +161,19 @@ class MonitoreoSyncRepository(
 
             headersApi.forEach { headerApi ->
                 try {
+                    // Seguridad local: si estamos sincronizando una CIA específica,
+                    // NO guardamos headers cuyo programa no venga en /field_ops/tasks/?datacentral=<cia>.
+                    // Así evitamos que /monitoring/phyto/headers/ meta monitoreos de otra CIA a Room.
+                    if (idLocalCia != null) {
+                        val fieldTaskExtId = headerApi.fieldTask
+                            ?.takeIf { it.isNotBlank() }
+                            ?: return@forEach
+
+                        if (fieldTaskExtId !in idsProgramasCia) {
+                            return@forEach
+                        }
+                    }
+
                     val idHeaderLocal = guardarOCrearHeader(headerApi)
 
                     if (idHeaderLocal != null) {
@@ -149,11 +198,39 @@ class MonitoreoSyncRepository(
                 }
             }
 
+            val resultadoTargetPoints = kotlinx.coroutines.withTimeoutOrNull(60000L) {
+                phytoMonitoringRepository.obtenerTodosLosTargetPoints()
+            }
+
+            when (resultadoTargetPoints) {
+                null -> Unit // No bloqueamos la cache: puede que los puntos ya vinieran dentro del header.
+                is ResultadoPhytoTargetPointsApi.Error -> Unit
+                is ResultadoPhytoTargetPointsApi.Exito -> {
+                    resultadoTargetPoints.puntos.forEach { puntoApi ->
+                        try {
+                            if (
+                                guardarOCrearTargetPoint(
+                                    puntoApi = puntoApi,
+                                    headerExtIdFallback = puntoApi.header,
+                                    idHeaderLocalFallback = null
+                                ) != null
+                            ) {
+                                puntosGuardados++
+                            }
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+            }
+
+            val imagenesCacheadas = precachearImagenesOffline()
+
             ResultadoMonitoreoSync.Exito(
                 cultivos = cultivosGuardados,
                 programas = programasGuardados,
                 headers = headersGuardados,
-                targetPoints = puntosGuardados
+                targetPoints = puntosGuardados,
+                imagenes = imagenesCacheadas
             )
         } catch (e: Exception) {
             ResultadoMonitoreoSync.Error(
@@ -354,15 +431,14 @@ class MonitoreoSyncRepository(
             .getCropByExtId(cultivoExtId)
             ?: return null
 
-        if (idLocalCia != null && idLocalCia > 0L) {
-            database.localCiaAgroUnitDao().asignarProductorACia(
-                LocalCiaAgroUnitCrossRef(
-                    idLocalCia = idLocalCia,
-                    idLocalAgroUnit = productorLocal.idLocalAgroUnit,
-                    extId = "sync_cia_${idLocalCia}_agro_${productorLocal.ext_Id ?: productorLocal.idLocalAgroUnit}"
-                )
-            )
-        }
+        /*
+         * No asignar productor a CIA desde MonitoreoSync.
+         *
+         * La relación CIA ↔ Productor debe venir únicamente desde AgroSync
+         * usando /organizations/datacentrals-assignments/.
+         * Si se hace aquí, al sincronizar programas de respaldo se contaminan
+         * los filtros y aparecen productores de otras CIAS.
+         */
 
         val existente = database.localprogramDao()
             .getProgramByExtId(extId)
@@ -443,12 +519,17 @@ class MonitoreoSyncRepository(
             assignedUserId = usuarioAsignado?.idUser
         )
 
-        return if (existente != null) {
+        val idHeaderLocal = if (existente != null) {
             database.localphytomonitoringheaderDao().updateHeader(headerNuevo)
             existente.idHeader
         } else {
             database.localphytomonitoringheaderDao().insertHeader(headerNuevo)
         }
+
+        database.localprogramDao()
+            .recalcularEstadoDesdeHeaders(programaLocal.idProgram)
+
+        return idHeaderLocal
     }
 
     private suspend fun guardarOCrearTargetPoint(
@@ -511,6 +592,36 @@ class MonitoreoSyncRepository(
         }
     }
 
+
+    private suspend fun precachearImagenesOffline(): Int {
+        val fotos = mutableSetOf<String>()
+
+        database.localCropCatalogDao()
+            .getAllCrops()
+            .mapNotNull { it.photo?.takeIf { photo -> photo.isNotBlank() } }
+            .forEach { fotos.add(it) }
+
+        database.localphytosanitarycatalogDao()
+            .getAllCatalogo()
+            .mapNotNull { it.photo?.takeIf { photo -> photo.isNotBlank() } }
+            .forEach { fotos.add(it) }
+
+        database.localphytostageDao()
+            .getAllPhytostages()
+            .mapNotNull { it.photo?.takeIf { photo -> photo.isNotBlank() } }
+            .forEach { fotos.add(it) }
+
+        var guardadas = 0
+
+        fotos.forEach { foto ->
+            if (ImageCache.guardarEnCache(context, foto) != null) {
+                guardadas++
+            }
+        }
+
+        return guardadas
+    }
+
     private fun normalizarEstado(status: String?): String {
         return when (status?.trim()?.lowercase(Locale.getDefault())) {
             "pending", "pendiente" -> "Pendiente"
@@ -527,10 +638,12 @@ class MonitoreoSyncRepository(
         val limpia = fecha.trim()
 
         val formatos = listOf(
-            "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-            "yyyy-MM-dd'T'HH:mm:ss'Z'",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXX",
             "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
             "yyyy-MM-dd'T'HH:mm:ssXXX",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'",
+            "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+            "yyyy-MM-dd'T'HH:mm:ss'Z'",
             "yyyy-MM-dd"
         )
 
@@ -549,10 +662,6 @@ class MonitoreoSyncRepository(
         return null
     }
 
-    /**
-     * GeoJSON normalmente manda coordinates como [lon, lat].
-     * Esta función intenta detectar si vienen invertidas.
-     */
     private fun extraerLatLon(coordinates: List<Double>?): Pair<Double, Double>? {
         if (coordinates == null || coordinates.size < 2) return null
 
@@ -583,7 +692,8 @@ sealed class ResultadoMonitoreoSync {
         val cultivos: Int,
         val programas: Int,
         val headers: Int,
-        val targetPoints: Int
+        val targetPoints: Int,
+        val imagenes: Int = 0
     ) : ResultadoMonitoreoSync()
 
     data class Error(

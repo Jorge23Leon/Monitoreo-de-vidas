@@ -68,10 +68,16 @@ interface LocalProgramDao {
     suspend fun deleteAllPrograms()
 
     @Query("""
-    SELECT p.*
+    SELECT DISTINCT p.*
     FROM local_programs p
     INNER JOIN local_cia_agro_units cau
         ON p.idLocalAgroUnit = cau.idLocalAgroUnit
+    INNER JOIN local_ranches r
+        ON r.idLocalRanch = p.idLocalRanch
+       AND r.idLocalAgroUnit = cau.idLocalAgroUnit
+    INNER JOIN local_plots pl
+        ON pl.idLocalPlot = p.idLocalPlot
+       AND pl.idLocalRanch = r.idLocalRanch
     WHERE cau.idLocalCia = :idLocalCia
     ORDER BY p.est_start_date DESC
 """)
@@ -97,4 +103,65 @@ interface LocalProgramDao {
     WHERE idProgram IN (:ids)
 """)
     suspend fun getProgramasByIds(ids: List<Long>): List<LocalProgramEntity>
+    @Query("""
+    UPDATE local_programs
+    SET status = CASE
+
+        -- Si algún monitoreo del programa está en proceso,
+        -- el programa completo está en proceso.
+        WHEN EXISTS (
+            SELECT 1
+            FROM local_phytomonitoring_headers h
+            WHERE h.idProgram = :idProgram
+            AND LOWER(TRIM(h.status)) IN (
+                'in_progress',
+                'en proceso',
+                'vigente'
+            )
+        ) THEN 'En proceso'
+
+        -- Si todos los monitoreos del programa están completados,
+        -- el programa completo queda completado.
+        WHEN (
+            SELECT COUNT(*)
+            FROM local_phytomonitoring_headers h
+            WHERE h.idProgram = :idProgram
+        ) > 0
+        AND NOT EXISTS (
+            SELECT 1
+            FROM local_phytomonitoring_headers h
+            WHERE h.idProgram = :idProgram
+            AND LOWER(TRIM(h.status)) NOT IN (
+                'completed',
+                'complete',
+                'completado',
+                'finalizado',
+                'terminado',
+                'cerrado'
+            )
+        ) THEN 'Completado'
+
+        -- Si ya hay al menos un monitoreo terminado,
+        -- pero no todos, el programa está en proceso.
+        WHEN EXISTS (
+            SELECT 1
+            FROM local_phytomonitoring_headers h
+            WHERE h.idProgram = :idProgram
+            AND LOWER(TRIM(h.status)) IN (
+                'completed',
+                'complete',
+                'completado',
+                'finalizado',
+                'terminado',
+                'cerrado'
+            )
+        ) THEN 'En proceso'
+
+        ELSE 'Pendiente'
+    END
+    WHERE idProgram = :idProgram
+""")
+    suspend fun recalcularEstadoDesdeHeaders(idProgram: Long)
+
+
 }

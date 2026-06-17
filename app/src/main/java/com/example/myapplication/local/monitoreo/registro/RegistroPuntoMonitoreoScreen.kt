@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.myapplication.local.api.phytomonitoring.PhytoCheckpointSyncRepository
 import com.example.myapplication.local.common.EncabezadoApp
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.LocalPhytomonitoringCheckpointEntity
@@ -134,6 +135,17 @@ fun RegistroPuntoMonitoreoScreen(
                 }
             }
         )
+    }
+
+    suspend fun intentarSincronizarCapturasConServidor() {
+        runCatching {
+            kotlinx.coroutines.withTimeoutOrNull(15000L) {
+                PhytoCheckpointSyncRepository(
+                    context = context.applicationContext,
+                    database = database
+                ).sincronizarHeaderCsv(header)
+            }
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -327,6 +339,8 @@ fun RegistroPuntoMonitoreoScreen(
                             idTargetPoint = punto.idTargetPoint,
                             status = "Completado"
                         )
+
+                    intentarSincronizarCapturasConServidor()
                 }
 
                 Toast.makeText(context, "Punto registrado sin plagas", Toast.LENGTH_SHORT).show()
@@ -424,6 +438,8 @@ fun RegistroPuntoMonitoreoScreen(
                             idTargetPoint = punto.idTargetPoint,
                             status = "Completado"
                         )
+
+                    intentarSincronizarCapturasConServidor()
                 }
 
                 Toast.makeText(context, "Punto finalizado correctamente", Toast.LENGTH_SHORT).show()

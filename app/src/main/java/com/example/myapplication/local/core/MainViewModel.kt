@@ -76,7 +76,8 @@ private sealed class MainLoginServidorTemp {
     data class Exito(
         val datos: MainLoginTemp,
         val access: String?,
-        val refresh: String
+        val refresh: String,
+        val mensajeSync: String? = null
     ) : MainLoginServidorTemp()
 
     data class Error(
@@ -126,10 +127,8 @@ class MainViewModel(
         val network = connectivityManager.activeNetwork ?: return false
         val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
 
-        return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
-                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
 
@@ -726,6 +725,105 @@ class MainViewModel(
         return database.userDao().getUserById(idNuevoUsuario)
             ?: throw IllegalStateException("No se pudo crear usuario local")
     }
+
+
+    private suspend fun intentarLoginLocalSinInternet(
+        username: String,
+        password: String
+    ): MainLoginServidorTemp? {
+        if (hayConexionInternet()) {
+            return null
+        }
+
+        val usuarioLocal = database.userDao().getUserByUsername(username)
+            ?: database.userDao().getUserByEmail(username)
+            ?: return MainLoginServidorTemp.Error(
+                "Sin internet y no existe una sesión local guardada para este usuario. Conéctate una vez para preparar la cache."
+            )
+
+        val passwordCorrecto = PasswordHasher.verificarPassword(
+            passwordIngresado = password,
+            passwordGuardado = usuarioLocal.password
+        )
+
+        if (!passwordCorrecto) {
+            return MainLoginServidorTemp.Error(
+                "Sin internet y la contraseña local no coincide."
+            )
+        }
+
+        val datosLogin = prepararLoginDesdeUsuarioLocal(usuarioLocal)
+            ?: return MainLoginServidorTemp.Error(
+                "Sin internet. El usuario existe localmente, pero no se pudo preparar la sesión."
+            )
+
+        return MainLoginServidorTemp.Exito(
+            datos = datosLogin,
+            access = null,
+            refresh = "",
+            mensajeSync = "Sin internet. Entraste usando la cache local guardada."
+        )
+    }
+
+    private suspend fun sincronizarDatosOfflineInicialDeUsuario(
+        idUserLocal: Long
+    ): String? {
+        if (!hayConexionInternet()) {
+            return "Sin internet. Se usarán los datos locales guardados en este equipo."
+        }
+
+        val ciasUsuario = database.userLocalCiaDao()
+            .getCiasByUser(idUserLocal)
+
+        val errores = mutableListOf<String>()
+
+        if (ciasUsuario.isEmpty()) {
+            when (
+                val resultado = kotlinx.coroutines.withTimeoutOrNull(120000L) {
+                    monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
+                        idLocalCia = null
+                    )
+                }
+            ) {
+                null -> errores.add("La sincronización de catálogos/monitoreos tardó demasiado")
+                is ResultadoMonitoreoSync.Error -> errores.add(resultado.mensaje)
+                is ResultadoMonitoreoSync.Exito -> Unit
+            }
+        } else {
+            ciasUsuario.forEach { cia ->
+                when (
+                    val resultadoAgro = kotlinx.coroutines.withTimeoutOrNull(120000L) {
+                        agroSyncRepository.sincronizarProductoresRanchosParcelas(
+                            idLocalCia = cia.idLocalCia
+                        )
+                    }
+                ) {
+                    null -> errores.add("La actualización de productores/ranchos/parcelas tardó demasiado para ${cia.nombre}")
+                    is ResultadoAgroSync.Error -> errores.add(resultadoAgro.mensaje)
+                    is ResultadoAgroSync.Exito -> Unit
+                }
+
+                when (
+                    val resultadoMonitoreo = kotlinx.coroutines.withTimeoutOrNull(120000L) {
+                        monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
+                            idLocalCia = cia.idLocalCia
+                        )
+                    }
+                ) {
+                    null -> errores.add("La actualización de monitoreos tardó demasiado para ${cia.nombre}")
+                    is ResultadoMonitoreoSync.Error -> errores.add(resultadoMonitoreo.mensaje)
+                    is ResultadoMonitoreoSync.Exito -> Unit
+                }
+            }
+        }
+
+        return errores
+            .distinct()
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString(separator = " | ") { it }
+            ?.let { "Login correcto, pero la cache quedó parcial: $it" }
+    }
+
     private suspend fun sincronizarCiasDesdeApi(
         idUserLocal: Long,
         perfilApi: UsuarioMeResponse
@@ -985,9 +1083,17 @@ class MainViewModel(
         viewModelScope.launch {
             try {
                 val resultadoServidor = withContext(Dispatchers.IO) {
+                    intentarLoginLocalSinInternet(
+                        username = username,
+                        password = password
+                    )?.let { return@withContext it }
+
                     when (val loginApi = authRepository.login(username, password)) {
                         is ResultadoLoginApi.Error -> {
-                            MainLoginServidorTemp.Error(loginApi.mensaje)
+                            intentarLoginLocalSinInternet(
+                                username = username,
+                                password = password
+                            ) ?: MainLoginServidorTemp.Error(loginApi.mensaje)
                         }
 
                         is ResultadoLoginApi.Exito -> {
@@ -1036,10 +1142,24 @@ class MainViewModel(
                                 perfilApi = perfilServidor
                             )
 
-                            sincronizarCiasDesdeApi(
+                            val mensajeCias = sincronizarCiasDesdeApi(
                                 idUserLocal = usuarioLocal.idUser,
                                 perfilApi = perfilServidor
                             )
+
+                            val mensajeSyncInicial = sincronizarDatosOfflineInicialDeUsuario(
+                                idUserLocal = usuarioLocal.idUser
+                            )
+
+                            val mensajeSync = listOfNotNull(
+                                mensajeCias,
+                                mensajeSyncInicial
+                            )
+                                .map { it.trim() }
+                                .filter { it.isNotBlank() }
+                                .distinct()
+                                .joinToString(separator = "\n")
+                                .takeIf { it.isNotBlank() }
 
                             val datosLogin = prepararLoginDesdeUsuarioLocal(usuarioLocal)
                                 ?: return@withContext MainLoginServidorTemp.Error(
@@ -1049,7 +1169,8 @@ class MainViewModel(
                             MainLoginServidorTemp.Exito(
                                 datos = datosLogin,
                                 access = access,
-                                refresh = refresh
+                                refresh = refresh,
+                                mensajeSync = mensajeSync
                             )
                         }
                     }
@@ -1108,6 +1229,10 @@ class MainViewModel(
                                 pantallaActual = obtenerPantallaInicialPorRol(sesion)
                             )
                         }
+
+                        resultadoServidor.mensajeSync
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { mostrarMensaje(it) }
 
                         if (sesion.esTecnico || sesion.esInvitado) {
                             cargarMonitoreosDirectoPorUsuario(sesion)
@@ -1437,7 +1562,7 @@ class MainViewModel(
 
                 val mensajeAgroSync = withContext(Dispatchers.IO) {
                     when (
-                        val resultado = kotlinx.coroutines.withTimeoutOrNull(15000L) {
+                        val resultado = kotlinx.coroutines.withTimeoutOrNull(90000L) {
                             agroSyncRepository.sincronizarProductoresRanchosParcelas(
                                 idLocalCia = cia.idLocalCia
                             )
@@ -1451,7 +1576,7 @@ class MainViewModel(
 
                 val mensajeMonitoreoSync = withContext(Dispatchers.IO) {
                     when (
-                        val resultado = kotlinx.coroutines.withTimeoutOrNull(15000L) {
+                        val resultado = kotlinx.coroutines.withTimeoutOrNull(90000L) {
                             monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
                                 idLocalCia = cia.idLocalCia
                             )
@@ -1939,8 +2064,19 @@ class MainViewModel(
                     val estadoActual = uiState
                     val sesion = estadoActual.usuarioSesion
 
+                    if (hayConexionInternet()) {
+                        runCatching {
+                            kotlinx.coroutines.withTimeoutOrNull(90000L) {
+                                monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
+                                    idLocalCia = cia.idLocalCia
+                                )
+                            }
+                        }
+                    }
+
                     val programasCia = database.localprogramDao()
                         .getProgramasByCia(cia.idLocalCia)
+                        .distinctBy { programa -> programa.idProgram }
 
                     var programasFiltrados = programasCia
 
@@ -2168,8 +2304,19 @@ class MainViewModel(
                     val ranchoActual = estadoActual.ranchoSeleccionado
                     val parcelaActual = estadoActual.parcelaSeleccionada
 
+                    if (hayConexionInternet()) {
+                        runCatching {
+                            kotlinx.coroutines.withTimeoutOrNull(90000L) {
+                                monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
+                                    idLocalCia = cia.idLocalCia
+                                )
+                            }
+                        }
+                    }
+
                     val programasCia = database.localprogramDao()
                         .getProgramasByCia(cia.idLocalCia)
+                        .distinctBy { programa -> programa.idProgram }
 
                     var programasFiltrados = programasCia
 
@@ -2325,6 +2472,17 @@ class MainViewModel(
                 }
 
                 val resultado = withContext(Dispatchers.IO) {
+                    if (hayConexionInternet()) {
+                        runCatching {
+                            val idCiaActual = uiState.ciaSeleccionada?.idLocalCia
+                            kotlinx.coroutines.withTimeoutOrNull(90000L) {
+                                monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
+                                    idLocalCia = idCiaActual
+                                )
+                            }
+                        }
+                    }
+
                     val ciasPermitidasTecnico = if (sesion.esTecnico) {
                         database.userLocalCiaDao().getCiasByUser(sesion.idUser)
                     } else {
@@ -2506,7 +2664,45 @@ class MainViewModel(
         }
     }
 
+    private fun headerPermitidoEnListaActual(header: LocalPhytomonitoringHeaderEntity): Boolean {
+        val sesion = uiState.usuarioSesion ?: return false
+
+        return when {
+            sesion.esAdmin || sesion.esGerente || sesion.esSupervisor -> {
+                uiState.ciaSeleccionada != null &&
+                        uiState.monitoreosEncontrados.any { permitido ->
+                            permitido.idHeader == header.idHeader &&
+                                    permitido.idProgram == header.idProgram &&
+                                    permitido.idLocalPlot == header.idLocalPlot
+                        }
+            }
+
+            sesion.esTecnico || sesion.esInvitado -> {
+                uiState.monitoreosEncontrados.any { permitido ->
+                    permitido.idHeader == header.idHeader &&
+                            permitido.idProgram == header.idProgram &&
+                            permitido.idLocalPlot == header.idLocalPlot
+                }
+            }
+
+            else -> false
+        }
+    }
+
+    private fun bloquearHeaderSinPermiso(header: LocalPhytomonitoringHeaderEntity): Boolean {
+        if (headerPermitidoEnListaActual(header)) {
+            return false
+        }
+
+        mostrarMensaje("No tienes permiso para abrir este monitoreo con la CIA/filtros actuales")
+        return true
+    }
+
     fun abrirReporte(header: LocalPhytomonitoringHeaderEntity) {
+        if (bloquearHeaderSinPermiso(header)) {
+            return
+        }
+
         if (esEstadoCanceladoVm(header.status)) {
             mostrarMensaje("Este monitoreo está cancelado. No se puede ver la información.")
             return
@@ -2600,6 +2796,11 @@ class MainViewModel(
                  */
                 val headerActualizado = obtenerHeaderFrescoSeguro(header)
                 actualizarHeaderEnLista(headerActualizado)
+
+                if (bloquearHeaderSinPermiso(headerActualizado)) {
+                    return@launch
+                }
+
                 if (esEstadoCanceladoVm(headerActualizado.status)) {
                     mostrarMensaje("Este monitoreo está cancelado. No se puede abrir ni consultar información.")
                     return@launch

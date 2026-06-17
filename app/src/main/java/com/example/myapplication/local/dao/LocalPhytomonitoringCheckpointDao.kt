@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import com.example.myapplication.local.entities.LocalPhytomonitoringCheckpointEntity
 
 @Dao
@@ -15,6 +16,16 @@ interface LocalPhytomonitoringCheckpointDao {
         checkpoint: LocalPhytomonitoringCheckpointEntity
     ): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertCheckpointFromApi(
+        checkpoint: LocalPhytomonitoringCheckpointEntity
+    ): Long
+
+    @Update
+    suspend fun updateCheckpoint(
+        checkpoint: LocalPhytomonitoringCheckpointEntity
+    )
+
     @Query("""
         SELECT *
         FROM local_phytomonitoring_checkpoints
@@ -23,6 +34,36 @@ interface LocalPhytomonitoringCheckpointDao {
     """)
     suspend fun getCheckpointById(
         idCheckpoint: Long
+    ): LocalPhytomonitoringCheckpointEntity?
+
+    @Query("""
+        SELECT *
+        FROM local_phytomonitoring_checkpoints
+        WHERE ext_id = :extId
+        LIMIT 1
+    """)
+    suspend fun getCheckpointByExtId(
+        extId: String
+    ): LocalPhytomonitoringCheckpointEntity?
+
+    @Query("""
+        SELECT *
+        FROM local_phytomonitoring_checkpoints
+        WHERE idHeader = :idHeader
+          AND idTargetPoint = :idTargetPoint
+          AND idPhytosanitary = :idPhytosanitary
+          AND COALESCE(stage, '') = COALESCE(:stage, '')
+          AND COALESCE(qty, -9999) = COALESCE(:qty, -9999)
+          AND COALESCE(captured_at, 0) = COALESCE(:capturedAt, 0)
+        LIMIT 1
+    """)
+    suspend fun buscarCheckpointLocalMismaCaptura(
+        idHeader: Long,
+        idTargetPoint: Long,
+        idPhytosanitary: Long,
+        stage: String?,
+        qty: Int?,
+        capturedAt: Long?
     ): LocalPhytomonitoringCheckpointEntity?
 
     @Query("""

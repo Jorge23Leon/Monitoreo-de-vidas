@@ -1,7 +1,5 @@
 package com.example.myapplication.local.common
 
-import android.graphics.BitmapFactory
-import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,16 +19,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.myapplication.local.api.core.ApiConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.net.HttpURLConnection
-import java.net.URL
 
 @Composable
 fun ImageUriBox(
@@ -49,31 +43,7 @@ fun ImageUriBox(
             null
         } else {
             withContext(Dispatchers.IO) {
-                try {
-                    val photoFinal = normalizarPhotoUrl(photo)
-
-                    when {
-                        photoFinal.startsWith("http://") ||
-                                photoFinal.startsWith("https://") -> {
-                            val connection = URL(photoFinal).openConnection() as HttpURLConnection
-                            connection.connectTimeout = 8000
-                            connection.readTimeout = 8000
-                            connection.instanceFollowRedirects = true
-
-                            connection.inputStream.use { stream ->
-                                BitmapFactory.decodeStream(stream)?.asImageBitmap()
-                            }
-                        }
-
-                        else -> {
-                            context.contentResolver.openInputStream(Uri.parse(photoFinal)).use { stream ->
-                                BitmapFactory.decodeStream(stream)?.asImageBitmap()
-                            }
-                        }
-                    }
-                } catch (_: Exception) {
-                    null
-                }
+                ImageCache.cargarBitmap(context, photo)
             }
         }
     }
@@ -105,26 +75,5 @@ fun ImageUriBox(
                 fontSize = (sizeDp / 2).sp
             )
         }
-    }
-}
-
-private fun normalizarPhotoUrl(photo: String): String {
-    val clean = photo.trim().trim('"')
-    val base = ApiConfig.BASE_URL.trimEnd('/')
-
-    return when {
-        clean.startsWith("http://localhost:8500") ->
-            clean.replace("http://localhost:8500", base)
-
-        clean.startsWith("http://127.0.0.1:8500") ->
-            clean.replace("http://127.0.0.1:8500", base)
-
-        clean.startsWith("/") ->
-            "$base$clean"
-
-        clean.startsWith("media/") ->
-            "$base/$clean"
-
-        else -> clean
     }
 }

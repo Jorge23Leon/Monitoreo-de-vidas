@@ -1,5 +1,6 @@
 package com.example.myapplication.local.api.phytomonitoring
 
+import com.google.gson.JsonElement
 import com.google.gson.annotations.SerializedName
 
 data class PhytoPaginatedResponse<T>(
@@ -58,6 +59,7 @@ data class PhytoGeomApi(
     val type: String?,
     val coordinates: List<Double>?
 )
+
 data class PhytoHeaderPatchRequest(
     val status: String? = null,
 
@@ -69,4 +71,53 @@ data class PhytoHeaderPatchRequest(
 
     @SerializedName("additional_notes")
     val additionalNotes: String? = null
+)
+
+data class PhytoCheckpointApiItem(
+    val id: String? = null,
+    val header: JsonElement? = null,
+    val plot: JsonElement? = null,
+
+    @SerializedName("target_point")
+    val targetPoint: JsonElement? = null,
+
+    @SerializedName("target")
+    val target: JsonElement? = null,
+
+    val geom: PhytoGeomApi? = null,
+
+    @SerializedName("phyto_issue")
+    val phytoIssue: JsonElement? = null,
+
+    @SerializedName("phyto_issue_id")
+    val phytoIssueId: JsonElement? = null,
+
+    @SerializedName("phytosanitary")
+    val phytosanitary: JsonElement? = null,
+
+    val stage: String? = null,
+
+    @SerializedName("presence_status")
+    val presenceStatus: JsonElement? = null,
+
+    val qty: JsonElement? = null,
+    val notes: String? = null,
+
+    @SerializedName("captured_at")
+    val capturedAt: String? = null,
+
+    @SerializedName("captured_by")
+    val capturedBy: JsonElement? = null,
+
+    @SerializedName("captured_by_user")
+    val capturedByUser: JsonElement? = null
+)
+
+data class PhytoCheckpointImportResponse(
+    val created: Int? = null,
+
+    @SerializedName("header_id")
+    val headerId: String? = null,
+
+    val detail: String? = null
 )
