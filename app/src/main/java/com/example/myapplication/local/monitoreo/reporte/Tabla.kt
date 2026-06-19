@@ -39,7 +39,7 @@ internal fun TablaReporteCapturasUi(filas: List<FilaReporteCapturaUi>) {
             CeldaHeaderReporteUi("Tipo", 110)
             CeldaHeaderReporteUi("Fase", 120)
             CeldaHeaderReporteUi("Cantidad", 90)
-            CeldaHeaderReporteUi("point_severity", 140)
+            CeldaHeaderReporteUi("Severidad punto", 140)
             CeldaHeaderReporteUi("Fecha", 150)
         }
 

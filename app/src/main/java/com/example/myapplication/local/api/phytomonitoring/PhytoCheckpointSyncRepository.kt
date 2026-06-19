@@ -1,5 +1,8 @@
 package com.example.myapplication.local.api.phytomonitoring
 
+// CAMBIO PUNTOS/CSV: al crear o reconciliar puntos con API, se conserva el label
+// real para no sustituirlo por el id local de Room.
+
 import android.content.Context
 import com.example.myapplication.local.api.core.RetrofitClient
 import com.example.myapplication.local.entities.AppDatabase
@@ -46,98 +49,338 @@ class PhytoCheckpointSyncRepository(
         val headerExtId = headerLocal.extId?.trim()
             ?.takeIf { it.isNotBlank() }
             ?: return@withContext ResultadoCheckpointSync.Error(
-                "El monitoreo local no tiene ext_id del servidor; no se puede importar CSV."
+                "El monitoreo local no tiene ext_id del servidor; no se pueden subir capturas."
             )
+
+        // Antes de subir intentamos reconciliar con lo que ya exista en API.
+        // Esto evita duplicar capturas que antes pudieron haberse enviado por CSV.
+        descargarCheckpointsHeaderDesdeApi(headerLocal)
 
         val checkpointsLocales = database.localphytomonitoringcheckpointDao()
             .getCheckpointsByHeader(headerLocal.idHeader)
 
         val pendientes = checkpointsLocales.filter { checkpoint ->
-            checkpoint.extId.isNullOrBlank() &&
-                    !preferencias.getBoolean(claveSync(headerExtId, checkpoint.idCheckpoint), false)
+            checkpoint.extId.isNullOrBlank()
         }
 
         if (pendientes.isEmpty()) {
+            sincronizarEstadoHeaderServidor(headerLocal)
+
             val descargados = descargarCheckpointsHeaderDesdeApi(headerLocal).cantidad
             return@withContext ResultadoCheckpointSync.Exito(
                 subidos = 0,
                 descargados = descargados,
                 omitidos = 0,
-                mensaje = "No había checkpoints nuevos por subir."
+                mensaje = "No había checkpoints nuevos por subir. Estado del monitoreo sincronizado."
             )
         }
 
-        val puntos = database.LocalPhytomonitoringTargetPointDao()
+        val puntosIniciales = database.LocalPhytomonitoringTargetPointDao()
             .getTargetPointsByHeader(headerLocal.idHeader)
             .associateBy { it.idTargetPoint }
+            .toMutableMap()
 
         val catalogo = database.localphytosanitarycatalogDao()
             .getAllCatalogo()
             .associateBy { it.idPhytosanitary }
 
-        val csv = construirCsvImportacion(
-            checkpoints = pendientes,
-            puntos = puntos,
-            catalogoPorIdLocal = catalogo
-        )
+        var subidos = 0
+        var omitidos = 0
+        val errores = mutableListOf<String>()
 
-        if (csv.filasValidas == 0) {
-            val descargados = descargarCheckpointsHeaderDesdeApi(headerLocal).cantidad
+        for (checkpoint in pendientes) {
+            val puntoLocal = puntosIniciales[checkpoint.idTargetPoint]
+            val fitoLocal = catalogo[checkpoint.idPhytosanitary]
 
-            return@withContext ResultadoCheckpointSync.Exito(
-                subidos = 0,
-                descargados = descargados,
-                omitidos = csv.filasOmitidas,
-                mensaje = "No había capturas con phyto_issue_id para subir. Se conservaron locales y se descargó lo disponible desde API."
-            )
-        }
-
-        val archivo = File.createTempFile(
-            "phyto_checkpoints_${headerLocal.idHeader}_",
-            ".csv",
-            context.cacheDir
-        )
-        archivo.writeText(csv.contenido, Charsets.UTF_8)
-
-        val headerBody = headerExtId.toRequestBody("text/plain".toMediaType())
-        val fileBody = archivo.asRequestBody("text/csv".toMediaType())
-        val csvPart = MultipartBody.Part.createFormData(
-            name = "csv_file",
-            filename = archivo.name,
-            body = fileBody
-        )
-
-        val response = api.importarCheckpointsCsv(
-            header = headerBody,
-            csv_file = csvPart
-        )
-
-        archivo.delete()
-
-        if (!response.isSuccessful) {
-            // Aunque falle la subida, intentamos bajar lo que ya exista en servidor
-            // para que Ver reporte no se quede en ceros.
-            descargarCheckpointsHeaderDesdeApi(headerLocal)
-
-            return@withContext ResultadoCheckpointSync.Error(
-                "Error subiendo CSV: HTTP ${response.code()} ${response.errorBody()?.string().orEmpty()}"
-            )
-        }
-
-        preferencias.edit().apply {
-            pendientes.forEach { checkpoint ->
-                putBoolean(claveSync(headerExtId, checkpoint.idCheckpoint), true)
+            if (puntoLocal == null) {
+                omitidos++
+                errores.add("checkpoint ${checkpoint.idCheckpoint}: no tiene punto local")
+                continue
             }
-        }.apply()
+
+            if (esCheckpointSinPlaga(fitoLocal, checkpoint)) {
+                // "SIN_PLAGA" es un registro local para el reporte.
+                // No se sube a /checkpoints/create/ porque la API exige phyto_issue numérico.
+                omitidos++
+
+                database.LocalPhytomonitoringTargetPointDao()
+                    .actualizarStatusPunto(
+                        idTargetPoint = puntoLocal.idTargetPoint,
+                        status = "Completado"
+                    )
+
+                continue
+            }
+
+            val phytoIssueId = fitoLocal?.extId
+                ?.trim()
+                ?.toIntOrNull()
+
+            if (phytoIssueId == null) {
+                omitidos++
+                errores.add("checkpoint ${checkpoint.idCheckpoint}: fitosanitario sin ext_id numérico")
+                continue
+            }
+
+            val targetExtId = asegurarTargetPointEnApi(
+                headerLocal = headerLocal,
+                puntoLocal = puntoLocal
+            )
+
+            if (targetExtId == null) {
+                omitidos++
+                errores.add("checkpoint ${checkpoint.idCheckpoint}: no se pudo crear target point en API")
+                continue
+            }
+
+            val checkpointCreado = subirCheckpointJson(
+                headerExtId = headerExtId,
+                targetExtId = targetExtId,
+                checkpoint = checkpoint,
+                puntoLocal = puntoLocal.copy(extId = targetExtId),
+                phytoIssueId = phytoIssueId
+            )
+
+            if (checkpointCreado == null) {
+                omitidos++
+                errores.add("checkpoint ${checkpoint.idCheckpoint}: no se pudo crear checkpoint en API")
+                continue
+            }
+
+            val checkpointExtId = checkpointCreado.id?.trim()?.takeIf { it.isNotBlank() }
+            if (checkpointExtId != null) {
+                database.localphytomonitoringcheckpointDao()
+                    .updateCheckpoint(
+                        checkpoint.copy(
+                            extId = checkpointExtId,
+                            idTargetPoint = puntoLocal.idTargetPoint
+                        )
+                    )
+            }
+
+            database.LocalPhytomonitoringTargetPointDao()
+                .actualizarStatusPunto(
+                    idTargetPoint = puntoLocal.idTargetPoint,
+                    status = "Completado"
+                )
+
+            subidos++
+        }
+
+        sincronizarEstadoHeaderServidor(headerLocal)
 
         val descargados = descargarCheckpointsHeaderDesdeApi(headerLocal).cantidad
 
+        if (subidos == 0 && errores.isNotEmpty()) {
+            return@withContext ResultadoCheckpointSync.Error(
+                "No se pudieron subir capturas. ${errores.take(3).joinToString(" | ")}"
+            )
+        }
+
         ResultadoCheckpointSync.Exito(
-            subidos = response.body()?.created ?: csv.filasValidas,
+            subidos = subidos,
             descargados = descargados,
-            omitidos = csv.filasOmitidas,
-            mensaje = response.body()?.detail ?: "CSV sincronizado correctamente."
+            omitidos = omitidos,
+            mensaje = when {
+                errores.isNotEmpty() -> {
+                    "Checkpoints sincronizados parcialmente. ${errores.take(3).joinToString(" | ")}"
+                }
+                omitidos > 0 -> {
+                    "Checkpoints sincronizados. Omitidos locales SIN_PLAGA: $omitidos."
+                }
+                else -> {
+                    "Checkpoints sincronizados por JSON correctamente."
+                }
+            }
         )
+    }
+
+    private suspend fun sincronizarEstadoHeaderServidor(
+        headerLocal: LocalPhytomonitoringHeaderEntity
+    ): Boolean {
+        val headerExtId = headerLocal.extId?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: return false
+
+        val statusApi = statusHeaderApi(headerLocal.status)
+
+        val response = api.actualizarHeader(
+            id = headerExtId,
+            body = PhytoHeaderPatchRequest(
+                status = statusApi,
+                startedAt = headerLocal.startAt?.let { formatearIsoApi(it) },
+                finishedAt = headerLocal.finishedAt?.let { formatearIsoApi(it) },
+                additionalNotes = headerLocal.additionalNotes.takeIf { it.isNotBlank() }
+            )
+        )
+
+        if (!response.isSuccessful) {
+            android.util.Log.e(
+                "SYNC_PHYTO_JSON",
+                "Error actualizando header HTTP ${response.code()}: ${response.errorBody()?.string().orEmpty()}"
+            )
+            return false
+        }
+
+        return true
+    }
+
+    private fun statusHeaderApi(statusLocal: String): String {
+        val limpio = statusLocal
+            .trim()
+            .lowercase(Locale.getDefault())
+            .replace("á", "a")
+            .replace("é", "e")
+            .replace("í", "i")
+            .replace("ó", "o")
+            .replace("ú", "u")
+
+        return when (limpio) {
+            "completado", "completed", "finalizado" -> "completed"
+            "en proceso", "in_progress", "vigente" -> "in_progress"
+            "cancelado", "cancelled" -> "cancelled"
+            "pendiente", "pending" -> "pending"
+            else -> limpio.ifBlank { "pending" }
+        }
+    }
+
+    private fun esCheckpointSinPlaga(
+        fitoLocal: LocalPhytosanitaryCatalogEntity?,
+        checkpoint: LocalPhytomonitoringCheckpointEntity
+    ): Boolean {
+        val nombre = fitoLocal?.name.orEmpty()
+        val tipo = fitoLocal?.type.orEmpty()
+        val descripcion = fitoLocal?.description.orEmpty()
+        val texto = "$nombre $tipo $descripcion"
+            .trim()
+            .uppercase(Locale.getDefault())
+            .replace("Á", "A")
+            .replace("É", "E")
+            .replace("Í", "I")
+            .replace("Ó", "O")
+            .replace("Ú", "U")
+
+        val esCatalogoSinPlaga = texto.contains("SIN_PLAGA") ||
+                texto.contains("SIN PLAGA") ||
+                texto.contains("NO PLAGA") ||
+                texto.contains("AUSENTE")
+
+        val stageLimpio = checkpoint.stage
+            ?.trim()
+            ?.lowercase(Locale.getDefault())
+            .orEmpty()
+
+        val sinEtapaReal = stageLimpio.isBlank() ||
+                stageLimpio == "-" ||
+                stageLimpio == "sin etapa"
+
+        return esCatalogoSinPlaga &&
+                (checkpoint.qty ?: 0) <= 0 &&
+                sinEtapaReal
+    }
+
+    private suspend fun asegurarTargetPointEnApi(
+        headerLocal: LocalPhytomonitoringHeaderEntity,
+        puntoLocal: LocalPhytomonitoringTargetPointEntity
+    ): String? {
+        puntoLocal.extId?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { return it }
+
+        val headerExtId = headerLocal.extId?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+
+        val parcelaLocal = database.localPlotDao()
+            .getPlotById(puntoLocal.idLocalPlot)
+            ?: database.localPlotDao().getPlotById(headerLocal.idLocalPlot)
+            ?: return null
+
+        val plotExtId = parcelaLocal.extId?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+
+        val body = PhytoTargetPointCreateRequest(
+            header = headerExtId,
+            plot = plotExtId,
+            geom = PhytoGeomApi(
+                type = "Point",
+                coordinates = listOf(puntoLocal.lon, puntoLocal.lat)
+            ),
+            radiusM = puntoLocal.radiusM.toDouble().coerceAtLeast(1.0),
+            label = puntoLocal.label
+                .trim()
+                .ifBlank { "Punto ${puntoLocal.idTargetPoint}" }
+        )
+
+        val response = api.crearTargetPoint(body)
+
+        if (!response.isSuccessful) {
+            android.util.Log.e(
+                "SYNC_PHYTO_JSON",
+                "Error creando target point HTTP ${response.code()}: ${response.errorBody()?.string().orEmpty()}"
+            )
+            return null
+        }
+
+        val creado = response.body() ?: return null
+        val targetExtId = creado.id.trim().takeIf { it.isNotBlank() } ?: return null
+
+        database.LocalPhytomonitoringTargetPointDao()
+            .updateTargetPoint(
+                puntoLocal.copy(
+                    extId = targetExtId,
+                    label = creado.label
+                        ?.trim()
+                        .orEmpty()
+                        .ifBlank { puntoLocal.label },
+                    status = "in_progress"
+                )
+            )
+
+        return targetExtId
+    }
+
+    private suspend fun subirCheckpointJson(
+        headerExtId: String,
+        targetExtId: String,
+        checkpoint: LocalPhytomonitoringCheckpointEntity,
+        puntoLocal: LocalPhytomonitoringTargetPointEntity,
+        phytoIssueId: Int
+    ): PhytoCheckpointApiItem? {
+        val stage = checkpoint.stage
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+
+        val qty = checkpoint.qty ?: 0
+
+        val body = PhytoCheckpointCreateRequest(
+            header = headerExtId,
+            target = targetExtId,
+            phytoIssue = phytoIssueId,
+            stage = stage,
+            presenceStatus = presenceStatusApi(checkpoint),
+            qty = qty,
+            geom = PhytoGeomApi(
+                type = "Point",
+                coordinates = listOf(puntoLocal.lon, puntoLocal.lat)
+            ),
+            notes = checkpoint.notes?.takeIf { it.isNotBlank() },
+            capturedAt = formatearIsoApi(checkpoint.capturedAt ?: System.currentTimeMillis())
+        )
+
+        val response = api.crearCheckpoint(body)
+
+        if (!response.isSuccessful) {
+            android.util.Log.e(
+                "SYNC_PHYTO_JSON",
+                "Error creando checkpoint HTTP ${response.code()}: ${response.errorBody()?.string().orEmpty()}"
+            )
+            return null
+        }
+
+        return response.body()
     }
 
     /**
@@ -278,7 +521,7 @@ class PhytoCheckpointSyncRepository(
             database.localphytomonitoringcheckpointDao()
                 .updateCheckpoint(nuevo.copy(idCheckpoint = existentePorExtId.idCheckpoint))
         } else {
-            val mismaCapturaLocal = database.localphytomonitoringcheckpointDao()
+            val mismaCapturaLocalExacta = database.localphytomonitoringcheckpointDao()
                 .buscarCheckpointLocalMismaCaptura(
                     idHeader = nuevo.idHeader,
                     idTargetPoint = nuevo.idTargetPoint,
@@ -288,9 +531,16 @@ class PhytoCheckpointSyncRepository(
                     capturedAt = nuevo.capturedAt
                 )
 
-            if (mismaCapturaLocal != null && mismaCapturaLocal.extId.isNullOrBlank()) {
+            val mismaCapturaLocalFlexible = mismaCapturaLocalExacta
+                ?: buscarCheckpointLocalPendienteSimilar(nuevo)
+
+            if (mismaCapturaLocalFlexible != null && mismaCapturaLocalFlexible.extId.isNullOrBlank()) {
+                // El import CSV no regresa los IDs creados. Cuando descargamos desde API,
+                // reconciliamos la fila del servidor con la captura local pendiente para
+                // no duplicarla en el reporte. No dependemos de timestamp exacto porque
+                // el backend puede redondear/convertir zona horaria.
                 database.localphytomonitoringcheckpointDao()
-                    .updateCheckpoint(nuevo.copy(idCheckpoint = mismaCapturaLocal.idCheckpoint))
+                    .updateCheckpoint(nuevo.copy(idCheckpoint = mismaCapturaLocalFlexible.idCheckpoint))
             } else {
                 database.localphytomonitoringcheckpointDao()
                     .upsertCheckpointFromApi(nuevo)
@@ -304,6 +554,39 @@ class PhytoCheckpointSyncRepository(
             )
 
         return true
+    }
+
+    private suspend fun buscarCheckpointLocalPendienteSimilar(
+        nuevo: LocalPhytomonitoringCheckpointEntity
+    ): LocalPhytomonitoringCheckpointEntity? {
+        val capturasPunto = database.localphytomonitoringcheckpointDao()
+            .getCheckpointsByHeaderAndTargetPoint(
+                idHeader = nuevo.idHeader,
+                idTargetPoint = nuevo.idTargetPoint
+            )
+
+        val nuevoTiempo = nuevo.capturedAt
+
+        return capturasPunto
+            .filter { local ->
+                local.extId.isNullOrBlank() &&
+                        local.idPhytosanitary == nuevo.idPhytosanitary &&
+                        local.stage.orEmpty() == nuevo.stage.orEmpty() &&
+                        local.qty == nuevo.qty
+            }
+            .minByOrNull { local ->
+                val localTiempo = local.capturedAt
+                if (nuevoTiempo != null && localTiempo != null) {
+                    kotlin.math.abs(localTiempo - nuevoTiempo)
+                } else {
+                    Long.MAX_VALUE
+                }
+            }
+            ?.takeIf { local ->
+                val localTiempo = local.capturedAt
+                nuevoTiempo == null || localTiempo == null ||
+                        kotlin.math.abs(localTiempo - nuevoTiempo) <= 5 * 60 * 1000L
+            }
     }
 
     private suspend fun crearTargetLocalDesdeCheckpoint(
@@ -490,8 +773,10 @@ class PhytoCheckpointSyncRepository(
         val qty = checkpoint.qty ?: 0
 
         return when {
+            checkpoint.presenceStatus == 0 -> "low"
             qty >= 10 -> "critical"
             qty > 0 -> "warning"
+            checkpoint.presenceStatus == 1 -> "warning"
             else -> "low"
         }
     }
@@ -565,7 +850,12 @@ class PhytoCheckpointSyncRepository(
             when {
                 value.isJsonPrimitive -> {
                     val primitive = value.asJsonPrimitive
-                    if (primitive.isNumber) primitive.asInt else primitive.asString.toIntOrNull()
+                    if (primitive.isNumber) {
+                        primitive.asDouble.toInt()
+                    } else {
+                        primitive.asString.trim().toDoubleOrNull()?.toInt()
+                            ?: primitive.asString.trim().toIntOrNull()
+                    }
                 }
 
                 value.isJsonObject -> {

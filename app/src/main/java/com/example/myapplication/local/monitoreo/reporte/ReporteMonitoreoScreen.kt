@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.myapplication.local.api.phytomonitoring.PhytoCheckpointSyncRepository
+import com.example.myapplication.local.api.phytomonitoring.ResultadoCheckpointSync
 import com.example.myapplication.local.common.EncabezadoApp
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.LocalAgroUnitEntity
@@ -51,7 +52,20 @@ import com.example.myapplication.local.monitoreo.severidad.limpiarMetadataRangos
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.compose.runtime.saveable.rememberSaveable
 
+private object EstadoSincronizacionReporte {
+    const val PENDIENTE = "PENDIENTE"
+    const val SINCRONIZANDO = "SINCRONIZANDO"
+    const val SINCRONIZADO = "SINCRONIZADO"
+    const val ERROR = "ERROR"
+}
 @Suppress("UNUSED_PARAMETER")
 @Composable
 fun ReporteMonitoreoScreen(
@@ -73,9 +87,30 @@ fun ReporteMonitoreoScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    // CAMBIO CSV: solicita permiso una vez para poder mostrar notificaciones.
+    val permisoNotificacionesLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { permitido ->
+        if (!permitido) {
+            Toast.makeText(
+                context,
+                "Activa las notificaciones para ver el aviso de descarga del CSV.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
 
     var cargando by remember { mutableStateOf(true) }
-    var sincronizandoApi by remember { mutableStateOf(false) }
+
+    var estadoSincronizacion by rememberSaveable(header.idHeader) {
+        mutableStateOf(EstadoSincronizacionReporte.PENDIENTE)
+    }
+
+    var ultimoMensajeSync by rememberSaveable(header.idHeader) {
+        mutableStateOf("Aún no se ha sincronizado este reporte.")
+    }
+
+    var descargandoCsv by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
     var puntos by remember { mutableStateOf<List<LocalPhytomonitoringTargetPointEntity>>(emptyList()) }
@@ -85,27 +120,22 @@ fun ReporteMonitoreoScreen(
     var nombreCultivo by remember { mutableStateOf("Cultivo no identificado") }
     var fotoCultivo by remember { mutableStateOf<String?>(null) }
 
-    suspend fun cargarReporteDesdeRoomYApi(): ReporteDataUi {
+    suspend fun cargarReporteDesdeRoom(): ReporteDataUi {
         return withContext(Dispatchers.IO) {
             val headerFresco = database.localphytomonitoringheaderDao()
                 .getHeaderById(header.idHeader) ?: header
 
-            // Al abrir el reporte primero se intenta subir lo local pendiente y luego
-            // bajar los checkpoints desde API. Si no hay internet, se usa Room.
-            runCatching {
-                kotlinx.coroutines.withTimeoutOrNull(20000L) {
-                    PhytoCheckpointSyncRepository(
-                        context = context.applicationContext,
-                        database = database
-                    ).sincronizarHeaderCsv(headerFresco)
-                }
-            }
-
+            // IMPORTANTE:
+            // Abrir el reporte NO debe sincronizar con API.
+            // Solo se leen datos locales de Room. La API se toca únicamente
+            // cuando el usuario presiona el botón "Sincronizar API".
             val puntosDb = database.LocalPhytomonitoringTargetPointDao()
                 .getTargetPointsByHeader(headerFresco.idHeader)
 
-            val checkpointsDb = database.localphytomonitoringcheckpointDao()
+            val checkpointsDbRaw = database.localphytomonitoringcheckpointDao()
                 .getCheckpointsByHeader(headerFresco.idHeader)
+
+            val checkpointsDb = deduplicarCheckpointsReporte(checkpointsDbRaw)
 
             val verticesDb = database.LocalPlotVertexDao()
                 .getVerticesByPlot(headerFresco.idLocalPlot)
@@ -122,7 +152,8 @@ fun ReporteMonitoreoScreen(
                 vertices = verticesDb,
                 catalogo = catalogoDb,
                 cultivo = cultivoDb?.name ?: "Cultivo no identificado",
-                fotoCultivo = cultivoDb?.photo
+                fotoCultivo = cultivoDb?.photo,
+                mensajeSync = null
             )
         }
     }
@@ -134,33 +165,82 @@ fun ReporteMonitoreoScreen(
         catalogo = data.catalogo
         nombreCultivo = data.cultivo
         fotoCultivo = data.fotoCultivo
+        data.mensajeSync
+            ?.takeIf { it.isNotBlank() }
+            ?.let { mensaje ->
+                ultimoMensajeSync = mensaje
+            }
     }
 
     fun sincronizarReporteManual() {
-        if (sincronizandoApi || cargando) return
+        if (
+            estadoSincronizacion == EstadoSincronizacionReporte.SINCRONIZANDO ||
+            cargando
+        ) return
 
-        sincronizandoApi = true
+        estadoSincronizacion = EstadoSincronizacionReporte.SINCRONIZANDO
+        ultimoMensajeSync = "Sincronizando información con la API..."
         error = null
 
         coroutineScope.launch {
             try {
-                val data = cargarReporteDesdeRoomYApi()
-                aplicarDataReporte(data)
+                val resultadoSync = withContext(Dispatchers.IO) {
+                    val headerFresco = database.localphytomonitoringheaderDao()
+                        .getHeaderById(header.idHeader) ?: header
 
-                Toast.makeText(
-                    context,
-                    "Reporte sincronizado con API",
-                    Toast.LENGTH_SHORT
-                ).show()
+                    kotlinx.coroutines.withTimeoutOrNull(20_000L) {
+                        PhytoCheckpointSyncRepository(
+                            context = context.applicationContext,
+                            database = database
+                        ).sincronizarHeaderCsv(headerFresco)
+                    }
+                }
+
+                when (resultadoSync) {
+                    null -> {
+                        estadoSincronizacion = EstadoSincronizacionReporte.ERROR
+                        ultimoMensajeSync =
+                            "Error de sincronización: no se pudo conectar con la API."
+                    }
+
+                    is ResultadoCheckpointSync.Exito -> {
+                        val dataActualizada = cargarReporteDesdeRoom()
+
+                        puntos = dataActualizada.puntos
+                        checkpoints = dataActualizada.checkpoints
+                        vertices = dataActualizada.vertices
+                        catalogo = dataActualizada.catalogo
+                        nombreCultivo = dataActualizada.cultivo
+                        fotoCultivo = dataActualizada.fotoCultivo
+
+                        estadoSincronizacion = EstadoSincronizacionReporte.SINCRONIZADO
+                        ultimoMensajeSync = "La sincronización fue exitosa."
+                    }
+
+                    is ResultadoCheckpointSync.Error -> {
+                        estadoSincronizacion = EstadoSincronizacionReporte.ERROR
+                        ultimoMensajeSync =
+                            "Error de sincronización: ${resultadoSync.mensaje}"
+                    }
+                }
             } catch (e: Exception) {
-                Toast.makeText(
-                    context,
-                    "No se pudo sincronizar: ${e.message}",
-                    Toast.LENGTH_LONG
-                ).show()
-            } finally {
-                sincronizandoApi = false
+                estadoSincronizacion = EstadoSincronizacionReporte.ERROR
+                ultimoMensajeSync =
+                    "Error de sincronización: ${e.message ?: "detalle no disponible"}"
             }
+        }
+    }
+    LaunchedEffect(Unit) {
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            permisoNotificacionesLauncher.launch(
+                Manifest.permission.POST_NOTIFICATIONS
+            )
         }
     }
 
@@ -169,7 +249,7 @@ fun ReporteMonitoreoScreen(
         error = null
 
         try {
-            val data = cargarReporteDesdeRoomYApi()
+            val data = cargarReporteDesdeRoom()
             aplicarDataReporte(data)
         } catch (e: Exception) {
             e.printStackTrace()
@@ -189,7 +269,10 @@ fun ReporteMonitoreoScreen(
 
     val numeroPuntoMap = remember(puntosOrdenados) {
         puntosOrdenados.mapIndexed { index, punto ->
-            punto.idTargetPoint to (index + 1)
+            punto.idTargetPoint to numeroPuntoRealReporteUi(
+                label = punto.label,
+                fallback = index + 1
+            )
         }.toMap()
     }
 
@@ -246,11 +329,7 @@ fun ReporteMonitoreoScreen(
                     numeroPunto = numeroPuntoMap[checkpoint.idTargetPoint] ?: 0,
                     lat = punto?.lat,
                     lon = punto?.lon,
-                    coordenadas = if (punto != null) {
-                        "${punto.lat}, ${punto.lon}"
-                    } else {
-                        "-"
-                    },
+                    coordenadas = formatearCoordenadasReporteUi(punto?.lat, punto?.lon),
                     plagaEnfermedad = item?.name ?: "Sin identificar",
                     tipo = textoTipoCatalogo(item?.type),
                     fase = checkpoint.stage ?: "-",
@@ -351,6 +430,19 @@ fun ReporteMonitoreoScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
+                    val colorSincronizacion = when (estadoSincronizacion) {
+                        EstadoSincronizacionReporte.SINCRONIZADO -> Color(0xFF2E7D32)
+                        EstadoSincronizacionReporte.ERROR -> Color(0xFFC62828)
+                        else -> Color(0xFFF9A825)
+                    }
+
+                    val textoEstadoSincronizacion = when (estadoSincronizacion) {
+                        EstadoSincronizacionReporte.PENDIENTE -> "Pendiente de sincronizar"
+                        EstadoSincronizacionReporte.SINCRONIZANDO -> "Sincronizando..."
+                        EstadoSincronizacionReporte.SINCRONIZADO -> "Sincronizado"
+                        EstadoSincronizacionReporte.ERROR -> "Error de sincronización"
+                        else -> "Pendiente de sincronizar"
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -437,15 +529,18 @@ fun ReporteMonitoreoScreen(
                     ) {
                         Button(
                             onClick = { sincronizarReporteManual() },
-                            enabled = !sincronizandoApi && !cargando,
+                            enabled = estadoSincronizacion != EstadoSincronizacionReporte.SINCRONIZANDO &&
+                                    !cargando,
                             modifier = Modifier
                                 .weight(1f)
                                 .height(54.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = colorSincronizacion
+                            ),
                             shape = RoundedCornerShape(22.dp)
                         ) {
                             Text(
-                                text = if (sincronizandoApi) "↻ Sincronizando..." else "↻ Sincronizar API",
+                                text = "Sincronizar",
                                 color = Color.White,
                                 fontWeight = FontWeight.Black,
                                 fontSize = 13.sp,
@@ -455,39 +550,50 @@ fun ReporteMonitoreoScreen(
 
                         Button(
                             onClick = {
-                                try {
-                                    val ubicacionArchivo = descargarCsvReporteUi(
-                                        context = context,
-                                        header = header,
-                                        nombreCia = nombreCia,
-                                        productor = productor?.commercial_name ?: "-",
-                                        rancho = rancho?.name ?: "-",
-                                        parcela = parcela?.code ?: "-",
-                                        cultivo = nombreCultivo,
-                                        filas = filasTabla
-                                    )
+                                descargandoCsv = true
 
-                                    Toast.makeText(
-                                        context,
-                                        "CSV descargado en: $ubicacionArchivo",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                } catch (e: Exception) {
-                                    Toast.makeText(
-                                        context,
-                                        "No se pudo descargar el CSV: ${e.message}",
-                                        Toast.LENGTH_LONG
-                                    ).show()
+                                coroutineScope.launch {
+                                    try {
+                                        val archivoCsv = withContext(Dispatchers.IO) {
+                                            descargarCsvReporteUi(
+                                                context = context.applicationContext,
+                                                header = header,
+                                                nombreCia = nombreCia,
+                                                productor = productor?.commercial_name ?: "-",
+                                                rancho = rancho?.name ?: "-",
+                                                parcela = parcela?.code ?: "-",
+                                                cultivo = nombreCultivo,
+                                                filas = filasTabla
+                                            )
+                                        }
+
+                                        // CSV: muestra notificación y permite abrir el archivo exacto.
+                                        NotificacionCsvReporte.mostrar(
+                                            context = context.applicationContext,
+                                            archivo = archivoCsv
+                                        )
+                                    } catch (e: Exception) {
+                                        Toast.makeText(
+                                            context,
+                                            "No se pudo descargar el CSV: ${e.message ?: "error desconocido"}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    } finally {
+                                        descargandoCsv = false
+                                    }
                                 }
                             },
+                            enabled = !descargandoCsv,
                             modifier = Modifier
                                 .weight(1f)
                                 .height(54.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20)),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF1B5E20)
+                            ),
                             shape = RoundedCornerShape(22.dp)
                         ) {
                             Text(
-                                text = "⬇ Descargar CSV",
+                                text = if (descargandoCsv) "Descargando..." else "⬇ Descargar CSV",
                                 color = Color.White,
                                 fontWeight = FontWeight.Black,
                                 fontSize = 13.sp,
@@ -495,6 +601,40 @@ fun ReporteMonitoreoScreen(
                             )
                         }
                     }
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = when (estadoSincronizacion) {
+                                EstadoSincronizacionReporte.SINCRONIZADO -> Color(0xFFE8F5E9)
+                                EstadoSincronizacionReporte.ERROR -> Color(0xFFFFEBEE)
+                                else -> Color(0xFFFFF8E1)
+                            }
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp)
+                        ) {
+                            Text(
+                                text = textoEstadoSincronizacion,
+                                color = colorSincronizacion,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Black
+                            )
+
+                            Spacer(modifier = Modifier.height(3.dp))
+
+                            Text(
+                                text = ultimoMensajeSync,
+                                color = Color(0xFF3E4A40),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
 
                     Spacer(modifier = Modifier.height(14.dp))
 
@@ -529,4 +669,44 @@ fun ReporteMonitoreoScreen(
             }
         }
     }
+}
+
+private fun deduplicarCheckpointsReporte(
+    checkpoints: List<LocalPhytomonitoringCheckpointEntity>
+): List<LocalPhytomonitoringCheckpointEntity> {
+    val vistosExtId = mutableSetOf<String>()
+    val vistosCaptura = mutableSetOf<String>()
+
+    return checkpoints
+        .sortedWith(
+            compareBy<LocalPhytomonitoringCheckpointEntity> { checkpoint ->
+                if (checkpoint.extId.isNullOrBlank()) 1 else 0
+            }.thenByDescending { checkpoint ->
+                checkpoint.capturedAt ?: 0L
+            }
+        )
+        .filter { checkpoint ->
+            val extId = checkpoint.extId?.trim()?.takeIf { it.isNotBlank() }
+            val minutoCaptura = (checkpoint.capturedAt ?: 0L) / 60000L
+            val llaveCaptura = listOf(
+                checkpoint.idHeader,
+                checkpoint.idTargetPoint,
+                checkpoint.idPhytosanitary,
+                checkpoint.stage.orEmpty(),
+                checkpoint.qty ?: -9999,
+                minutoCaptura
+            ).joinToString("|")
+
+            val extValido = extId == null || vistosExtId.add(extId)
+            val capturaValida = vistosCaptura.add(llaveCaptura)
+
+            extValido && capturaValida
+        }
+        .sortedWith(
+            compareBy<LocalPhytomonitoringCheckpointEntity> { checkpoint ->
+                checkpoint.capturedAt ?: 0L
+            }.thenBy { checkpoint ->
+                checkpoint.idCheckpoint
+            }
+        )
 }

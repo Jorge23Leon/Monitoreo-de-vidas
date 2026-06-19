@@ -19,6 +19,8 @@ interface OrganizationApiService {
 
     @GET("api/v1/organizations/")
     suspend fun listarUnidadesAgroeconomicas(
+        @Query("datacentral") datacentral: String? = null,
+        @Query("data_central") dataCentral: String? = null,
         @Query("page") page: Int? = null
     ): Response<JsonElement>
 

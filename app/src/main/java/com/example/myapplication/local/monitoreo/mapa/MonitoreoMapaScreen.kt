@@ -41,9 +41,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.example.myapplication.local.api.phytomonitoring.PhytoCheckpointSyncRepository
-import com.example.myapplication.local.api.phytomonitoring.PhytoMonitoringRepository
-import com.example.myapplication.local.api.phytomonitoring.ResultadoActualizarHeaderApi
 import com.example.myapplication.local.common.EncabezadoApp
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.LocalPhytomonitoringCheckpointEntity
@@ -55,10 +52,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
-import java.util.TimeZone
 
 @Composable
 fun MonitoreoMapaScreen(
@@ -78,10 +72,6 @@ fun MonitoreoMapaScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-
-    val phytoRepository = remember(context) {
-        PhytoMonitoringRepository(context)
-    }
 
     val onPuntoValidoActual by rememberUpdatedState(onPuntoValidoClick)
     val onMonitoreoActualizadoActual by rememberUpdatedState(onMonitoreoActualizado)
@@ -151,59 +141,6 @@ fun MonitoreoMapaScreen(
         )
     }
 
-    fun fechaIsoApi(ms: Long?): String? {
-        if (ms == null) return null
-
-        return try {
-            val sdf = SimpleDateFormat(
-                "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-                Locale.US
-            )
-            sdf.timeZone = TimeZone.getTimeZone("UTC")
-            sdf.format(Date(ms))
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    suspend fun actualizarHeaderEnServidorSilencioso(
-        headerLocal: LocalPhytomonitoringHeaderEntity,
-        statusApi: String,
-        startedAt: Long? = null,
-        finishedAt: Long? = null,
-        additionalNotes: String? = null
-    ) {
-        if (!hayInternet(context)) {
-            return
-        }
-
-        val extId = headerLocal.extId
-            ?.takeIf { it.isNotBlank() }
-            ?: return
-
-        when (
-            val resultado = phytoRepository.actualizarHeaderServidor(
-                idHeaderExt = extId,
-                status = statusApi,
-                startedAt = fechaIsoApi(startedAt),
-                finishedAt = fechaIsoApi(finishedAt),
-                additionalNotes = additionalNotes
-            )
-        ) {
-            is ResultadoActualizarHeaderApi.Exito -> Unit
-
-            is ResultadoActualizarHeaderApi.Error -> {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        context,
-                        "Estado local guardado, pero no se pudo actualizar servidor: ${resultado.mensaje}",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            }
-        }
-    }
-
     suspend fun actualizarHeaderLocalYServidor(
         headerBase: LocalPhytomonitoringHeaderEntity,
         statusLocal: String,
@@ -225,42 +162,11 @@ fun MonitoreoMapaScreen(
         database.localprogramDao()
             .recalcularEstadoDesdeHeaders(nuevoHeader.idProgram)
 
-        actualizarHeaderEnServidorSilencioso(
-            headerLocal = nuevoHeader,
-            statusApi = statusApi,
-            startedAt = nuevoHeader.startAt,
-            finishedAt = nuevoHeader.finishedAt,
-            additionalNotes = nuevoHeader.additionalNotes
-        )
-
+        // IMPORTANTE:
+        // No sincronizamos el header con API desde el mapa.
+        // El usuario pidió que la API solo se toque al presionar
+        // el botón "Sincronizar API" en el reporte.
         return nuevoHeader
-    }
-
-    suspend fun sincronizarCapturasPendientesSilencioso(
-        headerLocal: LocalPhytomonitoringHeaderEntity
-    ): String? {
-        if (!hayInternet(context)) {
-            return "Sin internet: las capturas quedan pendientes para sincronizar."
-        }
-
-        if (headerLocal.extId.isNullOrBlank()) {
-            return "El monitoreo no tiene id del servidor; queda pendiente para sincronizar."
-        }
-
-        val resultado = runCatching {
-            kotlinx.coroutines.withTimeoutOrNull(20000L) {
-                PhytoCheckpointSyncRepository(
-                    context = context.applicationContext,
-                    database = database
-                ).sincronizarHeaderCsv(headerLocal)
-            }
-        }.getOrNull()
-
-        return when (resultado) {
-            null -> "No se pudo sincronizar ahora; queda pendiente para reintentar."
-            is com.example.myapplication.local.api.phytomonitoring.ResultadoCheckpointSync.Exito -> null
-            is com.example.myapplication.local.api.phytomonitoring.ResultadoCheckpointSync.Error -> resultado.mensaje
-        }
     }
 
     val permisoUbicacionLauncher = rememberLauncherForActivityResult(
@@ -429,27 +335,27 @@ fun MonitoreoMapaScreen(
 
         coroutineScope.launch {
             try {
-                val terminadoMs = System.currentTimeMillis()
-
-                val (actualizado, avisoSync) = withContext(Dispatchers.IO) {
+                val actualizado = withContext(Dispatchers.IO) {
                     val fresco = database.localphytomonitoringheaderDao()
                         .getHeaderById(headerActual.idHeader) ?: headerActual
 
-                    // Antes de cerrar el monitoreo intentamos mandar todas las capturas pendientes
-                    // al backend. Si no hay internet, NO se borra nada local: queda pendiente
-                    // para el botón de sincronizar del reporte.
-                    val aviso = sincronizarCapturasPendientesSilencioso(fresco)
+                    val terminadoMs = System.currentTimeMillis()
+                    val inicioReal = fresco.startAt ?: terminadoMs
 
-                    val headerActualizado = actualizarHeaderLocalYServidor(
-                        headerBase = fresco,
-                        statusLocal = "completed",
-                        statusApi = "completed",
-                        startAt = fresco.startAt,
+                    val nuevoHeader = fresco.copy(
+                        status = "completed",
+                        startAt = inicioReal,
                         finishedAt = terminadoMs,
                         additionalNotes = fresco.additionalNotes
                     )
 
-                    headerActualizado to aviso
+                    database.localphytomonitoringheaderDao()
+                        .updateHeader(nuevoHeader)
+
+                    database.localprogramDao()
+                        .recalcularEstadoDesdeHeaders(nuevoHeader.idProgram)
+
+                    nuevoHeader
                 }
 
                 headerActual = actualizado
@@ -457,8 +363,7 @@ fun MonitoreoMapaScreen(
 
                 Toast.makeText(
                     context,
-                    avisoSync?.let { "Monitoreo terminado localmente. $it" }
-                        ?: "Monitoreo terminado y sincronizado con servidor",
+                    "Monitoreo terminado localmente. Para subirlo toca Sincronizar API en el reporte.",
                     Toast.LENGTH_LONG
                 ).show()
 
@@ -507,10 +412,9 @@ fun MonitoreoMapaScreen(
                             else -> "$notaAnterior\n$notaAutomatica"
                         }
 
-                        // Intento de subida antes del cierre automático. Si falla,
-                        // las capturas quedan locales para sincronizar después.
-                        sincronizarCapturasPendientesSilencioso(fresco)
-
+                        // Cierre automático 100% local.
+                        // No se sube nada a API hasta que el usuario toque
+                        // "Sincronizar API" en el reporte.
                         actualizarHeaderLocalYServidor(
                             headerBase = fresco,
                             statusLocal = "completed",

@@ -1,5 +1,8 @@
 package com.example.myapplication.local.monitoreo.reporte
 
+// CAMBIO PUNTOS/CSV: el mapa muestra el número real obtenido desde label,
+// sin renumerar los puntos por el orden local de Room.
+
 import android.view.View
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
@@ -120,6 +123,10 @@ internal fun crearHtmlMapaReporteUi(
 
     val puntosJson = JSONArray().apply {
         puntosOrdenados.forEachIndexed { index, punto ->
+            val numeroPuntoReal = numeroPuntoRealReporteUi(
+                label = punto.label,
+                fallback = index + 1
+            )
             val capturas = checkpointsPorPunto[punto.idTargetPoint].orEmpty()
 
             val severidadPunto = calcularSeveridadPorPunto(
@@ -151,7 +158,7 @@ internal fun crearHtmlMapaReporteUi(
             }
 
             put(JSONObject().apply {
-                put("numero", index + 1)
+                put("numero", numeroPuntoReal)
                 put("id", punto.idTargetPoint)
                 put("lat", punto.lat)
                 put("lon", punto.lon)

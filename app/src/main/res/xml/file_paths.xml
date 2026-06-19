@@ -9,4 +9,18 @@
         name="fotos_monitoreo_external"
         path="fotos_monitoreo/" />
 
+    <!-- CAMBIO CSV: permite abrir CSV guardados en Descargas/Monitoreos -->
+    <external-path
+        name="csv_descargas"
+        path="Download/Monitoreos/" />
+
+    <!-- CAMBIO CSV: respaldo en documentos privados de la app -->
+    <external-files-path
+        name="csv_documentos_app"
+        path="Documents/Monitoreos/" />
+
+    <files-path
+        name="csv_archivos_internos"
+        path="." />
+
 </paths>

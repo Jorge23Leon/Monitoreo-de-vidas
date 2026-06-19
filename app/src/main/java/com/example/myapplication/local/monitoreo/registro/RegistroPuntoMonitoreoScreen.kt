@@ -1,5 +1,8 @@
 package com.example.myapplication.local.monitoreo.registro
 
+// CAMBIO PUNTOS/CSV: la pantalla de registro muestra el número real del label
+// y usa el orden local únicamente como respaldo para puntos antiguos.
+
 import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -164,9 +167,16 @@ fun RegistroPuntoMonitoreoScreen(
                     .getTargetPointsByHeader(header.idHeader)
                     .sortedBy { it.idTargetPoint }
 
-                val numeroPuntoCalculado = puntosDelMonitoreo
+                val indiceRespaldo = puntosDelMonitoreo
                     .indexOfFirst { it.idTargetPoint == punto.idTargetPoint }
                     .let { index -> if (index >= 0) index + 1 else 1 }
+
+                val numeroPuntoCalculado = Regex("\\d+")
+                    .find(punto.label)
+                    ?.value
+                    ?.toIntOrNull()
+                    ?.takeIf { it > 0 }
+                    ?: indiceRespaldo
 
                 val capturasExistentes = database.localphytomonitoringcheckpointDao()
                     .getCheckpointsByTargetPoint(punto.idTargetPoint)

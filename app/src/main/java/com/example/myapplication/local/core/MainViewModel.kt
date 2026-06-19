@@ -43,6 +43,7 @@ import com.example.myapplication.local.entities.UserLocalCiaCrossRef
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.util.Log
 import com.example.myapplication.local.api.monitoreosync.MonitoreoSyncRepository
 import com.example.myapplication.local.api.monitoreosync.ResultadoMonitoreoSync
 
@@ -778,17 +779,9 @@ class MainViewModel(
         val errores = mutableListOf<String>()
 
         if (ciasUsuario.isEmpty()) {
-            when (
-                val resultado = kotlinx.coroutines.withTimeoutOrNull(120000L) {
-                    monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
-                        idLocalCia = null
-                    )
-                }
-            ) {
-                null -> errores.add("La sincronización de catálogos/monitoreos tardó demasiado")
-                is ResultadoMonitoreoSync.Error -> errores.add(resultado.mensaje)
-                is ResultadoMonitoreoSync.Exito -> Unit
-            }
+            // Nunca hacemos una descarga global con idLocalCia = null.
+            // Sin una CIA permitida no hay una forma segura de decidir qué datos guardar.
+            return "Login correcto. No tienes CIAS asignadas; no se descargaron datos de campo."
         } else {
             ciasUsuario.forEach { cia ->
                 when (
@@ -1549,20 +1542,18 @@ class MainViewModel(
 
         viewModelScope.launch {
             try {
-                cargarProductores(
-                    idLocalCia = cia.idLocalCia,
-                    idProductorRestaurar = idProductorRestaurar
-                )
-
                 if (!hayConexionInternet()) {
-                    mostrarMensaje("Sin internet. Mostrando datos locales.")
-                    cargarMonitoreosPorFiltrosProgresivos()
+                    cargarProductores(
+                        idLocalCia = cia.idLocalCia,
+                        idProductorRestaurar = idProductorRestaurar
+                    )
+                    mostrarMensaje("Sin internet. Mostrando datos locales de ${cia.nombre}.")
                     return@launch
                 }
 
                 val mensajeAgroSync = withContext(Dispatchers.IO) {
                     when (
-                        val resultado = kotlinx.coroutines.withTimeoutOrNull(90000L) {
+                        val resultado = kotlinx.coroutines.withTimeoutOrNull(90_000L) {
                             agroSyncRepository.sincronizarProductoresRanchosParcelas(
                                 idLocalCia = cia.idLocalCia
                             )
@@ -1576,39 +1567,43 @@ class MainViewModel(
 
                 val mensajeMonitoreoSync = withContext(Dispatchers.IO) {
                     when (
-                        val resultado = kotlinx.coroutines.withTimeoutOrNull(90000L) {
+                        val resultado = kotlinx.coroutines.withTimeoutOrNull(90_000L) {
                             monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
                                 idLocalCia = cia.idLocalCia
                             )
                         }
                     ) {
                         null -> "La actualización de monitoreos tardó demasiado"
-                        is ResultadoMonitoreoSync.Exito -> null
                         is ResultadoMonitoreoSync.Error -> resultado.mensaje
+                        is ResultadoMonitoreoSync.Exito -> resultado.advertencias
+                            .take(2)
+                            .takeIf { it.isNotEmpty() }
+                            ?.joinToString(" | ")
                     }
                 }
 
+                // cargarProductores actualiza la pantalla y ejecuta un solo filtrado local.
                 cargarProductores(
                     idLocalCia = cia.idLocalCia,
                     idProductorRestaurar = idProductorRestaurar
                 )
 
-                cargarMonitoreosPorFiltrosProgresivos()
+                val mensajeError = listOfNotNull(mensajeAgroSync, mensajeMonitoreoSync)
+                    .joinToString(" | ")
+                    .takeIf { it.isNotBlank() }
 
-                val mensajeError = mensajeAgroSync ?: mensajeMonitoreoSync
                 if (mensajeError != null) {
-                    mostrarMensaje("No se pudieron actualizar todos los datos: $mensajeError")
+                    mostrarMensaje("Sincronización parcial: $mensajeError")
                 }
-
             } catch (e: Exception) {
+                Log.e("MAIN_VM", "No se pudieron cargar datos de CIA", e)
                 mostrarMensaje("No se pudieron cargar los datos: ${e.message ?: "detalle no disponible"}")
             } finally {
-                actualizarEstado {
-                    it.copy(cargando = false)
-                }
+                actualizarEstado { it.copy(cargando = false) }
             }
         }
     }
+
     fun seleccionarCiaActual() {
         try {
             val estado = uiState
@@ -1659,11 +1654,10 @@ class MainViewModel(
 
                     val ranchosFiltro = if (productorRestaurado != null) {
                         database.localRanchDao()
-                            .getAllRanches()
-                            .filter { rancho ->
-                                rancho.idLocalAgroUnit == productorRestaurado.idLocalAgroUnit
-                            }
-                            .sortedBy { rancho -> rancho.name }
+                            .getRanchosByCiaAndProductor(
+                                idLocalCia = idLocalCia,
+                                idProductor = productorRestaurado.idLocalAgroUnit
+                            )
                     } else {
                         emptyList()
                     }
@@ -1820,11 +1814,19 @@ class MainViewModel(
     }
 
     fun cargarRanchos(idProductor: Long) {
+        val cia = uiState.ciaSeleccionada
+        if (cia == null) {
+            mostrarMensaje("Selecciona una CIA antes de cargar ranchos")
+            return
+        }
+
         viewModelScope.launch {
             try {
                 val lista = withContext(Dispatchers.IO) {
-                    database.localRanchDao()
-                        .getRanchosByProductor(idProductor)
+                    database.localRanchDao().getRanchosByCiaAndProductor(
+                        idLocalCia = cia.idLocalCia,
+                        idProductor = idProductor
+                    )
                 }
 
                 actualizarEstado {
@@ -1839,14 +1841,15 @@ class MainViewModel(
                 }
 
                 if (lista.isEmpty()) {
-                    mostrarMensaje("El productor seleccionado no tiene ranchos registrados")
+                    mostrarMensaje("El productor seleccionado no tiene ranchos con programas en esta CIA")
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e("MAIN_VM", "Error al cargar ranchos", e)
                 mostrarMensaje("Error al cargar ranchos: ${e.message}")
             }
         }
     }
+
     fun onRanchoChange(rancho: LocalRanchEntity?) {
         val productorActual = uiState.productorSeleccionado
 
@@ -1896,20 +1899,26 @@ class MainViewModel(
     }
 
     fun cargarParcelas(idRanch: Long) {
+        val cia = uiState.ciaSeleccionada
         viewModelScope.launch {
             try {
                 val sesion = uiState.usuarioSesion
 
                 val lista = withContext(Dispatchers.IO) {
-                    if (sesion != null && (sesion.esTecnico || sesion.esInvitado)) {
-                        database.localPlotDao()
-                            .getParcelasByRanchoAndUser(
+                    when {
+                        sesion != null && (sesion.esTecnico || sesion.esInvitado) -> {
+                            database.localPlotDao().getParcelasByRanchoAndUser(
                                 idRanch = idRanch,
                                 idUser = sesion.idUser
                             )
-                    } else {
-                        database.localPlotDao()
-                            .getParcelasByRancho(idRanch)
+                        }
+                        cia != null -> {
+                            database.localPlotDao().getParcelasByCiaAndRancho(
+                                idLocalCia = cia.idLocalCia,
+                                idRanch = idRanch
+                            )
+                        }
+                        else -> emptyList()
                     }
                 }
 
@@ -1926,16 +1935,17 @@ class MainViewModel(
                     val mensaje = if (sesion != null && (sesion.esTecnico || sesion.esInvitado)) {
                         "No tienes parcelas asignadas en este rancho"
                     } else {
-                        "El rancho seleccionado no tiene parcelas registradas"
+                        "El rancho seleccionado no tiene parcelas con programas en esta CIA"
                     }
                     mostrarMensaje(mensaje)
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e("MAIN_VM", "Error al cargar parcelas", e)
                 mostrarMensaje("Error al cargar parcelas: ${e.message}")
             }
         }
     }
+
 
     fun onParcelaChange(parcela: LocalPlotEntity?) {
         val productor = uiState.productorSeleccionado
@@ -1988,37 +1998,43 @@ class MainViewModel(
             )
         }
 
-        cargarCiclos(
-            idProductor = productor.idLocalAgroUnit,
-            idPlot = parcela.idLocalPlot
-        )
+        val cia = uiState.ciaSeleccionada
+        if (cia != null) {
+            cargarCiclos(
+                idLocalCia = cia.idLocalCia,
+                idProductor = productor.idLocalAgroUnit,
+                idPlot = parcela.idLocalPlot
+            )
+        }
 
         cargarMonitoreosPorFiltrosProgresivos()
     }
 
-    fun cargarCiclos(idProductor: Long, idPlot: Long) {
+    fun cargarCiclos(
+        idLocalCia: Long,
+        idProductor: Long,
+        idPlot: Long
+    ) {
         viewModelScope.launch {
             try {
                 val lista = withContext(Dispatchers.IO) {
-                    database.localprogramDao()
-                        .getCiclosByProductorAndParcela(
-                            idProductor = idProductor,
-                            idPlot = idPlot
-                        )
+                    database.localprogramDao().getCiclosByProductorAndParcela(
+                        idLocalCia = idLocalCia,
+                        idProductor = idProductor,
+                        idPlot = idPlot
+                    )
                 }
 
                 actualizarEstado {
-                    it.copy(
-                        ciclos = lista,
-                        cicloSeleccionado = null
-                    )
+                    it.copy(ciclos = lista, cicloSeleccionado = null)
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e("MAIN_VM", "Error al cargar ciclos", e)
                 mostrarMensaje("Error al cargar ciclos: ${e.message}")
             }
         }
     }
+
 
     private fun filtrosCompletos(): Boolean {
         val estado = uiState
@@ -2064,16 +2080,7 @@ class MainViewModel(
                     val estadoActual = uiState
                     val sesion = estadoActual.usuarioSesion
 
-                    if (hayConexionInternet()) {
-                        runCatching {
-                            kotlinx.coroutines.withTimeoutOrNull(90000L) {
-                                monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
-                                    idLocalCia = cia.idLocalCia
-                                )
-                            }
-                        }
-                    }
-
+                    // Buscar solo filtra Room. La sincronización se realiza una vez al abrir la CIA.
                     val programasCia = database.localprogramDao()
                         .getProgramasByCia(cia.idLocalCia)
                         .distinctBy { programa -> programa.idProgram }
@@ -2304,16 +2311,7 @@ class MainViewModel(
                     val ranchoActual = estadoActual.ranchoSeleccionado
                     val parcelaActual = estadoActual.parcelaSeleccionada
 
-                    if (hayConexionInternet()) {
-                        runCatching {
-                            kotlinx.coroutines.withTimeoutOrNull(90000L) {
-                                monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
-                                    idLocalCia = cia.idLocalCia
-                                )
-                            }
-                        }
-                    }
-
+                    // Los cambios de filtros no hacen peticiones de red.
                     val programasCia = database.localprogramDao()
                         .getProgramasByCia(cia.idLocalCia)
                         .distinctBy { programa -> programa.idProgram }
@@ -2472,19 +2470,27 @@ class MainViewModel(
                 }
 
                 val resultado = withContext(Dispatchers.IO) {
+                    val ciasPermitidasUsuario = database.userLocalCiaDao()
+                        .getCiasByUser(sesion.idUser)
+
                     if (hayConexionInternet()) {
-                        runCatching {
-                            val idCiaActual = uiState.ciaSeleccionada?.idLocalCia
-                            kotlinx.coroutines.withTimeoutOrNull(90000L) {
-                                monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
-                                    idLocalCia = idCiaActual
-                                )
+                        ciasPermitidasUsuario.forEach { ciaPermitida ->
+                            when (
+                                val sync = kotlinx.coroutines.withTimeoutOrNull(90_000L) {
+                                    monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
+                                        idLocalCia = ciaPermitida.idLocalCia
+                                    )
+                                }
+                            ) {
+                                null -> Log.w("MAIN_VM", "Timeout sync CIA ${ciaPermitida.nombre}")
+                                is ResultadoMonitoreoSync.Error -> Log.w("MAIN_VM", sync.mensaje)
+                                is ResultadoMonitoreoSync.Exito -> Unit
                             }
                         }
                     }
 
                     val ciasPermitidasTecnico = if (sesion.esTecnico) {
-                        database.userLocalCiaDao().getCiasByUser(sesion.idUser)
+                        ciasPermitidasUsuario
                     } else {
                         emptyList()
                     }
@@ -2906,40 +2912,72 @@ class MainViewModel(
 
     fun onMonitoreoActualizado(nuevoEstado: String) {
         val esCompletado = esEstadoFinalizadoVm(nuevoEstado)
-
-        mostrarMensaje(
-            if (esCompletado) {
-                "Monitoreo terminado correctamente"
-            } else {
-                "Monitoreo guardado en proceso"
-            }
-        )
-
+        val headerMapa = uiState.monitoreoSeleccionadoParaMapa
         val sesion = uiState.usuarioSesion
 
-        actualizarEstado {
-            it.copy(
-                monitoreoSeleccionadoParaMapa = null,
-                puntoSeleccionadoParaRegistro = null,
+        viewModelScope.launch {
+            try {
+                val headerFresco = withContext(Dispatchers.IO) {
+                    headerMapa?.let { header ->
+                        database.localphytomonitoringheaderDao()
+                            .getHeaderById(header.idHeader)
+                            ?: header.copy(status = nuevoEstado)
+                    }
+                }
 
-                /*
-                 * Si se terminó un monitoreo, activamos finalizados para que
-                 * no desaparezca al regresar a la lista.
-                 */
-                finalizadosChecked = if (esCompletado) true else it.finalizadosChecked
-            )
-        }
+                if (headerFresco != null) {
+                    actualizarHeaderEnLista(headerFresco)
+                }
 
-        if (sesion != null && (sesion.esTecnico || sesion.esInvitado)) {
-            cargarMonitoreosDirectoPorUsuario(sesion)
-        } else {
-            actualizarEstado {
-                it.copy(
-                    pantallaActual = PantallaActual.FILTROS_MONITOREO
+                if (esCompletado && headerFresco != null) {
+                    actualizarEstado { estado ->
+                        estado.copy(
+                            monitoreoSeleccionadoParaReporte = headerFresco,
+                            monitoreoSeleccionadoParaMapa = null,
+                            puntoSeleccionadoParaRegistro = null,
+                            finalizadosChecked = true,
+                            pantallaActual = PantallaActual.REPORTE_MONITOREO
+                        )
+                    }
+
+                    mostrarMensaje(
+                        "Monitoreo terminado localmente. Sincroniza API desde el reporte."
+                    )
+
+                    return@launch
+                }
+
+                actualizarEstado {
+                    it.copy(
+                        monitoreoSeleccionadoParaMapa = null,
+                        puntoSeleccionadoParaRegistro = null,
+                        finalizadosChecked = if (esCompletado) true else it.finalizadosChecked
+                    )
+                }
+
+                mostrarMensaje(
+                    if (esCompletado) {
+                        "Monitoreo terminado correctamente"
+                    } else {
+                        "Monitoreo guardado en proceso"
+                    }
                 )
-            }
 
-            cargarMonitoreosPorFiltrosProgresivos()
+                if (sesion != null && (sesion.esTecnico || sesion.esInvitado)) {
+                    cargarMonitoreosDirectoPorUsuario(sesion)
+                } else {
+                    actualizarEstado {
+                        it.copy(
+                            pantallaActual = PantallaActual.FILTROS_MONITOREO
+                        )
+                    }
+
+                    cargarMonitoreosPorFiltrosProgresivos()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                mostrarMensaje("Error al cerrar monitoreo: ${e.message}")
+            }
         }
     }
 

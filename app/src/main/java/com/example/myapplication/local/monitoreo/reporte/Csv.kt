@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.core.content.FileProvider
 import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
 import java.io.File
 import java.io.OutputStreamWriter
@@ -13,6 +14,16 @@ import java.text.Normalizer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+/**
+ * CAMBIO CSV:
+ * Conserva el Uri real del archivo para abrir exactamente el CSV desde la notificación.
+ */
+internal data class ArchivoCsvReporteUi(
+    val nombreArchivo: String,
+    val ubicacionVisible: String,
+    val uri: Uri
+)
 
 internal fun descargarCsvReporteUi(
     context: Context,
@@ -23,7 +34,7 @@ internal fun descargarCsvReporteUi(
     parcela: String,
     cultivo: String,
     filas: List<FilaReporteCapturaUi>
-): String {
+): ArchivoCsvReporteUi {
     val nombreArchivo = crearNombreArchivoCsvReporteUi(
         productor = productor,
         rancho = rancho,
@@ -105,7 +116,7 @@ private fun crearContenidoCsvReporteUi(
     return buildString {
         append('\uFEFF')
         appendLine("sep=,")
-        appendLine("Monitoreo  de plagas y enfermedades en parcelas")
+        appendLine("Monitoreo de plagas y enfermedades en parcelas")
         appendLine("field,value")
 
         appendLine(listOf("idHeader", header.idHeader.toString()).joinToString(",") { escaparCsvUi(it) })
@@ -120,8 +131,8 @@ private fun crearContenidoCsvReporteUi(
         appendLine(listOf("finished_at", formatearFechaOpcionalReporteUi(header.finishedAt)).joinToString(",") { escaparCsvUi(it) })
 
         appendLine()
-        appendLine("Monitoreos ")
-        appendLine("point_number,lat,lon,name,type,stage,qty,point_severity,notes")
+        appendLine("Monitoreos")
+        appendLine("point_number,lat,lon,name,type,stage,qty,point_severity,captured_at,notes")
 
         filas.forEach { fila ->
             appendLine(
@@ -133,6 +144,7 @@ private fun crearContenidoCsvReporteUi(
                     fila.tipo,
                     fila.fase,
                     fila.cantidad.toString(),
+                    fila.severidad,
                     fila.fechaCaptura,
                     fila.notas
                 ).joinToString(",") { escaparCsvUi(it) }
@@ -141,21 +153,31 @@ private fun crearContenidoCsvReporteUi(
     }
 }
 
+/**
+ * CAMBIO CSV:
+ * Android 10+ guarda en Descargas/Monitoreos y devuelve el Uri de MediaStore.
+ */
 private fun guardarCsvEnDescargasMediaStore(
     context: Context,
     nombreArchivo: String,
     contenido: String
-): String {
+): ArchivoCsvReporteUi {
     val resolver = context.contentResolver
 
     val values = ContentValues().apply {
         put(MediaStore.MediaColumns.DISPLAY_NAME, nombreArchivo)
         put(MediaStore.MediaColumns.MIME_TYPE, "text/csv")
-        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Monitoreos")
+        put(
+            MediaStore.MediaColumns.RELATIVE_PATH,
+            Environment.DIRECTORY_DOWNLOADS + "/Monitoreos"
+        )
         put(MediaStore.MediaColumns.IS_PENDING, 1)
     }
 
-    val collection: Uri = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+    val collection = MediaStore.Downloads.getContentUri(
+        MediaStore.VOLUME_EXTERNAL_PRIMARY
+    )
+
     val uri = resolver.insert(collection, values)
         ?: throw IllegalStateException("No se pudo crear el archivo CSV en Descargas")
 
@@ -174,35 +196,65 @@ private fun guardarCsvEnDescargasMediaStore(
         throw e
     }
 
-    return "Descargas/Monitoreos/$nombreArchivo"
+    return ArchivoCsvReporteUi(
+        nombreArchivo = nombreArchivo,
+        ubicacionVisible = "Descargas/Monitoreos/$nombreArchivo",
+        uri = uri
+    )
 }
 
+/**
+ * Compatibilidad para Android 9 o anterior.
+ * Usa el FileProvider que ya existe en tu AndroidManifest.xml.
+ */
 private fun guardarCsvEnDescargasLegacy(
     context: Context,
     nombreArchivo: String,
     contenido: String
-): String {
-    return try {
+): ArchivoCsvReporteUi {
+    val resultado = try {
         val carpeta = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_DOWNLOADS
+            ),
             "Monitoreos"
         )
+
         if (!carpeta.exists()) carpeta.mkdirs()
 
         val archivo = File(carpeta, nombreArchivo)
         archivo.writeText(contenido, Charsets.UTF_8)
-        archivo.absolutePath
+
+        archivo to "Descargas/Monitoreos/$nombreArchivo"
     } catch (_: Exception) {
         val carpetaApp = File(
-            context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) ?: context.filesDir,
+            context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
+                ?: context.filesDir,
             "Monitoreos"
         )
+
         if (!carpetaApp.exists()) carpetaApp.mkdirs()
 
         val archivo = File(carpetaApp, nombreArchivo)
         archivo.writeText(contenido, Charsets.UTF_8)
-        archivo.absolutePath
+
+        archivo to "Documentos de la app/Monitoreos/$nombreArchivo"
     }
+
+    val archivo = resultado.first
+    val ubicacion = resultado.second
+
+    val uri = FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.fileprovider",
+        archivo
+    )
+
+    return ArchivoCsvReporteUi(
+        nombreArchivo = nombreArchivo,
+        ubicacionVisible = ubicacion,
+        uri = uri
+    )
 }
 
 private fun escaparCsvUi(valor: String): String {

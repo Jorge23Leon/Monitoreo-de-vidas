@@ -201,6 +201,7 @@ fun AdminMonitoreoScreen(
                         withContext(Dispatchers.IO) {
                             val idProgram = database.localprogramDao().insertProgram(
                                 LocalProgramEntity(
+                                    idLocalCia = idCia,
                                     cycle = cicloLimpio,
                                     estStartDate = inicioMillis,
                                     estFinishDate = finMillis,

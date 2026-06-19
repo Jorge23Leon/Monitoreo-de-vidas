@@ -60,6 +60,41 @@ data class PhytoGeomApi(
     val coordinates: List<Double>?
 )
 
+
+
+data class PhytoTargetPointCreateRequest(
+    val header: String,
+    val plot: String,
+    val geom: PhytoGeomApi,
+
+    @SerializedName("radius_m")
+    val radiusM: Double? = null,
+
+    val label: String? = null,
+    val status: String? = null,
+    val origin: String? = null
+)
+
+data class PhytoCheckpointCreateRequest(
+    val header: String,
+    val target: String,
+
+    @SerializedName("phyto_issue")
+    val phytoIssue: Int,
+
+    val stage: String,
+
+    @SerializedName("presence_status")
+    val presenceStatus: String,
+
+    val qty: Int,
+    val geom: PhytoGeomApi,
+    val notes: String? = null,
+
+    @SerializedName("captured_at")
+    val capturedAt: String? = null
+)
+
 data class PhytoHeaderPatchRequest(
     val status: String? = null,
 

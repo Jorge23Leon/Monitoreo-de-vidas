@@ -40,6 +40,17 @@ interface PhytoMonitoringApiService {
         @Query("page") page: Int? = null
     ): Response<PhytoPaginatedResponse<PhytoCheckpointApiItem>>
 
+
+    @POST("api/v1/monitoring/phyto/target-points/create/")
+    suspend fun crearTargetPoint(
+        @Body body: PhytoTargetPointCreateRequest
+    ): Response<PhytoTargetPointApiItem>
+
+    @POST("api/v1/monitoring/phyto/checkpoints/create/")
+    suspend fun crearCheckpoint(
+        @Body body: PhytoCheckpointCreateRequest
+    ): Response<PhytoCheckpointApiItem>
+
     @Multipart
     @POST("api/v1/monitoring/phyto/checkpoints/import/")
     suspend fun importarCheckpointsCsv(

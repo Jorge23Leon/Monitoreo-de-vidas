@@ -12,13 +12,23 @@ class PhytoMonitoringRepository(
             serviceClass = PhytoMonitoringApiService::class.java
         )
 
-    suspend fun obtenerTodosLosHeaders(): ResultadoPhytoHeadersApi {
+    /**
+     * Cuando fieldTask viene informado, el servidor devuelve solamente los
+     * monitoreos del programa indicado. Nunca descargamos headers globales
+     * para una CIA seleccionada.
+     */
+    suspend fun obtenerTodosLosHeaders(
+        fieldTask: String? = null
+    ): ResultadoPhytoHeadersApi {
         return try {
             val todos = mutableListOf<PhytoHeaderApiItem>()
             var page = 1
 
             while (true) {
-                val response = api.listarHeaders(page = page)
+                val response = api.listarHeaders(
+                    fieldTask = fieldTask,
+                    page = page
+                )
 
                 if (!response.isSuccessful) {
                     val error = response.errorBody()?.string()
