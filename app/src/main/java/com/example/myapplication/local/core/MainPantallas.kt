@@ -4,6 +4,7 @@ enum class PantallaActual {
     LOGIN,
     CARGANDO_SESION,
     REGISTRO,
+    RECUPERAR_PASSWORD,
     INFORMACION,
     CONTACTO,
 

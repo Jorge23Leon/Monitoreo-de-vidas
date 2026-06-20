@@ -60,6 +60,10 @@ class MainActivity : ComponentActivity() {
                             mostrarDialogSalirApp = true
                         }
 
+                        PantallaActual.RECUPERAR_PASSWORD -> {
+                            mainViewModel.irA(PantallaActual.LOGIN)
+                        }
+
                         PantallaActual.LISTA_MONITOREOS -> {
                             val sesion = uiState.usuarioSesion
 

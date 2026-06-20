@@ -41,10 +41,15 @@ import com.example.myapplication.local.api.organizations.ResultadoCiasApi
 import com.example.myapplication.local.entities.UserLocalParentCiaCrossRef
 import com.example.myapplication.local.entities.UserLocalCiaCrossRef
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
 import com.example.myapplication.local.api.monitoreosync.MonitoreoSyncRepository
+import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import com.example.myapplication.local.api.monitoreosync.ResultadoMonitoreoSync
 
 
@@ -488,6 +493,69 @@ class MainViewModel(
 
     fun irA(pantalla: PantallaActual) {
         actualizarEstado { it.copy(pantallaActual = pantalla) }
+    }
+    fun solicitarRecuperacionPassword(emailInput: String) {
+        val email = emailInput.trim()
+
+        if (
+            email.isBlank() ||
+            !android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()
+        ) {
+            mostrarMensaje("Ingresa un correo electrónico válido")
+            return
+        }
+
+        val asunto = "Solicitud de recuperación de contraseña"
+
+        val cuerpo = """
+        Hola, solicito recuperar mi contraseña de Tierra Inteligente.
+
+        Correo registrado: $email
+        Usuario (si lo recuerda):
+        Nombre completo:
+        Teléfono de contacto:
+
+        No incluyo mi contraseña anterior por seguridad.
+    """.trimIndent()
+
+        val context = getApplication<Application>().applicationContext
+
+        val correoIntent = Intent(Intent.ACTION_SENDTO).apply {
+            data = Uri.parse("mailto:tierrainteligente2@gmail.com")
+            putExtra(Intent.EXTRA_SUBJECT, asunto)
+            putExtra(Intent.EXTRA_TEXT, cuerpo)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        try {
+            val selector = Intent.createChooser(
+                correoIntent,
+                "Enviar solicitud de recuperación"
+            ).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            context.startActivity(selector)
+
+            mostrarMensaje(
+                "Selecciona Gmail o tu aplicación de correo para enviar la solicitud."
+            )
+        } catch (e: ActivityNotFoundException) {
+            val clipboard = context.getSystemService(
+                Context.CLIPBOARD_SERVICE
+            ) as ClipboardManager
+
+            clipboard.setPrimaryClip(
+                ClipData.newPlainText(
+                    "Correo de soporte",
+                    "tierrainteligente2@gmail.com"
+                )
+            )
+
+            mostrarMensaje(
+                "No hay una app de correo instalada. Se copió el correo de soporte."
+            )
+        }
     }
     fun volverAConsultaMonitoreos() {
         val sesion = uiState.usuarioSesion
@@ -3261,6 +3329,7 @@ class MainViewModel(
     fun manejarBack() {
         when (uiState.pantallaActual) {
             PantallaActual.REGISTRO,
+            PantallaActual.RECUPERAR_PASSWORD,
             PantallaActual.INFORMACION,
             PantallaActual.CONTACTO -> {
                 irA(PantallaActual.LOGIN)

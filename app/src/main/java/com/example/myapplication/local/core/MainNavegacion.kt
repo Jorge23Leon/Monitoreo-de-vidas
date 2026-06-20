@@ -1,5 +1,8 @@
 package com.example.myapplication.local.core
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -14,6 +17,7 @@ import com.example.myapplication.local.admin.home.AdminHomeScreen
 import com.example.myapplication.local.admin.monitoreos.AdminMonitoreoScreen
 import com.example.myapplication.local.auth.LoginScreen
 import com.example.myapplication.local.auth.RegistroUsuarioScreen
+import com.example.myapplication.local.auth.RecuperarPasswordScreen
 import com.example.myapplication.local.cia.SeleccionCiaScreen
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.info.ContactoScreen
@@ -61,6 +65,43 @@ fun MainNavegacion(
     uiState: MainUiState
 ) {
     val context = LocalContext.current
+
+
+    fun abrirCorreoRecuperacion(correoUsuario: String) {
+        val asunto = "Solicitud de recuperación de contraseña"
+
+        val mensaje = """
+            Hola, solicito recuperar mi contraseña de Tierra Inteligente.
+
+            Correo registrado: $correoUsuario
+            Usuario (si lo recuerda):
+            Nombre completo:
+            Teléfono de contacto:
+
+            No incluyo mi contraseña anterior por seguridad.
+        """.trimIndent()
+
+        val correoIntent = Intent(Intent.ACTION_SENDTO).apply {
+            data = Uri.parse("mailto:tierrainteligente2@gmail.com")
+            putExtra(Intent.EXTRA_SUBJECT, asunto)
+            putExtra(Intent.EXTRA_TEXT, mensaje)
+        }
+
+        try {
+            context.startActivity(
+                Intent.createChooser(
+                    correoIntent,
+                    "Enviar solicitud de recuperación"
+                )
+            )
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(
+                context,
+                "Instala o configura Gmail para enviar la solicitud.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
 
     var accionMenuPendiente by remember {
         mutableStateOf<AccionMenuTrabajo?>(null)
@@ -179,11 +220,7 @@ fun MainNavegacion(
                     mainViewModel.irA(PantallaActual.REGISTRO)
                 },
                 onForgotPasswordClick = {
-                    Toast.makeText(
-                        context,
-                        "Aquí irá la recuperación de contraseña",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    mainViewModel.irA(PantallaActual.RECUPERAR_PASSWORD)
                 },
                 onInformationClick = {
                     mainViewModel.irA(PantallaActual.INFORMACION)
@@ -208,6 +245,17 @@ fun MainNavegacion(
                     )
                 },
                 onBackToLoginClick = {
+                    mainViewModel.irA(PantallaActual.LOGIN)
+                }
+            )
+        }
+
+        PantallaActual.RECUPERAR_PASSWORD -> {
+            RecuperarPasswordScreen(
+                onEnviarSolicitudClick = { correo ->
+                    abrirCorreoRecuperacion(correo)
+                },
+                onVolverLoginClick = {
                     mainViewModel.irA(PantallaActual.LOGIN)
                 }
             )
