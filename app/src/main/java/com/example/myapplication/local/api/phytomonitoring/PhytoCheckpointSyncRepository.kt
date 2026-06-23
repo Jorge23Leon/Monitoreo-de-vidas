@@ -98,25 +98,27 @@ class PhytoCheckpointSyncRepository(
                 continue
             }
 
-            if (esCheckpointSinPlaga(fitoLocal, checkpoint)) {
-                // "SIN_PLAGA" es un registro local para el reporte.
-                // No se sube a /checkpoints/create/ porque la API exige phyto_issue numérico.
-                omitidos++
+            /*
+             * Un punto SIN_PLAGA sí debe llegar a la API:
+             * - qty = 0
+             * - presence_status = low
+             * - phyto_issue = null
+             * - stage = null
+             *
+             * La tabla del backend permite phyto_issue y stage nulos.
+             * No se requiere inventar una plaga para representar cero presencia.
+             */
+            val esSinPlaga = esCheckpointSinPlaga(fitoLocal, checkpoint)
 
-                database.LocalPhytomonitoringTargetPointDao()
-                    .actualizarStatusPunto(
-                        idTargetPoint = puntoLocal.idTargetPoint,
-                        status = "Completado"
-                    )
-
-                continue
+            val phytoIssueId = if (esSinPlaga) {
+                null
+            } else {
+                fitoLocal?.extId
+                    ?.trim()
+                    ?.toIntOrNull()
             }
 
-            val phytoIssueId = fitoLocal?.extId
-                ?.trim()
-                ?.toIntOrNull()
-
-            if (phytoIssueId == null) {
+            if (!esSinPlaga && phytoIssueId == null) {
                 omitidos++
                 errores.add("checkpoint ${checkpoint.idCheckpoint}: fitosanitario sin ext_id numérico")
                 continue
@@ -138,7 +140,8 @@ class PhytoCheckpointSyncRepository(
                 targetExtId = targetExtId,
                 checkpoint = checkpoint,
                 puntoLocal = puntoLocal.copy(extId = targetExtId),
-                phytoIssueId = phytoIssueId
+                phytoIssueId = phytoIssueId,
+                esSinPlaga = esSinPlaga
             )
 
             if (checkpointCreado == null) {
@@ -186,7 +189,7 @@ class PhytoCheckpointSyncRepository(
                     "Checkpoints sincronizados parcialmente. ${errores.take(3).joinToString(" | ")}"
                 }
                 omitidos > 0 -> {
-                    "Checkpoints sincronizados. Omitidos locales SIN_PLAGA: $omitidos."
+                    "Checkpoints sincronizados. Omitidos por datos incompletos: $omitidos."
                 }
                 else -> {
                     "Checkpoints sincronizados por JSON correctamente."
@@ -346,14 +349,22 @@ class PhytoCheckpointSyncRepository(
         targetExtId: String,
         checkpoint: LocalPhytomonitoringCheckpointEntity,
         puntoLocal: LocalPhytomonitoringTargetPointEntity,
-        phytoIssueId: Int
+        phytoIssueId: Int?,
+        esSinPlaga: Boolean
     ): PhytoCheckpointApiItem? {
         val stage = checkpoint.stage
             ?.trim()
             ?.takeIf { it.isNotBlank() }
-            ?: return null
 
-        val qty = checkpoint.qty ?: 0
+        /*
+         * Para una captura normal la API requiere etapa y problema fitosanitario.
+         * Para SIN_PLAGA ambos valores se dejan nulos para registrar presencia cero.
+         */
+        if (!esSinPlaga && (phytoIssueId == null || stage == null)) {
+            return null
+        }
+
+        val qty = if (esSinPlaga) 0 else (checkpoint.qty ?: 0)
 
         val body = PhytoCheckpointCreateRequest(
             header = headerExtId,
@@ -478,16 +489,31 @@ class PhytoCheckpointSyncRepository(
         val phytoExtId = extraerIdFlexible(item.phytoIssueId)
             ?: extraerIdFlexible(item.phytoIssue)
             ?: extraerIdFlexible(item.phytosanitary)
-            ?: return false
 
-        val fitoLocal = catalogo.firstOrNull { fito ->
-            fito.extId?.trim() == phytoExtId
-        } ?: crearCatalogoFitoFallback(
-            item = item,
-            phytoExtId = phytoExtId,
-            headerLocal = headerLocal
-        )?.also { nuevoFito ->
-            catalogo.add(nuevoFito)
+        val qtyApi = extraerEnteroFlexible(item.qty)
+
+        /*
+         * Cuando la API devuelve phyto_issue=null y qty=0,
+         * corresponde al registro "Sin plaga". Se conserva en Room
+         * usando el catálogo local especial, sin inventar un ID remoto.
+         */
+        val fitoLocal = if (phytoExtId.isNullOrBlank() && (qtyApi ?: 0) <= 0) {
+            obtenerOCrearCatalogoSinPlagaLocal(
+                headerLocal = headerLocal,
+                catalogo = catalogo
+            )
+        } else {
+            val phytoExtIdSeguro = phytoExtId ?: return false
+
+            catalogo.firstOrNull { fito ->
+                fito.extId?.trim() == phytoExtIdSeguro
+            } ?: crearCatalogoFitoFallback(
+                item = item,
+                phytoExtId = phytoExtIdSeguro,
+                headerLocal = headerLocal
+            )?.also { nuevoFito ->
+                catalogo.add(nuevoFito)
+            }
         } ?: return false
 
         val capturedByExt = extraerIdFlexible(item.capturedBy)
@@ -497,7 +523,7 @@ class PhytoCheckpointSyncRepository(
             runCatching { database.userDao().getUserByExtId(ext) }.getOrNull()
         }
 
-        val qty = extraerEnteroFlexible(item.qty)
+        val qty = qtyApi
         val capturedAt = parseFechaApi(item.capturedAt)
 
         val nuevo = LocalPhytomonitoringCheckpointEntity(
@@ -635,6 +661,50 @@ class PhytoCheckpointSyncRepository(
 
         return database.LocalPhytomonitoringTargetPointDao()
             .getTargetPointById(idNuevo)
+    }
+
+    private suspend fun obtenerOCrearCatalogoSinPlagaLocal(
+        headerLocal: LocalPhytomonitoringHeaderEntity,
+        catalogo: MutableList<LocalPhytosanitaryCatalogEntity>
+    ): LocalPhytosanitaryCatalogEntity? {
+        val existente = catalogo.firstOrNull { fito ->
+            val nombre = fito.name.trim()
+            val tipo = fito.type.trim()
+
+            nombre.equals("Sin plaga", ignoreCase = true) ||
+                    tipo.equals("SIN_PLAGA", ignoreCase = true)
+        }
+
+        if (existente != null) {
+            return existente
+        }
+
+        val nuevo = LocalPhytosanitaryCatalogEntity(
+            extId = null,
+            name = "Sin plaga",
+            type = "SIN_PLAGA",
+            minRefValue = 0,
+            maxRefValue = 0,
+            description = "Punto revisado sin presencia de plagas o enfermedades.",
+            photo = null,
+            idDefaultCrop = headerLocal.idCrop
+        )
+
+        val idNuevo = runCatching {
+            database.localphytosanitarycatalogDao().insertPhytosanitary(nuevo)
+        }.getOrNull()
+
+        val creado = idNuevo?.let { id ->
+            database.localphytosanitarycatalogDao().getPhytosanitaryById(id)
+        } ?: database.localphytosanitarycatalogDao()
+            .getAllCatalogo()
+            .firstOrNull { fito ->
+                fito.name.equals("Sin plaga", ignoreCase = true) ||
+                        fito.type.equals("SIN_PLAGA", ignoreCase = true)
+            }
+
+        creado?.let { catalogo.add(it) }
+        return creado
     }
 
     private suspend fun crearCatalogoFitoFallback(

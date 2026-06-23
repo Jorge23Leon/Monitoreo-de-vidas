@@ -41,6 +41,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.example.myapplication.local.api.phytomonitoring.PhytoMonitoringRepository
+import com.example.myapplication.local.api.phytomonitoring.ResultadoActualizarHeaderApi
 import com.example.myapplication.local.common.EncabezadoApp
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.LocalPhytomonitoringCheckpointEntity
@@ -72,6 +74,10 @@ fun MonitoreoMapaScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+
+    val phytoMonitoringRepository = remember(context.applicationContext) {
+        PhytoMonitoringRepository(context.applicationContext)
+    }
 
     val onPuntoValidoActual by rememberUpdatedState(onPuntoValidoClick)
     val onMonitoreoActualizadoActual by rememberUpdatedState(onMonitoreoActualizado)
@@ -141,14 +147,72 @@ fun MonitoreoMapaScreen(
         )
     }
 
+    fun notasAlPausar(notasActuales: String): String {
+        val notasLimpias = notasActuales.trim()
+
+        return when {
+            notasLimpias.isBlank() -> "PAUSADO"
+            notasLimpias.startsWith("PAUSADO", ignoreCase = true) -> notasLimpias
+            else -> "PAUSADO\n$notasLimpias"
+        }
+    }
+
+    fun quitarMarcaPausado(notasActuales: String): String {
+        return notasActuales
+            .trim()
+            .replaceFirst(
+                Regex(
+                    pattern = "^PAUSADO\\s*[:\\-]?\\s*(\\r?\\n)?",
+                    option = RegexOption.IGNORE_CASE
+                ),
+                ""
+            )
+            .trim()
+    }
+
+    /**
+     * Cuando [sincronizarEnServidor] vale true, primero se actualiza la API.
+     * Si falla, Room no cambia para evitar estados diferentes entre la app
+     * y el servidor.
+     */
     suspend fun actualizarHeaderLocalYServidor(
         headerBase: LocalPhytomonitoringHeaderEntity,
         statusLocal: String,
         statusApi: String,
         startAt: Long?,
         finishedAt: Long?,
-        additionalNotes: String?
+        additionalNotes: String?,
+        sincronizarEnServidor: Boolean = false
     ): LocalPhytomonitoringHeaderEntity {
+        if (sincronizarEnServidor) {
+            if (!hayInternet(context)) {
+                throw IllegalStateException(
+                    "Conecta a internet para guardar el estado del monitoreo."
+                )
+            }
+
+            val headerExtId = headerBase.extId
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: throw IllegalStateException(
+                    "Este monitoreo no tiene identificador del servidor."
+                )
+
+            when (
+                val resultado = phytoMonitoringRepository.actualizarHeaderServidor(
+                    idHeaderExt = headerExtId,
+                    status = statusApi,
+                    additionalNotes = additionalNotes.orEmpty()
+                )
+            ) {
+                is ResultadoActualizarHeaderApi.Exito -> Unit
+
+                is ResultadoActualizarHeaderApi.Error -> {
+                    throw IllegalStateException(resultado.mensaje)
+                }
+            }
+        }
+
         val nuevoHeader = headerBase.copy(
             status = statusLocal,
             startAt = startAt,
@@ -162,10 +226,6 @@ fun MonitoreoMapaScreen(
         database.localprogramDao()
             .recalcularEstadoDesdeHeaders(nuevoHeader.idProgram)
 
-        // IMPORTANTE:
-        // No sincronizamos el header con API desde el mapa.
-        // El usuario pidió que la API solo se toque al presionar
-        // el botón "Sincronizar API" en el reporte.
         return nuevoHeader
     }
 
@@ -257,7 +317,8 @@ fun MonitoreoMapaScreen(
                         statusApi = "in_progress",
                         startAt = inicioReal,
                         finishedAt = null,
-                        additionalNotes = "PAUSADO"
+                        additionalNotes = notasAlPausar(fresco.additionalNotes),
+                        sincronizarEnServidor = true
                     )
                 }
 
@@ -266,7 +327,7 @@ fun MonitoreoMapaScreen(
 
                 Toast.makeText(
                     context,
-                    "Monitoreo pausado. El tiempo sigue corriendo desde el inicio.",
+                    "Monitoreo pausado y guardado en el servidor.",
                     Toast.LENGTH_SHORT
                 ).show()
 
@@ -302,7 +363,8 @@ fun MonitoreoMapaScreen(
                         statusApi = "in_progress",
                         startAt = inicioReal,
                         finishedAt = null,
-                        additionalNotes = ""
+                        additionalNotes = quitarMarcaPausado(fresco.additionalNotes),
+                        sincronizarEnServidor = true
                     )
                 }
 

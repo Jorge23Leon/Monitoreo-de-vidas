@@ -484,7 +484,11 @@ fun MonitoreoListaScreen(
 
                     val monitoreoYaIniciado = header.startAt != null ||
                             estadoNormalizado.contains("proceso") ||
-                            estadoNormalizado.contains("progress")
+                            estadoNormalizado.contains("progress") ||
+                            esMonitoreoPausadoLista(
+                                status = header.status,
+                                additionalNotes = header.additionalNotes
+                            )
 
 
                     TarjetaMonitoreoUsuario(

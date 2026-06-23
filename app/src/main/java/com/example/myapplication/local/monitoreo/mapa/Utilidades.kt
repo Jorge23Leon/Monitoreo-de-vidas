@@ -47,7 +47,9 @@ internal fun crearPuntosJson(
 
     val array = JSONArray()
 
-    puntos.forEach { punto ->
+    puntos
+        .sortedBy { it.idTargetPoint }
+        .forEach { punto ->
         val statusBase = punto.status.trim().lowercase()
 
         val statusFinal = when {

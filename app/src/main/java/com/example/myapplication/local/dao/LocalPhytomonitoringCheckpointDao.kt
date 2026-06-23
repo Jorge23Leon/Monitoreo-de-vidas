@@ -29,6 +29,29 @@ interface LocalPhytomonitoringCheckpointDao {
     @Query("""
         SELECT *
         FROM local_phytomonitoring_checkpoints
+        WHERE idHeader = :idHeader
+          AND idTargetPoint = :idTargetPoint
+          AND (
+                (:idPhytosanitary IS NULL AND idPhytosanitary IS NULL)
+                OR idPhytosanitary = :idPhytosanitary
+              )
+          AND COALESCE(stage, '') = COALESCE(:stage, '')
+          AND COALESCE(qty, -9999) = COALESCE(:qty, -9999)
+          AND COALESCE(captured_at, 0) = COALESCE(:capturedAt, 0)
+        LIMIT 1
+    """)
+    suspend fun buscarCheckpointLocalMismaCaptura(
+        idHeader: Long,
+        idTargetPoint: Long,
+        idPhytosanitary: Long?,
+        stage: String?,
+        qty: Int?,
+        capturedAt: Long?
+    ): LocalPhytomonitoringCheckpointEntity?
+
+    @Query("""
+        SELECT *
+        FROM local_phytomonitoring_checkpoints
         WHERE idCheckpoint = :idCheckpoint
         LIMIT 1
     """)
@@ -44,26 +67,6 @@ interface LocalPhytomonitoringCheckpointDao {
     """)
     suspend fun getCheckpointByExtId(
         extId: String
-    ): LocalPhytomonitoringCheckpointEntity?
-
-    @Query("""
-        SELECT *
-        FROM local_phytomonitoring_checkpoints
-        WHERE idHeader = :idHeader
-          AND idTargetPoint = :idTargetPoint
-          AND idPhytosanitary = :idPhytosanitary
-          AND COALESCE(stage, '') = COALESCE(:stage, '')
-          AND COALESCE(qty, -9999) = COALESCE(:qty, -9999)
-          AND COALESCE(captured_at, 0) = COALESCE(:capturedAt, 0)
-        LIMIT 1
-    """)
-    suspend fun buscarCheckpointLocalMismaCaptura(
-        idHeader: Long,
-        idTargetPoint: Long,
-        idPhytosanitary: Long,
-        stage: String?,
-        qty: Int?,
-        capturedAt: Long?
     ): LocalPhytomonitoringCheckpointEntity?
 
     @Query("""
@@ -113,7 +116,9 @@ interface LocalPhytomonitoringCheckpointDao {
         WHERE captured_by_user_id = :idUser
         ORDER BY captured_at DESC
     """)
-    suspend fun getCheckpointsByUser(idUser: Long): List<LocalPhytomonitoringCheckpointEntity>
+    suspend fun getCheckpointsByUser(
+        idUser: Long
+    ): List<LocalPhytomonitoringCheckpointEntity>
 
     @Query("""
         SELECT COUNT(*)

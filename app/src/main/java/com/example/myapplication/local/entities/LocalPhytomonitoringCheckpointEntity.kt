@@ -74,6 +74,10 @@ data class LocalPhytomonitoringCheckpointEntity(
 
     val idTargetPoint: Long,
     val idHeader: Long,
-    val idPhytosanitary: Long,
+
+    // IMPORTANTE:
+    // Puede ser null cuando se registra "Sin plagas".
+    val idPhytosanitary: Long? = null,
+
     val idLocalPlot: Long
 )

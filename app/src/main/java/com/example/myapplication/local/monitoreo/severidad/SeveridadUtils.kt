@@ -172,7 +172,8 @@ internal fun calcularSeveridadPorPunto(
     rangos: RangosSeveridad = RangosSeveridad()
 ): SeveridadPuntoUi {
     val capturasConPresencia = checkpointsPunto.filter { checkpoint ->
-        checkpoint.presenceStatus == 1
+        checkpoint.presenceStatus == 1 &&
+                checkpoint.idPhytosanitary != null
     }
 
     val totalPunto = capturasConPresencia.sumOf { checkpoint ->
@@ -196,10 +197,12 @@ internal fun calcularSeveridadPorPunto(
     )
 
     val fitos = capturasConPresencia
-        .groupBy { checkpoint -> checkpoint.idPhytosanitary }
+        .groupBy { checkpoint -> checkpoint.idPhytosanitary!! }
         .map { (idPhytosanitary, capturasFito) ->
             val item = catalogoPorId[idPhytosanitary]
-            val totalFito = capturasFito.sumOf { checkpoint -> checkpoint.qty ?: 0 }
+            val totalFito = capturasFito.sumOf { checkpoint ->
+                checkpoint.qty ?: 0
+            }
 
             SeveridadFitoPuntoUi(
                 idPhytosanitary = idPhytosanitary,
@@ -207,7 +210,8 @@ internal fun calcularSeveridadPorPunto(
                 tipo = item?.type ?: "-",
                 cantidadTotal = totalFito,
                 etapasResumen = resumenEtapasCapturadas(capturasFito),
-                fechaUltimaCaptura = capturasFito.maxOfOrNull { checkpoint -> checkpoint.capturedAt ?: 0L }
+                fechaUltimaCaptura = capturasFito
+                    .maxOfOrNull { checkpoint -> checkpoint.capturedAt ?: 0L }
                     ?.takeIf { fecha -> fecha > 0L },
                 nivel = nivelGlobal
             )

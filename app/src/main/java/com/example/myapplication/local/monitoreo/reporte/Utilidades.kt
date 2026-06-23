@@ -1,8 +1,5 @@
 package com.example.myapplication.local.monitoreo.reporte
 
-// CAMBIO PUNTOS/CSV: función central para obtener el número real desde label,
-// usada por reporte, mapa y registro de punto.
-
 import com.example.myapplication.local.entities.LocalPhytomonitoringCheckpointEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringTargetPointEntity
 import com.example.myapplication.local.entities.LocalPhytosanitaryCatalogEntity
@@ -78,18 +75,26 @@ internal fun formatearCoordenadasReporteUi(lat: Double?, lon: Double?): String {
     if (lat == null || lon == null) return "-"
     return String.format(Locale.US, "%.6f, %.6f", lat, lon)
 }
+internal fun crearNumeroPuntoMapPorCoordenada(
+    puntos: List<LocalPhytomonitoringTargetPointEntity>
+): Map<Long, Int> {
+    val numeroPorCoordenada = linkedMapOf<String, Int>()
 
+    return puntos
+        .sortedBy { it.idTargetPoint }
+        .associate { punto ->
+            // Se usan 6 decimales para considerar la misma ubicación.
+            val clave = String.format(
+                Locale.US,
+                "%.6f,%.6f",
+                punto.lat,
+                punto.lon
+            )
 
-/**
- * La API etiqueta los puntos como "Punto 2", "Punto 17", etc.
- * Se usa ese número real en tabla, CSV y mapa. Solo se usa el orden local
- * como respaldo para puntos antiguos que todavía no tienen etiqueta.
- */
-internal fun numeroPuntoRealReporteUi(label: String?, fallback: Int): Int {
-    val numero = Regex("\\d+")
-        .find(label.orEmpty())
-        ?.value
-        ?.toIntOrNull()
+            val numeroPunto = numeroPorCoordenada.getOrPut(clave) {
+                numeroPorCoordenada.size + 1
+            }
 
-    return numero?.takeIf { it > 0 } ?: fallback
+            punto.idTargetPoint to numeroPunto
+        }
 }

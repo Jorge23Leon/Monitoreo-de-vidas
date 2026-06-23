@@ -1,8 +1,6 @@
 package com.example.myapplication.local.monitoreo.reporte
 
-// CAMBIO PUNTOS/CSV: el mapa muestra el número real obtenido desde label,
-// sin renumerar los puntos por el orden local de Room.
-
+import java.util.Locale
 import android.view.View
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
@@ -108,33 +106,46 @@ internal fun crearHtmlMapaReporteUi(
     catalogo: List<LocalPhytosanitaryCatalogEntity>
 ): String {
     val catalogoMap = catalogo.associateBy { it.idPhytosanitary }
-    val checkpointsPorPunto = checkpoints.groupBy { it.idTargetPoint }
+
     val verticesJson = JSONArray().apply {
-        vertices.sortedBy { it.level }.forEach { vertex ->
-            put(JSONObject().apply {
-                put("level", vertex.level)
-                put("lat", vertex.lat)
-                put("lon", vertex.lon)
-            })
-        }
+        vertices
+            .sortedBy { it.level }
+            .forEach { vertex ->
+                put(JSONObject().apply {
+                    put("level", vertex.level)
+                    put("lat", vertex.lat)
+                    put("lon", vertex.lon)
+                })
+            }
     }.toString()
 
     val puntosOrdenados = puntos.sortedBy { it.idTargetPoint }
 
+    val gruposPorCoordenada = puntosOrdenados.groupBy { punto ->
+        String.format(
+            Locale.US,
+            "%.6f,%.6f",
+            punto.lat,
+            punto.lon
+        )
+    }
+
     val puntosJson = JSONArray().apply {
-        puntosOrdenados.forEachIndexed { index, punto ->
-            val numeroPuntoReal = numeroPuntoRealReporteUi(
-                label = punto.label,
-                fallback = index + 1
-            )
-            val capturas = checkpointsPorPunto[punto.idTargetPoint].orEmpty()
+        gruposPorCoordenada.values.forEachIndexed { index, puntosMismaCoordenada ->
+
+            val puntoBase = puntosMismaCoordenada.first()
+            val idsMismaCoordenada = puntosMismaCoordenada
+                .map { it.idTargetPoint }
+                .toSet()
+
+            val capturasMismaCoordenada = checkpoints.filter { checkpoint ->
+                checkpoint.idTargetPoint in idsMismaCoordenada
+            }
 
             val severidadPunto = calcularSeveridadPorPunto(
-                checkpointsPunto = capturas,
+                checkpointsPunto = capturasMismaCoordenada,
                 catalogoPorId = catalogoMap
             )
-            val nivelFinal = severidadPunto.nivelFinal
-            val totalCantidadPunto = severidadPunto.totalCantidadPunto
 
             val capturasArray = JSONArray().apply {
                 severidadPunto.fitos.forEach { fito ->
@@ -150,24 +161,28 @@ internal fun crearHtmlMapaReporteUi(
                 }
             }
 
-            val statusBase = punto.status.lowercase().trim()
+            val todosCancelados = puntosMismaCoordenada.all { punto ->
+                punto.status.equals("cancelled", true) ||
+                        punto.status.equals("cancelado", true)
+            }
+
             val statusFinal = when {
-                capturas.isNotEmpty() -> "completed"
-                statusBase == "cancelled" || statusBase == "cancelado" -> "cancelled"
+                capturasMismaCoordenada.isNotEmpty() -> "completed"
+                todosCancelados -> "cancelled"
                 else -> "not_monitored"
             }
 
             put(JSONObject().apply {
-                put("numero", numeroPuntoReal)
-                put("id", punto.idTargetPoint)
-                put("lat", punto.lat)
-                put("lon", punto.lon)
-                put("radius", punto.radiusM)
+                put("numero", index + 1)
+                put("id", puntoBase.idTargetPoint)
+                put("lat", puntoBase.lat)
+                put("lon", puntoBase.lon)
+                put("radius", puntoBase.radiusM)
                 put("status", statusFinal)
-                put("severity", nivelFinal.name.lowercase())
-                put("severityLabel", nivelFinal.etiqueta)
-                put("severityColor", nivelFinal.colorHex)
-                put("totalCantidad", totalCantidadPunto)
+                put("severity", severidadPunto.nivelFinal.name.lowercase())
+                put("severityLabel", severidadPunto.nivelFinal.etiqueta)
+                put("severityColor", severidadPunto.nivelFinal.colorHex)
+                put("totalCantidad", severidadPunto.totalCantidadPunto)
                 put("capturas", capturasArray)
             })
         }

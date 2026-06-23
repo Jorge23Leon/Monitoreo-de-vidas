@@ -79,10 +79,17 @@ data class PhytoCheckpointCreateRequest(
     val header: String,
     val target: String,
 
+    /*
+     * En una captura "Sin plaga" se envía null:
+     * el checkpoint conserva ubicación, fecha, qty=0 y presence_status=low.
+     */
     @SerializedName("phyto_issue")
-    val phytoIssue: Int,
+    val phytoIssue: Int? = null,
 
-    val stage: String,
+    /*
+     * La etapa también es null cuando no existe una plaga/enfermedad detectada.
+     */
+    val stage: String? = null,
 
     @SerializedName("presence_status")
     val presenceStatus: String,

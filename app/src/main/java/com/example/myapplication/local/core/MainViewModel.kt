@@ -51,6 +51,9 @@ import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import com.example.myapplication.local.api.monitoreosync.ResultadoMonitoreoSync
+import com.example.myapplication.local.api.phytomonitoring.PhytoMonitoringRepository
+import com.example.myapplication.local.api.phytomonitoring.ResultadoActualizarHeaderApi
+
 
 
 
@@ -110,6 +113,10 @@ class MainViewModel(
         context = application.applicationContext,
         database = database
     )
+    private val phytoMonitoringRepository = PhytoMonitoringRepository(
+        context = application.applicationContext
+    )
+
 
 
     var uiState by mutableStateOf(MainUiState())
@@ -3024,15 +3031,25 @@ class MainViewModel(
                 }
 
                 mostrarMensaje(
-                    if (esCompletado) {
-                        "Monitoreo terminado correctamente"
+                    if (
+                        headerFresco?.additionalNotes
+                            ?.trim()
+                            ?.startsWith("PAUSADO", ignoreCase = true) == true
+                    ) {
+                        "Monitoreo pausado correctamente"
                     } else {
                         "Monitoreo guardado en proceso"
                     }
                 )
 
                 if (sesion != null && (sesion.esTecnico || sesion.esInvitado)) {
-                    cargarMonitoreosDirectoPorUsuario(sesion)
+                    // Al pausar no descargamos de API inmediatamente,
+                    // porque puede sobrescribir additionalNotes = "PAUSADO".
+                    actualizarEstado {
+                        it.copy(
+                            pantallaActual = PantallaActual.LISTA_MONITOREOS
+                        )
+                    }
                 } else {
                     actualizarEstado {
                         it.copy(
@@ -3064,14 +3081,46 @@ class MainViewModel(
 
         if (uiState.cargando) return
 
+        if (!hayConexionInternet()) {
+            mostrarMensaje(
+                "Conecta a internet para cancelar el monitoreo en el servidor."
+            )
+            return
+        }
+
         viewModelScope.launch {
             try {
                 actualizarEstado { it.copy(cargando = true) }
 
-                val headerActualizado = withContext(Dispatchers.IO) {
-                    val fechaCancelacion = System.currentTimeMillis()
-                    val notaCancelacion = "Cancelado: $motivoLimpio"
+                val fechaCancelacion = System.currentTimeMillis()
+                val notaCancelacion = "Cancelado: $motivoLimpio"
 
+                val resultadoServidor = withContext(Dispatchers.IO) {
+                    val headerExtId = header.extId
+                        ?.trim()
+                        ?.takeIf { it.isNotBlank() }
+
+                    if (headerExtId == null) {
+                        ResultadoActualizarHeaderApi.Error(
+                            "El monitoreo no tiene identificador del servidor."
+                        )
+                    } else {
+                        phytoMonitoringRepository.actualizarHeaderServidor(
+                            idHeaderExt = headerExtId,
+                            status = "cancelled",
+                            additionalNotes = notaCancelacion
+                        )
+                    }
+                }
+
+                if (resultadoServidor is ResultadoActualizarHeaderApi.Error) {
+                    mostrarMensaje(
+                        "No se pudo cancelar en el servidor. Verifica internet e intenta nuevamente."
+                    )
+                    return@launch
+                }
+
+                val headerActualizado = withContext(Dispatchers.IO) {
                     database.localphytomonitoringheaderDao()
                         .cancelarMonitoreoConMotivo(
                             idHeader = header.idHeader,
@@ -3079,20 +3128,31 @@ class MainViewModel(
                             motivoCancelacion = notaCancelacion
                         )
 
-                    database.localphytomonitoringheaderDao()
+                    val actualizado = database.localphytomonitoringheaderDao()
                         .getHeaderById(header.idHeader)
                         ?: header.copy(
                             status = "Cancelado",
                             finishedAt = fechaCancelacion,
                             additionalNotes = notaCancelacion
                         )
+
+                    database.localprogramDao()
+                        .recalcularEstadoDesdeHeaders(actualizado.idProgram)
+
+                    actualizado
                 }
 
                 actualizarHeaderEnLista(headerActualizado)
-                mostrarMensaje("Monitoreo cancelado correctamente")
+
+                mostrarMensaje(
+                    "Monitoreo cancelado y enviado correctamente al servidor."
+                )
             } catch (e: Exception) {
                 e.printStackTrace()
-                mostrarMensaje("Error al cancelar monitoreo: ${e.message}")
+
+                mostrarMensaje(
+                    "No se pudo cancelar en el servidor. Verifica internet e intenta nuevamente."
+                )
             } finally {
                 actualizarEstado { it.copy(cargando = false) }
             }

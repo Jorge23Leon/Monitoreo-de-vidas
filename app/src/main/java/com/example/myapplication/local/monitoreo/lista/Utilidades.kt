@@ -18,8 +18,22 @@ internal fun esMonitoreoPausadoLista(
 ): Boolean {
     val estado = status.trim().lowercase(Locale.getDefault())
 
-    return (estado == "pending" || estado == "pendiente") &&
-            additionalNotes.trim().startsWith("PAUSADO:", ignoreCase = true)
+    val estaCerrado = estado in listOf(
+        "completed",
+        "completado",
+        "finalizado",
+        "terminado",
+        "cerrado",
+        "cancelado",
+        "cancelled",
+        "canceled"
+    )
+
+    return !estaCerrado &&
+            additionalNotes.trim().startsWith(
+                prefix = "PAUSADO",
+                ignoreCase = true
+            )
 }
 
 internal fun textoEstadoLista(

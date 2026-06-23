@@ -94,23 +94,30 @@ internal fun crearHtmlMapaMonitoreo(
                 .error-box {
                     color: #b00020;
                 }
-
-                .legend {
+                .legend-fija {
+                    margin-top: 8px;
                     background: rgba(255, 255, 255, 0.94);
-                    padding: 8px 10px;
+                    padding: 7px 9px;
                     border-radius: 12px;
-                    box-shadow: 0 3px 12px rgba(0,0,0,0.22);
-                    font-size: 11px;
-                    line-height: 18px;
+                    box-shadow: 0 3px 10px rgba(0,0,0,0.22);
+                    font-size: 10px;
+                    line-height: 16px;
                     color: #222;
-                    margin-bottom: 28px;
+                    min-width: 145px;
                 }
 
-                .legend-title {
-                    font-weight: bold;
-                    margin-bottom: 4px;
-                    color: #0B3D16;
+                .legend-fija .legend-title {
+                    font-size: 11px;
+                    margin-bottom: 3px;
                 }
+
+                .legend-fija .dot {
+                    width: 9px;
+                    height: 9px;
+                    margin-right: 5px;
+                }
+
+
 
                 .dot {
                     height: 10px;
@@ -332,8 +339,8 @@ internal fun crearHtmlMapaMonitoreo(
                     L.tileLayer(
                         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                         {
-                            maxZoom: 19,
-                            maxNativeZoom: 19,
+                            maxZoom: 18,
+                            maxNativeZoom: 18,
                             attribution: internetDisponible ? 'Tiles © Esri' : 'Mapa en cache',
                             opacity: 1,
                             errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lCjQ9wAAAABJRU5ErkJggg=='
@@ -484,24 +491,28 @@ internal fun crearHtmlMapaMonitoreo(
                     map.options.maxBoundsViscosity = 0.85;
                 }
 
-                function agregarLeyenda() {
-                    const control = L.control({ position: 'bottomleft' });
-                
-                    control.onAdd = function() {
-                        const div = L.DomUtil.create('div', 'legend');
-                        div.innerHTML =
-                            '<div class="legend-title">Semáforo</div>' +
-                            '<div><span class="dot" style="background:#16A34A"></span>Verde: sin plaga</div>' +
-                            '<div><span class="dot" style="background:#FACC15"></span>Amarillo: severidad menor</div>' +
-                            '<div><span class="dot" style="background:#F97316"></span>Naranja: severidad mayor</div>' +
-                            '<div><span class="dot" style="background:#DC2626"></span>Rojo: supera severidad mayor</div>' +
-                            '<div><span class="dot" style="background:#1E88E5"></span>Tu ubicación</div>' +
-                            '<div><span class="dot" style="background:#FFFFFF; border:2px solid #0B6B20; box-sizing:border-box"></span>Punto nuevo</div>';
-                        return div;
-                    };
-                
-                    control.addTo(map);
-}
+               
+               function agregarLeyenda() {
+                   const control = L.control({ position: 'topleft' });
+
+                   control.onAdd = function() {
+                       const div = L.DomUtil.create('div', 'legend-fija');
+
+                       div.innerHTML =
+                           '<div class="legend-title">Severidad</div>' +
+                           '<div><span class="dot" style="background:#16A34A"></span>Sin plaga</div>' +
+                           '<div><span class="dot" style="background:#FACC15"></span>Menor</div>' +
+                           '<div><span class="dot" style="background:#F97316"></span>Mayor</div>' +
+                           '<div><span class="dot" style="background:#DC2626"></span>Supera límite</div>';
+
+                       L.DomEvent.disableClickPropagation(div);
+                       L.DomEvent.disableScrollPropagation(div);
+
+                       return div;
+                   };
+
+                   control.addTo(map);
+               }
 
                 function renderFallback() {
                     const mapDiv = document.getElementById('map');
@@ -572,12 +583,12 @@ internal fun crearHtmlMapaMonitoreo(
                     }
 
                     map = L.map('map', {
-                        zoomControl: true,
+                        zoomControl: false,
                         preferCanvas: true,
                         zoomSnap: 0.25,
                         zoomDelta: 0.5,
                         minZoom: 3,
-                        maxZoom: 19,
+                        maxZoom: 18,
                         bounceAtZoomLimits: false
                     });
 
@@ -615,7 +626,7 @@ internal fun crearHtmlMapaMonitoreo(
                         });
                     } else if (puntos.length > 0) {
                         const p0 = normalizarPunto(puntos[0]);
-                        map.setView([p0.lat, p0.lon], 19);
+                        map.setView([p0.lat, p0.lon], 18);
                     } else if (usuarioInicial != null) {
                         map.setView([usuarioInicial.lat, usuarioInicial.lon], 18);
                     }

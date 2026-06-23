@@ -125,10 +125,7 @@ fun ReporteMonitoreoScreen(
             val headerFresco = database.localphytomonitoringheaderDao()
                 .getHeaderById(header.idHeader) ?: header
 
-            // IMPORTANTE:
-            // Abrir el reporte NO debe sincronizar con API.
-            // Solo se leen datos locales de Room. La API se toca únicamente
-            // cuando el usuario presiona el botón "Sincronizar API".
+
             val puntosDb = database.LocalPhytomonitoringTargetPointDao()
                 .getTargetPointsByHeader(headerFresco.idHeader)
 
@@ -173,13 +170,14 @@ fun ReporteMonitoreoScreen(
     }
 
     fun sincronizarReporteManual() {
-        if (
-            estadoSincronizacion == EstadoSincronizacionReporte.SINCRONIZANDO ||
-            cargando
-        ) return
+        val puedeIniciarSincronizacion =
+            estadoSincronizacion == EstadoSincronizacionReporte.PENDIENTE ||
+                    estadoSincronizacion == EstadoSincronizacionReporte.ERROR
+
+        if (!puedeIniciarSincronizacion || cargando) return
 
         estadoSincronizacion = EstadoSincronizacionReporte.SINCRONIZANDO
-        ultimoMensajeSync = "Sincronizando información con la API..."
+        ultimoMensajeSync = "Sincronizando información..."
         error = null
 
         coroutineScope.launch {
@@ -200,36 +198,38 @@ fun ReporteMonitoreoScreen(
                     null -> {
                         estadoSincronizacion = EstadoSincronizacionReporte.ERROR
                         ultimoMensajeSync =
-                            "Error de sincronización: no se pudo conectar con la API."
+                            "Favor de conectar a internet e intenta nuevamente."
                     }
 
                     is ResultadoCheckpointSync.Exito -> {
                         val dataActualizada = cargarReporteDesdeRoom()
-
-                        puntos = dataActualizada.puntos
-                        checkpoints = dataActualizada.checkpoints
-                        vertices = dataActualizada.vertices
-                        catalogo = dataActualizada.catalogo
-                        nombreCultivo = dataActualizada.cultivo
-                        fotoCultivo = dataActualizada.fotoCultivo
+                        aplicarDataReporte(dataActualizada)
 
                         estadoSincronizacion = EstadoSincronizacionReporte.SINCRONIZADO
-                        ultimoMensajeSync = "La sincronización fue exitosa."
+                        ultimoMensajeSync =
+                            "Sincronización realizada con éxito. Las capturas ya fueron enviadas."
+
+                        Toast.makeText(
+                            context,
+                            "Sincronización realizada con éxito.",
+                            Toast.LENGTH_LONG
+                        ).show()
                     }
 
                     is ResultadoCheckpointSync.Error -> {
                         estadoSincronizacion = EstadoSincronizacionReporte.ERROR
                         ultimoMensajeSync =
-                            "Error de sincronización: ${resultadoSync.mensaje}"
+                            "Favor de conectar a internet e intenta nuevamente."
                     }
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 estadoSincronizacion = EstadoSincronizacionReporte.ERROR
                 ultimoMensajeSync =
-                    "Error de sincronización: ${e.message ?: "detalle no disponible"}"
+                    "Favor de conectar a internet e intenta nuevamente."
             }
         }
     }
+
     LaunchedEffect(Unit) {
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -263,32 +263,28 @@ fun ReporteMonitoreoScreen(
         catalogo.associateBy { it.idPhytosanitary }
     }
 
-    val puntosOrdenados = remember(puntos) {
-        puntos.sortedBy { it.idTargetPoint }
+    val numeroPuntoMap = remember(puntos) {
+        crearNumeroPuntoMapPorCoordenada(puntos)
     }
-
-    val numeroPuntoMap = remember(puntosOrdenados) {
-        puntosOrdenados.mapIndexed { index, punto ->
-            punto.idTargetPoint to numeroPuntoRealReporteUi(
-                label = punto.label,
-                fallback = index + 1
-            )
-        }.toMap()
-    }
-
     val puntosMap = remember(puntos) {
         puntos.associateBy { it.idTargetPoint }
     }
 
-    val puntosConCaptura = remember(checkpoints, puntos) {
+    val puntosConCaptura = remember(checkpoints, puntos, numeroPuntoMap) {
         val idsValidos = puntos.map { it.idTargetPoint }.toSet()
+
         checkpoints
-            .filter { it.idHeader == header.idHeader && it.idTargetPoint in idsValidos }
-            .map { it.idTargetPoint }
+            .filter { checkpoint ->
+                checkpoint.idHeader == header.idHeader &&
+                        checkpoint.idTargetPoint in idsValidos
+            }
+            .mapNotNull { checkpoint ->
+                numeroPuntoMap[checkpoint.idTargetPoint]
+            }
             .toSet()
     }
 
-    val totalPuntos = puntos.size
+    val totalPuntos = numeroPuntoMap.values.toSet().size
     val puntosCapturados = puntosConCaptura.size
     val puntosPendientes = (totalPuntos - puntosCapturados).coerceAtLeast(0)
     val porcentajeAvance = if (totalPuntos > 0) {
@@ -299,12 +295,24 @@ fun ReporteMonitoreoScreen(
 
     var detalleSuperiorExpandido by remember { mutableStateOf(false) }
 
-    val severidadPorPuntoMap = remember(checkpoints, catalogoMap) {
+    val severidadPorPuntoMap = remember(
+        checkpoints,
+        catalogoMap,
+        numeroPuntoMap
+    ) {
         checkpoints
-            .groupBy { checkpoint -> checkpoint.idTargetPoint }
-            .mapValues { (_, capturasPunto) ->
+            .mapNotNull { checkpoint ->
+                numeroPuntoMap[checkpoint.idTargetPoint]?.let { numero ->
+                    numero to checkpoint
+                }
+            }
+            .groupBy(
+                keySelector = { it.first },
+                valueTransform = { it.second }
+            )
+            .mapValues { (_, capturasMismaCoordenada) ->
                 calcularSeveridadPorPunto(
-                    checkpointsPunto = capturasPunto,
+                    checkpointsPunto = capturasMismaCoordenada,
                     catalogoPorId = catalogoMap
                 )
             }
@@ -321,18 +329,23 @@ fun ReporteMonitoreoScreen(
             )
             .map { checkpoint ->
                 val punto = puntosMap[checkpoint.idTargetPoint]
-                val item = catalogoMap[checkpoint.idPhytosanitary]
-                val severidadPunto = severidadPorPuntoMap[checkpoint.idTargetPoint]
+                val item = checkpoint.idPhytosanitary?.let { id ->
+                    catalogoMap[id]
+                }
+                val esSinPlaga =
+                    checkpoint.presenceStatus == 0 || checkpoint.idPhytosanitary == null
+                val numeroPunto = numeroPuntoMap[checkpoint.idTargetPoint] ?: 0
+                val severidadPunto = severidadPorPuntoMap[numeroPunto]
                 val nivelPunto = severidadPunto?.nivelFinal
 
                 FilaReporteCapturaUi(
-                    numeroPunto = numeroPuntoMap[checkpoint.idTargetPoint] ?: 0,
+                    numeroPunto = numeroPunto,
                     lat = punto?.lat,
                     lon = punto?.lon,
                     coordenadas = formatearCoordenadasReporteUi(punto?.lat, punto?.lon),
-                    plagaEnfermedad = item?.name ?: "Sin identificar",
-                    tipo = textoTipoCatalogo(item?.type),
-                    fase = checkpoint.stage ?: "-",
+                    plagaEnfermedad = if (esSinPlaga) "Sin plaga" else item?.name ?: "Sin identificar",
+                    tipo = if (esSinPlaga) "-" else textoTipoCatalogo(item?.type),
+                    fase = if (esSinPlaga) "-" else checkpoint.stage ?: "-",
                     cantidad = checkpoint.qty ?: 0,
                     severidad = nivelPunto?.etiqueta ?: "Sin plaga",
                     colorSeveridadHex = nivelPunto?.colorHex ?: "#16A34A",
@@ -529,18 +542,31 @@ fun ReporteMonitoreoScreen(
                     ) {
                         Button(
                             onClick = { sincronizarReporteManual() },
-                            enabled = estadoSincronizacion != EstadoSincronizacionReporte.SINCRONIZANDO &&
-                                    !cargando,
+                            enabled = (
+                                    estadoSincronizacion == EstadoSincronizacionReporte.PENDIENTE ||
+                                            estadoSincronizacion == EstadoSincronizacionReporte.ERROR
+                                    ) && !cargando,
                             modifier = Modifier
                                 .weight(1f)
                                 .height(54.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = colorSincronizacion
+                                containerColor = colorSincronizacion,
+                                disabledContainerColor = when (estadoSincronizacion) {
+                                    EstadoSincronizacionReporte.SINCRONIZADO -> Color(0xFF2E7D32)
+                                    EstadoSincronizacionReporte.SINCRONIZANDO -> Color(0xFFF9A825)
+                                    else -> colorSincronizacion
+                                },
+                                disabledContentColor = Color.White
                             ),
                             shape = RoundedCornerShape(22.dp)
                         ) {
                             Text(
-                                text = "Sincronizar",
+                                text = when (estadoSincronizacion) {
+                                    EstadoSincronizacionReporte.SINCRONIZANDO -> "Sincronizando..."
+                                    EstadoSincronizacionReporte.SINCRONIZADO -> "✓ Sincronizado"
+                                    EstadoSincronizacionReporte.ERROR -> "Reintentar"
+                                    else -> "Sincronizar"
+                                },
                                 color = Color.White,
                                 fontWeight = FontWeight.Black,
                                 fontSize = 13.sp,
