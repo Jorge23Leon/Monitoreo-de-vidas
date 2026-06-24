@@ -23,8 +23,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 @Composable
 fun ImageUriBox(
@@ -34,18 +32,16 @@ fun ImageUriBox(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+
     var bitmap by remember(photo) {
         mutableStateOf<ImageBitmap?>(null)
     }
 
     LaunchedEffect(photo) {
-        bitmap = if (photo.isNullOrBlank()) {
-            null
-        } else {
-            withContext(Dispatchers.IO) {
-                ImageCache.cargarBitmap(context, photo)
-            }
-        }
+        bitmap = ImageCache.cargarBitmap(
+            context = context.applicationContext,
+            photo = photo
+        )
     }
 
     Box(
@@ -60,12 +56,10 @@ fun ImageUriBox(
             ),
         contentAlignment = Alignment.Center
     ) {
-        val imagen = bitmap
-
-        if (imagen != null) {
+        if (bitmap != null) {
             Image(
-                bitmap = imagen,
-                contentDescription = "Imagen",
+                bitmap = bitmap!!,
+                contentDescription = "Imagen del catálogo",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )

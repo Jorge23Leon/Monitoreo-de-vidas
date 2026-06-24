@@ -94,10 +94,10 @@ class MonitoreoSyncRepository(
             }
 
             when (
-                val resultadoCatalogoFito = kotlinx.coroutines.withTimeoutOrNull(60_000L) {
+                val resultadoCatalogoFito = kotlinx.coroutines.withTimeoutOrNull(120_000L) {
                     agroCatalogsRepository.sincronizarCatalogoFitosanitario()
                 } ?: return ResultadoMonitoreoSync.Error(
-                    "Timeout catálogo fitosanitario: /api/v1/agro-catalogs/phytosanitary/ tardó más de 60 segundos"
+                    "Timeout catálogo fitosanitario: /api/v1/agro-catalogs/phytosanitary/ tardó más de 120 segundos"
                 )
             ) {
                 is ResultadoCatalogoFitoSync.Exito -> Unit
@@ -261,10 +261,18 @@ class MonitoreoSyncRepository(
             ?: cultivoApi.code
             ?: "Cultivo $extId"
 
-        val fotoCultivo = obtenerFotoCultivo(cultivoApi)
+        val fotoCultivoNueva = obtenerFotoCultivo(cultivoApi)
 
         val existente = database.localCropCatalogDao()
             .getCropByExtId(extId)
+
+        /*
+         * Los cultivos que llegan embebidos en FieldTask a veces no incluyen foto.
+         * No se debe borrar la imagen completa que ya vino del catálogo/detalle.
+         */
+        val fotoCultivoFinal = fotoCultivoNueva
+            ?.takeIf { it.isNotBlank() }
+            ?: existente?.photo
 
         return if (existente != null) {
             database.localCropCatalogDao().updateCrop(
@@ -274,7 +282,7 @@ class MonitoreoSyncRepository(
                     variedad = cultivoApi.variety,
                     code = cultivoApi.code,
                     description = cultivoApi.description,
-                    photo = fotoCultivo
+                    photo = fotoCultivoFinal
                 )
             )
 
@@ -287,7 +295,7 @@ class MonitoreoSyncRepository(
                     variedad = cultivoApi.variety,
                     code = cultivoApi.code,
                     description = cultivoApi.description,
-                    photo = fotoCultivo
+                    photo = fotoCultivoFinal
                 )
             )
         }
@@ -596,33 +604,54 @@ class MonitoreoSyncRepository(
 
 
 
+    /**
+     * Descarga cada imagen y actualiza Room con la ruta local real. Así la UI
+     * no depende de que el túnel de Cloudflare siga vivo después de sincronizar.
+     */
     private suspend fun precachearImagenesOffline(): Int {
-        val fotos = mutableSetOf<String>()
+        var actualizadas = 0
 
-        database.localCropCatalogDao()
-            .getAllCrops()
-            .mapNotNull { it.photo?.takeIf { photo -> photo.isNotBlank() } }
-            .forEach { fotos.add(it) }
+        val cropDao = database.localCropCatalogDao()
+        cropDao.getAllCrops().forEach { cultivo ->
+            val rutaLocal = ImageCache.resolverParaPersistir(
+                context = context.applicationContext,
+                photo = cultivo.photo
+            )
 
-        database.localphytosanitarycatalogDao()
-            .getAllCatalogo()
-            .mapNotNull { it.photo?.takeIf { photo -> photo.isNotBlank() } }
-            .forEach { fotos.add(it) }
-
-        database.localphytostageDao()
-            .getAllPhytostages()
-            .mapNotNull { it.photo?.takeIf { photo -> photo.isNotBlank() } }
-            .forEach { fotos.add(it) }
-
-        var guardadas = 0
-
-        fotos.forEach { foto ->
-            if (ImageCache.guardarEnCache(context, foto) != null) {
-                guardadas++
+            if (!rutaLocal.isNullOrBlank() && rutaLocal != cultivo.photo) {
+                cropDao.updateCrop(cultivo.copy(photo = rutaLocal))
+                actualizadas++
             }
         }
 
-        return guardadas
+        val fitoDao = database.localphytosanitarycatalogDao()
+        fitoDao.getAllCatalogo().forEach { fito ->
+            val rutaLocal = ImageCache.resolverParaPersistir(
+                context = context.applicationContext,
+                photo = fito.photo
+            )
+
+            if (!rutaLocal.isNullOrBlank() && rutaLocal != fito.photo) {
+                fitoDao.updatePhytosanitary(fito.copy(photo = rutaLocal))
+                actualizadas++
+            }
+        }
+
+        val etapaDao = database.localphytostageDao()
+        etapaDao.getAllPhytostages().forEach { etapa ->
+            val rutaLocal = ImageCache.resolverParaPersistir(
+                context = context.applicationContext,
+                photo = etapa.photo
+            )
+
+            if (!rutaLocal.isNullOrBlank() && rutaLocal != etapa.photo) {
+                etapaDao.updatePhytostage(etapa.copy(photo = rutaLocal))
+                actualizadas++
+            }
+        }
+
+        Log.d("SYNC_MON", "Imágenes locales actualizadas: $actualizadas")
+        return actualizadas
     }
 
     private fun normalizarEstado(status: String?): String {
