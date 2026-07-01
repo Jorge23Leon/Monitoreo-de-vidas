@@ -4,12 +4,14 @@ package com.example.myapplication.local.api.phytomonitoring
 // real para no sustituirlo por el id local de Room.
 
 import android.content.Context
+import com.example.myapplication.local.api.core.ApiConfig
 import com.example.myapplication.local.api.core.RetrofitClient
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.LocalPhytomonitoringCheckpointEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringTargetPointEntity
 import com.example.myapplication.local.entities.LocalPhytosanitaryCatalogEntity
+import com.example.myapplication.local.monitoreo.media.PhytoMediaStorage
 import com.google.gson.JsonElement
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -43,157 +45,287 @@ class PhytoCheckpointSyncRepository(
      * Sube al servidor los checkpoints locales que todavía no tienen extId.
      * Si no hay Internet o el backend responde error, NO borra nada local.
      */
+    /**
+     * Sincronización móvil oficial en dos pasos:
+     * 1) genera/importa CSV de checkpoints;
+     * 2) sube un ZIP con las evidencias fotográficas.
+     *
+     * No se borran datos locales si falla cualquier paso. Las fotos solo pasan de
+     * pending a uploaded cuando el backend confirma que encontró su checkpoint.
+     */
+    /**
+     * Sincronización móvil oficial.
+     *
+     * Cada captura local se envía por JSON para conservar la relación real:
+     * Header -> TargetPoint -> Checkpoint. El CSV no conserva el UUID del target,
+     * por eso queda únicamente como compatibilidad histórica y no se usa aquí.
+     */
     suspend fun sincronizarHeaderCsv(
         headerLocal: LocalPhytomonitoringHeaderEntity
     ): ResultadoCheckpointSync = withContext(Dispatchers.IO) {
         val headerExtId = headerLocal.extId?.trim()
             ?.takeIf { it.isNotBlank() }
             ?: return@withContext ResultadoCheckpointSync.Error(
-                "El monitoreo local no tiene ext_id del servidor; no se pueden subir capturas."
+                "El monitoreo local no tiene ext_id del servidor; no se pueden sincronizar capturas."
             )
 
-        // Antes de subir intentamos reconciliar con lo que ya exista en API.
-        // Esto evita duplicar capturas que antes pudieron haberse enviado por CSV.
-        descargarCheckpointsHeaderDesdeApi(headerLocal)
-
-        val checkpointsLocales = database.localphytomonitoringcheckpointDao()
-            .getCheckpointsByHeader(headerLocal.idHeader)
-
-        val pendientes = checkpointsLocales.filter { checkpoint ->
-            checkpoint.extId.isNullOrBlank()
-        }
-
-        if (pendientes.isEmpty()) {
-            sincronizarEstadoHeaderServidor(headerLocal)
-
-            val descargados = descargarCheckpointsHeaderDesdeApi(headerLocal).cantidad
-            return@withContext ResultadoCheckpointSync.Exito(
-                subidos = 0,
-                descargados = descargados,
-                omitidos = 0,
-                mensaje = "No había checkpoints nuevos por subir. Estado del monitoreo sincronizado."
+        val descargaInicial = descargarCheckpointsHeaderDesdeApi(headerLocal)
+        if (descargaInicial.error != null) {
+            return@withContext ResultadoCheckpointSync.Error(
+                "No se pudo consultar la sesión antes de sincronizar. ${descargaInicial.error}"
             )
         }
 
-        val puntosIniciales = database.LocalPhytomonitoringTargetPointDao()
+        val checkpointDao = database.localphytomonitoringcheckpointDao()
+
+        /*
+         * Primero recuperamos las referencias de fotos antiguas (h7_p..., h10_p...).
+         * Así el PATCH que sigue ya manda photo_ref al servidor antes de crear el ZIP.
+         */
+        val nombresFotosPendientes = PhytoMediaStorage
+            .listarNombresFotosPendientes(
+                context = context,
+                idHeader = headerLocal.idHeader
+            )
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .toSet()
+
+        val checkpointsLocales = reconciliarFotosLegacyPendientes(
+            idHeaderLocal = headerLocal.idHeader,
+            checkpointsOriginales = checkpointDao.getCheckpointsByHeader(headerLocal.idHeader),
+            nombresPendientes = nombresFotosPendientes
+        )
+
+        val puntos = database.LocalPhytomonitoringTargetPointDao()
             .getTargetPointsByHeader(headerLocal.idHeader)
             .associateBy { it.idTargetPoint }
-            .toMutableMap()
 
         val catalogo = database.localphytosanitarycatalogDao()
             .getAllCatalogo()
             .associateBy { it.idPhytosanitary }
 
-        var subidos = 0
+        val mensajes = mutableListOf<String>()
+        var creadosJson = 0
         var omitidos = 0
-        val errores = mutableListOf<String>()
+        var capturasPendientes = false
 
-        for (checkpoint in pendientes) {
-            val puntoLocal = puntosIniciales[checkpoint.idTargetPoint]
-            val fitoLocal = catalogo[checkpoint.idPhytosanitary]
-
-            if (puntoLocal == null) {
-                omitidos++
-                errores.add("checkpoint ${checkpoint.idCheckpoint}: no tiene punto local")
-                continue
-            }
-
-            /*
-             * Un punto SIN_PLAGA sí debe llegar a la API:
-             * - qty = 0
-             * - presence_status = low
-             * - phyto_issue = null
-             * - stage = null
-             *
-             * La tabla del backend permite phyto_issue y stage nulos.
-             * No se requiere inventar una plaga para representar cero presencia.
-             */
-            val esSinPlaga = esCheckpointSinPlaga(fitoLocal, checkpoint)
-
-            val phytoIssueId = if (esSinPlaga) {
-                null
-            } else {
-                fitoLocal?.extId
-                    ?.trim()
-                    ?.toIntOrNull()
-            }
-
-            if (!esSinPlaga && phytoIssueId == null) {
-                omitidos++
-                errores.add("checkpoint ${checkpoint.idCheckpoint}: fitosanitario sin ext_id numérico")
-                continue
-            }
-
+        /*
+         * Asegura TODOS los targets locales del header, incluso si todavía no
+         * tienen checkpoint. Así el contador Targets del backend no queda en 0.
+         */
+        val targetExtPorPunto = mutableMapOf<Long, String>()
+        puntos.values.forEach { punto ->
             val targetExtId = asegurarTargetPointEnApi(
                 headerLocal = headerLocal,
-                puntoLocal = puntoLocal
+                puntoLocal = punto
             )
 
-            if (targetExtId == null) {
-                omitidos++
-                errores.add("checkpoint ${checkpoint.idCheckpoint}: no se pudo crear target point en API")
-                continue
+            if (targetExtId.isNullOrBlank()) {
+                capturasPendientes = true
+                mensajes += "No se pudo crear/vincular el target del punto ${punto.label.ifBlank { punto.idTargetPoint.toString() }}."
+            } else {
+                targetExtPorPunto[punto.idTargetPoint] = targetExtId
             }
-
-            val checkpointCreado = subirCheckpointJson(
-                headerExtId = headerExtId,
-                targetExtId = targetExtId,
-                checkpoint = checkpoint,
-                puntoLocal = puntoLocal.copy(extId = targetExtId),
-                phytoIssueId = phytoIssueId,
-                esSinPlaga = esSinPlaga
-            )
-
-            if (checkpointCreado == null) {
-                omitidos++
-                errores.add("checkpoint ${checkpoint.idCheckpoint}: no se pudo crear checkpoint en API")
-                continue
-            }
-
-            val checkpointExtId = checkpointCreado.id?.trim()?.takeIf { it.isNotBlank() }
-            if (checkpointExtId != null) {
-                database.localphytomonitoringcheckpointDao()
-                    .updateCheckpoint(
-                        checkpoint.copy(
-                            extId = checkpointExtId,
-                            idTargetPoint = puntoLocal.idTargetPoint
-                        )
-                    )
-            }
-
-            database.LocalPhytomonitoringTargetPointDao()
-                .actualizarStatusPunto(
-                    idTargetPoint = puntoLocal.idTargetPoint,
-                    status = "Completado"
-                )
-
-            subidos++
         }
 
-        sincronizarEstadoHeaderServidor(headerLocal)
+        /*
+         * Repara capturas creadas antes con CSV: ya existen en servidor, pero
+         * quedaron sin target porque CSV solo conserva pcp_oid local.
+         */
+        checkpointsLocales
+            .filter { !it.extId.isNullOrBlank() }
+            .forEach { checkpoint ->
+                val targetExtId = targetExtPorPunto[checkpoint.idTargetPoint] ?: return@forEach
 
-        val descargados = descargarCheckpointsHeaderDesdeApi(headerLocal).cantidad
+                val vinculado = vincularCheckpointExistenteConTarget(
+                    checkpointExtId = checkpoint.extId!!.trim(),
+                    targetExtId = targetExtId,
+                    photoRef = obtenerPhotoRefLocal(checkpoint)
+                )
 
-        if (subidos == 0 && errores.isNotEmpty()) {
+                if (!vinculado) {
+                    /*
+                     * No se puede cerrar el header todavía: esa captura antigua
+                     * seguiría sin relación Checkpoint -> Target en el servidor.
+                     */
+                    capturasPendientes = true
+                    mensajes += "No se pudo vincular al target la captura ${checkpoint.extId}."
+                }
+            }
+
+        checkpointsLocales
+            .filter { it.extId.isNullOrBlank() }
+            .forEach { checkpoint ->
+                val punto = puntos[checkpoint.idTargetPoint]
+                if (punto == null) {
+                    omitidos++
+                    capturasPendientes = true
+                    mensajes += "Checkpoint ${checkpoint.idCheckpoint}: no tiene punto local."
+                    return@forEach
+                }
+
+                val fito = checkpoint.idPhytosanitary?.let { catalogo[it] }
+                val esSinPlaga = esCheckpointSinPlaga(fito, checkpoint)
+
+                val phytoIssueId = if (esSinPlaga) {
+                    null
+                } else {
+                    fito?.extId
+                        ?.trim()
+                        ?.toIntOrNull()
+                }
+
+                val stage = checkpoint.stage
+                    ?.trim()
+                    .orEmpty()
+
+                if (!esSinPlaga && phytoIssueId == null) {
+                    omitidos++
+                    capturasPendientes = true
+                    mensajes += "Checkpoint ${checkpoint.idCheckpoint}: fitosanitario sin ext_id numérico."
+                    return@forEach
+                }
+
+                if (!esSinPlaga && stage.isBlank()) {
+                    omitidos++
+                    capturasPendientes = true
+                    mensajes += "Checkpoint ${checkpoint.idCheckpoint}: falta etapa."
+                    return@forEach
+                }
+
+                val targetExtId = targetExtPorPunto[checkpoint.idTargetPoint]
+                if (targetExtId.isNullOrBlank()) {
+                    omitidos++
+                    capturasPendientes = true
+                    mensajes += "Checkpoint ${checkpoint.idCheckpoint}: el target aún no existe en el servidor."
+                    return@forEach
+                }
+
+                val creado = subirCheckpointJson(
+                    headerExtId = headerExtId,
+                    targetExtId = targetExtId,
+                    checkpoint = checkpoint,
+                    puntoLocal = punto,
+                    phytoIssueId = phytoIssueId,
+                    esSinPlaga = esSinPlaga
+                )
+
+                val checkpointExtId = creado?.id
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+
+                if (checkpointExtId == null) {
+                    omitidos++
+                    capturasPendientes = true
+                    mensajes += "Checkpoint ${checkpoint.idCheckpoint}: el servidor no confirmó la captura."
+                    return@forEach
+                }
+
+                val photoRefCalculada = obtenerPhotoRefLocal(checkpoint)
+
+                checkpointDao.updateCheckpoint(
+                    checkpoint.copy(
+                        extId = checkpointExtId,
+                        photoRef = creado.photoRef
+                            ?.trim()
+                            ?.takeIf { it.isNotBlank() }
+                            ?: checkpoint.photoRef
+                            ?: photoRefCalculada,
+                        photoUrl = normalizarUrlMedia(
+                            creado.photoUrl ?: creado.photo
+                        ) ?: checkpoint.photoUrl
+                    )
+                )
+
+                creadosJson++
+            }
+
+        val descargaPosterior = descargarCheckpointsHeaderDesdeApi(headerLocal)
+        if (descargaPosterior.error != null) {
             return@withContext ResultadoCheckpointSync.Error(
-                "No se pudieron subir capturas. ${errores.take(3).joinToString(" | ")}"
+                "Las capturas se enviaron, pero no se pudieron reconciliar en Room. " +
+                        "${descargaPosterior.error}"
             )
+        }
+
+        var descargadosFinales = descargaPosterior.cantidad
+
+        val fotos = subirFotosPendientes(
+            headerExtId = headerExtId,
+            idHeaderLocal = headerLocal.idHeader
+        )
+
+        var fotosPendientes = capturasPendientes
+        when (fotos) {
+            is ResultadoFotosZip.Error -> {
+                fotosPendientes = true
+                mensajes += fotos.mensaje
+            }
+
+            is ResultadoFotosZip.Exito -> {
+                if (fotos.movidas > 0) {
+                    mensajes += "${fotos.movidas} foto(s) confirmada(s) por el servidor."
+                }
+                if (fotos.noEmparejadas.isNotEmpty()) {
+                    fotosPendientes = true
+                    mensajes += "Fotos sin checkpoint en servidor: ${fotos.noEmparejadas.joinToString()}"
+                }
+                if (fotos.checkpointsSinFoto.isNotEmpty()) {
+                    fotosPendientes = true
+                    mensajes += "Checkpoints sin evidencia en servidor: ${fotos.checkpointsSinFoto.joinToString()}"
+                }
+                if (fotos.pendientesSinCheckpoint.isNotEmpty()) {
+                    fotosPendientes = true
+                    mensajes += "Fotos locales sin checkpoint confirmado: ${fotos.pendientesSinCheckpoint.joinToString()}"
+                }
+                if (fotos.pendientesSinConfirmar.isNotEmpty()) {
+                    fotosPendientes = true
+                    mensajes += "El servidor no confirmó estas fotos; se conservaron para reintentar: ${fotos.pendientesSinConfirmar.joinToString()}"
+                }
+            }
+        }
+
+        /*
+         * Cuando el ZIP ya quedó confirmado, bajamos los checkpoints una vez más para
+         * recibir la ruta real del campo `photo` y guardarla como photoUrl en Room.
+         * Si esta descarga falla, la evidencia YA está segura en servidor y también
+         * quedó en uploaded local; no se vuelve a marcar como pendiente.
+         */
+        if (fotos is ResultadoFotosZip.Exito && fotos.movidas > 0) {
+            val descargaConFotos = descargarCheckpointsHeaderDesdeApi(headerLocal)
+
+            if (descargaConFotos.error != null) {
+                mensajes += "Las fotos se confirmaron, pero no se pudo actualizar su URL local: ${descargaConFotos.error}"
+            } else {
+                descargadosFinales = descargaConFotos.cantidad
+            }
+        }
+
+        /*
+         * El header se actualiza hasta que checkpoints y fotos están listos.
+         * Así no se bloquea el ZIP por dejar la sesión completed antes de tiempo.
+         */
+        if (!fotosPendientes) {
+            val estadoEnviado = sincronizarEstadoHeaderServidor(headerLocal)
+            if (!estadoEnviado) {
+                fotosPendientes = true
+                mensajes += "Capturas enviadas, pero no se pudo actualizar el estado del monitoreo."
+            }
         }
 
         ResultadoCheckpointSync.Exito(
-            subidos = subidos,
-            descargados = descargados,
+            subidos = creadosJson,
+            descargados = descargadosFinales,
             omitidos = omitidos,
-            mensaje = when {
-                errores.isNotEmpty() -> {
-                    "Checkpoints sincronizados parcialmente. ${errores.take(3).joinToString(" | ")}"
+            fotosPendientes = fotosPendientes,
+            mensaje = buildString {
+                when {
+                    creadosJson > 0 -> append("Capturas y targets sincronizados correctamente.")
+                    checkpointsLocales.none { it.extId.isNullOrBlank() } -> append("No había capturas nuevas; se revisaron targets y evidencias.")
+                    else -> append("Sincronización terminada.")
                 }
-                omitidos > 0 -> {
-                    "Checkpoints sincronizados. Omitidos por datos incompletos: $omitidos."
-                }
-                else -> {
-                    "Checkpoints sincronizados por JSON correctamente."
-                }
+                if (mensajes.isNotEmpty()) append(" ${mensajes.distinct().joinToString(" | ")}")
             }
         )
     }
@@ -294,18 +426,8 @@ class PhytoCheckpointSyncRepository(
             ?.takeIf { it.isNotBlank() }
             ?: return null
 
-        val parcelaLocal = database.localPlotDao()
-            .getPlotById(puntoLocal.idLocalPlot)
-            ?: database.localPlotDao().getPlotById(headerLocal.idLocalPlot)
-            ?: return null
-
-        val plotExtId = parcelaLocal.extId?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?: return null
-
         val body = PhytoTargetPointCreateRequest(
             header = headerExtId,
-            plot = plotExtId,
             geom = PhytoGeomApi(
                 type = "Point",
                 coordinates = listOf(puntoLocal.lon, puntoLocal.lat)
@@ -313,7 +435,8 @@ class PhytoCheckpointSyncRepository(
             radiusM = puntoLocal.radiusM.toDouble().coerceAtLeast(1.0),
             label = puntoLocal.label
                 .trim()
-                .ifBlank { "Punto ${puntoLocal.idTargetPoint}" }
+                .ifBlank { "Punto ${puntoLocal.idTargetPoint}" },
+            status = "pending"
         )
 
         val response = api.crearTargetPoint(body)
@@ -337,11 +460,64 @@ class PhytoCheckpointSyncRepository(
                         ?.trim()
                         .orEmpty()
                         .ifBlank { puntoLocal.label },
-                    status = "in_progress"
+                    status = puntoLocal.status
                 )
             )
 
         return targetExtId
+    }
+
+    private suspend fun vincularCheckpointExistenteConTarget(
+        checkpointExtId: String,
+        targetExtId: String,
+        photoRef: String?
+    ): Boolean {
+        return try {
+            val response = api.actualizarCheckpoint(
+                id = checkpointExtId,
+                body = PhytoCheckpointPatchRequest(
+                    target = targetExtId,
+                    photoRef = photoRef
+                        ?.trim()
+                        ?.takeIf { it.isNotBlank() }
+                )
+            )
+
+            if (!response.isSuccessful) {
+                android.util.Log.w(
+                    "SYNC_PHYTO_JSON",
+                    "No se pudo reparar checkpoint $checkpointExtId. " +
+                            "HTTP ${response.code()}: ${response.errorBody()?.string().orEmpty()}"
+                )
+                false
+            } else {
+                true
+            }
+        } catch (e: Exception) {
+            android.util.Log.w(
+                "SYNC_PHYTO_JSON",
+                "Error reparando checkpoint $checkpointExtId: ${e.message}",
+                e
+            )
+            false
+        }
+    }
+    private fun obtenerPhotoRefLocal(
+        checkpoint: LocalPhytomonitoringCheckpointEntity
+    ): String? {
+        checkpoint.photoRef
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { return it }
+
+        val capturedAt = checkpoint.capturedAt ?: return null
+
+        return PhytoMediaStorage.buscarFotoPendiente(
+            context = context,
+            idHeader = checkpoint.idHeader,
+            idTargetPoint = checkpoint.idTargetPoint,
+            capturedAt = capturedAt
+        )?.name
     }
 
     private suspend fun subirCheckpointJson(
@@ -352,9 +528,13 @@ class PhytoCheckpointSyncRepository(
         phytoIssueId: Int?,
         esSinPlaga: Boolean
     ): PhytoCheckpointApiItem? {
-        val stage = checkpoint.stage
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
+        val stage = if (esSinPlaga) {
+            null
+        } else {
+            checkpoint.stage
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+        }
 
         /*
          * Para una captura normal la API requiere etapa y problema fitosanitario.
@@ -378,6 +558,7 @@ class PhytoCheckpointSyncRepository(
                 coordinates = listOf(puntoLocal.lon, puntoLocal.lat)
             ),
             notes = checkpoint.notes?.takeIf { it.isNotBlank() },
+            photoRef = obtenerPhotoRefLocal(checkpoint),
             capturedAt = formatearIsoApi(checkpoint.capturedAt ?: System.currentTimeMillis())
         )
 
@@ -397,36 +578,55 @@ class PhytoCheckpointSyncRepository(
     /**
      * Baja los checkpoints del servidor y los guarda en Room.
      * Esto permite que el reporte del admin muestre capturas hechas por otro usuario.
+     *
+     * Importante: HTTP 403/404/500 y respuestas vacías se reportan como error.
+     * Nunca se convierten en cantidad 0 porque eso daba falsos "Sincronizado".
      */
     suspend fun descargarCheckpointsHeaderDesdeApi(
         headerLocal: LocalPhytomonitoringHeaderEntity
     ): ResultadoDescargaCheckpoints = withContext(Dispatchers.IO) {
         val headerExtId = headerLocal.extId?.trim()
             ?.takeIf { it.isNotBlank() }
-            ?: return@withContext ResultadoDescargaCheckpoints(0)
+            ?: return@withContext ResultadoDescargaCheckpoints(
+                cantidad = 0,
+                error = "El header local no tiene ext_id."
+            )
 
         val items = mutableListOf<PhytoCheckpointApiItem>()
         var page = 1
 
         while (true) {
-            val response = api.listarCheckpoints(
-                header = headerExtId,
-                page = page
-            )
+            val response = try {
+                api.listarCheckpoints(
+                    header = headerExtId,
+                    page = page
+                )
+            } catch (e: Exception) {
+                return@withContext ResultadoDescargaCheckpoints(
+                    cantidad = items.size,
+                    error = "No se pudieron descargar checkpoints: ${e.message ?: e.javaClass.simpleName}."
+                )
+            }
 
             if (!response.isSuccessful) {
-                return@withContext ResultadoDescargaCheckpoints(items.size)
+                val detail = response.errorBody()?.string().orEmpty()
+                    .replace(Regex("\\s+"), " ")
+                    .take(300)
+                return@withContext ResultadoDescargaCheckpoints(
+                    cantidad = items.size,
+                    error = "GET checkpoints HTTP ${response.code()}: $detail"
+                )
             }
 
             val body = response.body()
-                ?: return@withContext ResultadoDescargaCheckpoints(items.size)
+                ?: return@withContext ResultadoDescargaCheckpoints(
+                    cantidad = items.size,
+                    error = "El servidor respondió vacío al consultar checkpoints."
+                )
 
             items.addAll(body.results)
 
-            if (body.next.isNullOrBlank()) {
-                break
-            }
-
+            if (body.next.isNullOrBlank()) break
             page++
         }
 
@@ -453,12 +653,10 @@ class PhytoCheckpointSyncRepository(
                     catalogo = catalogo
                 )
 
-                if (guardado) {
-                    guardados++
-                }
+                if (guardado) guardados++
             }
 
-        ResultadoDescargaCheckpoints(guardados)
+        ResultadoDescargaCheckpoints(cantidad = guardados)
     }
 
     private suspend fun guardarCheckpointApi(
@@ -525,6 +723,13 @@ class PhytoCheckpointSyncRepository(
 
         val qty = qtyApi
         val capturedAt = parseFechaApi(item.capturedAt)
+        val photoRefApi = item.photoRef
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+        val photoUrlApi = normalizarUrlMedia(item.photoUrl ?: item.photo)
+
+        val existentePorExtId = database.localphytomonitoringcheckpointDao()
+            .getCheckpointByExtId(extId)
 
         val nuevo = LocalPhytomonitoringCheckpointEntity(
             extId = extId,
@@ -532,6 +737,9 @@ class PhytoCheckpointSyncRepository(
             presenceStatus = presenceStatusLocal(item.presenceStatus, qty),
             stage = item.stage,
             notes = item.notes,
+            photoRef = photoRefApi ?: existentePorExtId?.photoRef,
+            photoLocalPath = existentePorExtId?.photoLocalPath,
+            photoUrl = photoUrlApi ?: existentePorExtId?.photoUrl,
             capturedAt = capturedAt,
             capturedByUserId = usuarioLocal?.idUser,
             idTargetPoint = targetLocal.idTargetPoint,
@@ -539,9 +747,6 @@ class PhytoCheckpointSyncRepository(
             idPhytosanitary = fitoLocal.idPhytosanitary,
             idLocalPlot = targetLocal.idLocalPlot
         )
-
-        val existentePorExtId = database.localphytomonitoringcheckpointDao()
-            .getCheckpointByExtId(extId)
 
         if (existentePorExtId != null) {
             database.localphytomonitoringcheckpointDao()
@@ -561,18 +766,22 @@ class PhytoCheckpointSyncRepository(
                 ?: buscarCheckpointLocalPendienteSimilar(nuevo)
 
             if (mismaCapturaLocalFlexible != null && mismaCapturaLocalFlexible.extId.isNullOrBlank()) {
-                // El import CSV no regresa los IDs creados. Cuando descargamos desde API,
-                // reconciliamos la fila del servidor con la captura local pendiente para
-                // no duplicarla en el reporte. No dependemos de timestamp exacto porque
-                // el backend puede redondear/convertir zona horaria.
+                // El import CSV no regresa los IDs creados. Al descargar se conserva la
+                // referencia y la ruta local que ya tenía la captura offline.
                 database.localphytomonitoringcheckpointDao()
-                    .updateCheckpoint(nuevo.copy(idCheckpoint = mismaCapturaLocalFlexible.idCheckpoint))
+                    .updateCheckpoint(
+                        nuevo.copy(
+                            idCheckpoint = mismaCapturaLocalFlexible.idCheckpoint,
+                            photoRef = photoRefApi ?: mismaCapturaLocalFlexible.photoRef,
+                            photoLocalPath = mismaCapturaLocalFlexible.photoLocalPath,
+                            photoUrl = photoUrlApi ?: mismaCapturaLocalFlexible.photoUrl
+                        )
+                    )
             } else {
                 database.localphytomonitoringcheckpointDao()
                     .upsertCheckpointFromApi(nuevo)
             }
         }
-
         database.LocalPhytomonitoringTargetPointDao()
             .actualizarStatusPunto(
                 idTargetPoint = targetLocal.idTargetPoint,
@@ -774,48 +983,529 @@ class PhytoCheckpointSyncRepository(
         catalogoPorIdLocal: Map<Long, LocalPhytosanitaryCatalogEntity>
     ): CsvImportacion {
         val sb = StringBuilder()
-        sb.appendLine("geom_lon,geom_lat,captured_at,phyto_issue_id,stage,presence_status,qty,notes")
+        sb.appendLine(
+            "geom_lon,geom_lat,captured_at,phyto_issue_id,stage,presence_status,qty,pcp_oid,photo,notes"
+        )
 
         var filasValidas = 0
         var filasOmitidas = 0
+        val mensajes = mutableListOf<String>()
 
         checkpoints.forEach { checkpoint ->
             val punto = puntos[checkpoint.idTargetPoint]
-            val phytoIssueId = catalogoPorIdLocal[checkpoint.idPhytosanitary]
-                ?.extId
-                ?.trim()
-                ?.takeIf { it.isNotBlank() }
+            val fito = checkpoint.idPhytosanitary?.let { catalogoPorIdLocal[it] }
+            val esSinPlaga = esCheckpointSinPlaga(fito, checkpoint)
 
-            if (punto == null || phytoIssueId == null) {
+            /*
+             * Contrato actual del endpoint CSV:
+             * phyto_issue_id y stage son obligatorios. Por eso "Sin plaga" y
+             * registros sin etapa se mantienen locales hasta que backend permita
+             * valores nulos para esas dos columnas.
+             */
+            if (esSinPlaga) {
                 filasOmitidas++
+                mensajes += "Punto ${checkpoint.idTargetPoint}: 'Sin plaga' requiere ajuste del endpoint CSV (phyto_issue_id/stage obligatorios)."
                 return@forEach
             }
 
-            filasValidas++
+            if (punto == null) {
+                filasOmitidas++
+                mensajes += "Checkpoint ${checkpoint.idCheckpoint}: no tiene punto local."
+                return@forEach
+            }
 
-            val capturedAt = formatearIsoApi(checkpoint.capturedAt ?: System.currentTimeMillis())
-            val presenceStatus = presenceStatusApi(checkpoint)
-            val qty = checkpoint.qty ?: 0
+            val phytoIssueId = fito?.extId
+                ?.trim()
+                ?.toIntOrNull()
+
+            if (phytoIssueId == null) {
+                filasOmitidas++
+                mensajes += "Checkpoint ${checkpoint.idCheckpoint}: fitosanitario sin ext_id numérico."
+                return@forEach
+            }
+
+            val stage = checkpoint.stage?.trim().orEmpty()
+            if (stage.isBlank()) {
+                filasOmitidas++
+                mensajes += "Checkpoint ${checkpoint.idCheckpoint}: falta etapa; el endpoint CSV la exige."
+                return@forEach
+            }
+
+            val capturedAtMillis = checkpoint.capturedAt
+            if (capturedAtMillis == null) {
+                filasOmitidas++
+                mensajes += "Checkpoint ${checkpoint.idCheckpoint}: falta fecha/hora de captura."
+                return@forEach
+            }
+
+            // Room es la fuente de la relación checkpoint ↔ evidencia.
+            // El respaldo por carpeta mantiene compatibilidad con registros viejos.
+            val photoName = checkpoint.photoRef
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: PhytoMediaStorage.buscarFotoPendiente(
+                    context = context,
+                    idHeader = checkpoint.idHeader,
+                    idTargetPoint = checkpoint.idTargetPoint,
+                    capturedAt = capturedAtMillis
+                )?.name.orEmpty()
 
             sb.appendLine(
                 listOf(
                     punto.lon.toString(),
                     punto.lat.toString(),
-                    capturedAt,
-                    phytoIssueId,
-                    checkpoint.stage.orEmpty(),
-                    presenceStatus,
-                    qty.toString(),
+                    formatearIsoApi(capturedAtMillis),
+                    phytoIssueId.toString(),
+                    stage,
+                    presenceStatusApi(checkpoint),
+                    (checkpoint.qty ?: 0).toString(),
+                    checkpoint.idTargetPoint.toString(),
+                    photoName,
                     checkpoint.notes.orEmpty()
                 ).joinToString(",") { escaparCsv(it) }
             )
+
+            filasValidas++
         }
 
         return CsvImportacion(
             contenido = sb.toString(),
             filasValidas = filasValidas,
-            filasOmitidas = filasOmitidas
+            filasOmitidas = filasOmitidas,
+            mensajesOmitidos = mensajes
         )
+    }
+
+    private suspend fun importarCsv(
+        headerExtId: String,
+        contenidoCsv: String
+    ): ResultadoImportacionCsv {
+        val directory = File(context.cacheDir, "phyto_sync_csv").apply { mkdirs() }
+        val csvFile = File.createTempFile("phyto_${headerExtId.take(8)}_", ".csv", directory)
+
+        return try {
+            csvFile.writeText(contenidoCsv, Charsets.UTF_8)
+
+            val headerBody = headerExtId.toRequestBody("text/plain".toMediaType())
+            val csvBody = csvFile.asRequestBody("text/csv; charset=utf-8".toMediaType())
+            val csvPart = MultipartBody.Part.createFormData(
+                "csv_file",
+                "checkpoints_${System.currentTimeMillis()}.csv",
+                csvBody
+            )
+
+            val response = api.importarCheckpointsCsv(
+                header = headerBody,
+                csv_file = csvPart
+            )
+
+            if (!response.isSuccessful) {
+                val detail = response.errorBody()?.string().orEmpty()
+                return ResultadoImportacionCsv.Error(
+                    when (response.code()) {
+                        403 -> "El servidor rechazó el CSV (403). Verifica que la sesión siga activa y que el usuario tenga rol Técnico o superior."
+                        409 -> "La sesión está cerrada en el servidor (409). Debe estar pending o in_progress para importar capturas."
+                        else -> "Error importando CSV HTTP ${response.code()}: $detail"
+                    }
+                )
+            }
+
+            val body = response.body()
+                ?: return ResultadoImportacionCsv.Error("El servidor respondió sin detalle al importar el CSV.")
+
+            ResultadoImportacionCsv.Exito(body.created ?: 0)
+        } catch (e: Exception) {
+            ResultadoImportacionCsv.Error("No se pudo enviar el CSV: ${e.message}")
+        } finally {
+            csvFile.delete()
+        }
+    }
+
+    /**
+     * Deja apuntando a la ruta real de uploaded incluso para evidencias antiguas
+     * cuyo capturedAt ya no coincide exactamente con el nombre del archivo.
+     */
+    private suspend fun actualizarRutasLocalesFotosConfirmadas(
+        idHeaderLocal: Long,
+        fileNames: Set<String>
+    ) {
+        if (fileNames.isEmpty()) return
+
+        val dao = database.localphytomonitoringcheckpointDao()
+        dao.getCheckpointsByHeader(idHeaderLocal)
+            .filter { checkpoint ->
+                checkpoint.photoRef?.trim() in fileNames
+            }
+            .forEach { checkpoint ->
+                val photoRef = checkpoint.photoRef?.trim().orEmpty()
+                val file = PhytoMediaStorage.buscarFotoLocalPorNombre(
+                    context = context,
+                    idHeader = checkpoint.idHeader,
+                    fileName = photoRef
+                )
+
+                if (file != null) {
+                    dao.updateCheckpoint(
+                        checkpoint.copy(photoLocalPath = file.absolutePath)
+                    )
+                }
+            }
+    }
+
+    private data class ReferenciaFotoLocal(
+        val idHeader: Long,
+        val idTargetPoint: Long,
+        val capturedAt: Long
+    )
+
+    /**
+     * La nomenclatura de evidencia es h{header}_p{punto}_{fecha}.jpg.
+     * Se usa solo con archivos propios de la app y nunca con rutas del servidor.
+     */
+    private fun parsearReferenciaFotoLocal(nombre: String): ReferenciaFotoLocal? {
+        val match = Regex(
+            pattern = "^h(\\d+)_p(\\d+)_(\\d+)\\.[A-Za-z0-9]+$",
+            option = RegexOption.IGNORE_CASE
+        ).matchEntire(nombre.trim()) ?: return null
+
+        val idHeader = match.groupValues[1].toLongOrNull() ?: return null
+        val idTargetPoint = match.groupValues[2].toLongOrNull() ?: return null
+        val capturedAt = match.groupValues[3].toLongOrNull() ?: return null
+
+        return ReferenciaFotoLocal(
+            idHeader = idHeader,
+            idTargetPoint = idTargetPoint,
+            capturedAt = capturedAt
+        )
+    }
+
+    /**
+     * Repara evidencias creadas por versiones anteriores que guardaron el JPG en
+     * pending, pero no persistieron photoRef en Room. Primero exige misma sesión,
+     * mismo punto y misma fecha. Como respaldo seguro, usa el punto completo solo
+     * cuando todos sus checkpoints sin evidencia pertenecen a una única captura.
+     */
+    private suspend fun reconciliarFotosLegacyPendientes(
+        idHeaderLocal: Long,
+        checkpointsOriginales: List<LocalPhytomonitoringCheckpointEntity>,
+        nombresPendientes: Set<String>
+    ): List<LocalPhytomonitoringCheckpointEntity> {
+        if (nombresPendientes.isEmpty()) return checkpointsOriginales
+
+        val dao = database.localphytomonitoringcheckpointDao()
+        val reemplazos = mutableMapOf<Long, LocalPhytomonitoringCheckpointEntity>()
+        val toleranciaMilis = 2_000L
+
+        nombresPendientes.forEach { photoRef ->
+            val clave = parsearReferenciaFotoLocal(photoRef) ?: return@forEach
+            if (clave.idHeader != idHeaderLocal) return@forEach
+
+            val archivo = PhytoMediaStorage.buscarFotoPendientePorNombre(
+                context = context,
+                idHeader = idHeaderLocal,
+                fileName = photoRef
+            ) ?: return@forEach
+
+            val mismoPunto = checkpointsOriginales.filter { checkpoint ->
+                checkpoint.idHeader == idHeaderLocal &&
+                        checkpoint.idTargetPoint == clave.idTargetPoint
+            }
+
+            if (mismoPunto.isEmpty()) return@forEach
+
+            val porFecha = mismoPunto.filter { checkpoint ->
+                val capturedAt = checkpoint.capturedAt ?: return@filter false
+                abs(capturedAt - clave.capturedAt) <= toleranciaMilis
+            }
+
+            /*
+             * Si la API histórica alteró captured_at al reconciliar, solamente se
+             * toma el punto completo cuando hay una sola captura sin photoRef. Así
+             * jamás se asigna una foto a una visita distinta del mismo punto.
+             */
+            val grupoCandidato = if (porFecha.isNotEmpty()) {
+                porFecha
+            } else {
+                val sinReferencia = mismoPunto.filter { checkpoint ->
+                    checkpoint.photoRef.isNullOrBlank()
+                }
+
+                val instantes = sinReferencia
+                    .mapNotNull { it.capturedAt }
+                    .distinct()
+
+                if (sinReferencia.isNotEmpty() && instantes.size == 1) {
+                    sinReferencia
+                } else {
+                    emptyList()
+                }
+            }
+
+            if (grupoCandidato.isEmpty()) return@forEach
+
+            /* Si algún checkpoint ya tiene otra foto, el caso es ambiguo. */
+            if (grupoCandidato.any { checkpoint ->
+                    val existente = checkpoint.photoRef?.trim().orEmpty()
+                    existente.isNotBlank() && existente != photoRef
+                }
+            ) {
+                return@forEach
+            }
+
+            grupoCandidato.forEach { checkpoint ->
+                if (
+                    checkpoint.photoRef?.trim() != photoRef ||
+                    checkpoint.photoLocalPath != archivo.absolutePath
+                ) {
+                    val actualizado = checkpoint.copy(
+                        photoRef = photoRef,
+                        photoLocalPath = archivo.absolutePath
+                    )
+                    dao.updateCheckpoint(actualizado)
+                    reemplazos[checkpoint.idCheckpoint] = actualizado
+                }
+            }
+        }
+
+        return checkpointsOriginales.map { checkpoint ->
+            reemplazos[checkpoint.idCheckpoint] ?: checkpoint
+        }
+    }
+
+    /**
+     * Flujo oficial de evidencias:
+     * 1) valida/repara photo_ref en Room;
+     * 2) escribe photo_ref en cada checkpoint remoto;
+     * 3) sube UN ZIP por header;
+     * 4) mueve a uploaded solo los nombres confirmados por backend.
+     *
+     * No usa PATCH multipart por checkpoint porque una misma evidencia puede estar
+     * asociada a varias fases del mismo punto.
+     */
+    private suspend fun subirFotosPendientes(
+        headerExtId: String,
+        idHeaderLocal: Long
+    ): ResultadoFotosZip {
+        val checkpointDao = database.localphytomonitoringcheckpointDao()
+
+        val nombresPendientes = PhytoMediaStorage
+            .listarNombresFotosPendientes(
+                context = context,
+                idHeader = idHeaderLocal
+            )
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .toSet()
+
+        if (nombresPendientes.isEmpty()) {
+            return ResultadoFotosZip.Exito(movidas = 0)
+        }
+
+        /*
+         * Defensa adicional: si esta función se reutiliza desde otro flujo, vuelve
+         * a ejecutar la reconciliación de fotos legacy antes de depender de photoRef.
+         */
+        val checkpoints = reconciliarFotosLegacyPendientes(
+            idHeaderLocal = idHeaderLocal,
+            checkpointsOriginales = checkpointDao.getCheckpointsByHeader(idHeaderLocal),
+            nombresPendientes = nombresPendientes
+        )
+
+        val referenciasParaZip = linkedSetOf<String>()
+        val pendientesSinCheckpoint = linkedSetOf<String>()
+        val pendientesSinConfirmar = linkedSetOf<String>()
+
+        for (photoRef in nombresPendientes) {
+            val grupo = checkpoints.filter { checkpoint ->
+                checkpoint.photoRef?.trim() == photoRef
+            }
+
+            if (grupo.isEmpty() || grupo.any { it.extId.isNullOrBlank() }) {
+                pendientesSinCheckpoint += photoRef
+                continue
+            }
+
+            val archivo = PhytoMediaStorage.buscarFotoPendientePorNombre(
+                context = context,
+                idHeader = idHeaderLocal,
+                fileName = photoRef
+            )
+
+            if (archivo == null || !archivo.exists() || archivo.length() <= 0L) {
+                pendientesSinConfirmar += photoRef
+                continue
+            }
+
+            /*
+             * upload-photos/ empareja por photo_ref. Se manda antes el PATCH JSON,
+             * incluso para checkpoints creados por una versión anterior.
+             */
+            var referenciaConfirmadaEnServidor = true
+
+            for (checkpoint in grupo) {
+                val checkpointExtId = checkpoint.extId
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+
+                if (checkpointExtId == null) {
+                    referenciaConfirmadaEnServidor = false
+                    break
+                }
+
+                val response = try {
+                    api.actualizarCheckpoint(
+                        id = checkpointExtId,
+                        body = PhytoCheckpointPatchRequest(
+                            photoRef = photoRef
+                        )
+                    )
+                } catch (e: Exception) {
+                    android.util.Log.e(
+                        "SYNC_PHYTO_FOTO",
+                        "Error de red al guardar photo_ref=$photoRef en checkpoint=$checkpointExtId",
+                        e
+                    )
+                    referenciaConfirmadaEnServidor = false
+                    break
+                }
+
+                if (!response.isSuccessful) {
+                    android.util.Log.e(
+                        "SYNC_PHYTO_FOTO",
+                        "Error HTTP ${response.code()} al guardar photo_ref=$photoRef " +
+                                "en checkpoint=$checkpointExtId: ${response.errorBody()?.string().orEmpty()}"
+                    )
+                    referenciaConfirmadaEnServidor = false
+                    break
+                }
+            }
+
+            if (referenciaConfirmadaEnServidor) {
+                referenciasParaZip += photoRef
+            } else {
+                pendientesSinConfirmar += photoRef
+            }
+        }
+
+        val zip = try {
+            PhytoMediaStorage.crearZipPendiente(
+                context = context,
+                idHeader = idHeaderLocal,
+                fileNamesPermitidos = referenciasParaZip
+            )
+        } catch (e: Exception) {
+            return ResultadoFotosZip.Error(
+                "No se pudo crear el ZIP de evidencias: ${e.message ?: e.javaClass.simpleName}"
+            )
+        }
+
+        if (zip == null) {
+            return ResultadoFotosZip.Exito(
+                movidas = 0,
+                pendientesSinCheckpoint = pendientesSinCheckpoint.toList(),
+                pendientesSinConfirmar = pendientesSinConfirmar.toList()
+            )
+        }
+
+        return try {
+            val headerBody = headerExtId.toRequestBody("text/plain".toMediaType())
+            val zipBody = zip.file.asRequestBody("application/zip".toMediaType())
+            val zipPart = MultipartBody.Part.createFormData(
+                "photos_zip",
+                "phyto_header_${idHeaderLocal}.zip",
+                zipBody
+            )
+
+            val response = api.subirFotosCheckpointsZip(
+                header = headerBody,
+                photosZip = zipPart
+            )
+
+            if (!response.isSuccessful) {
+                val detail = response.errorBody()?.string().orEmpty()
+                return ResultadoFotosZip.Error(
+                    when (response.code()) {
+                        400 -> "El servidor rechazó el ZIP de evidencias (400): $detail"
+                        403 -> "No se pueden subir fotos: el usuario no tiene permiso para esta sesión (403)."
+                        404 -> "No se pueden subir fotos: la sesión no existe o está fuera del alcance del usuario (404)."
+                        409 -> "No se pueden subir fotos: la sesión ya está cerrada (409)."
+                        else -> "Error subiendo ZIP HTTP ${response.code()}: $detail"
+                    }
+                )
+            }
+
+            val body = response.body()
+                ?: return ResultadoFotosZip.Error(
+                    "El servidor respondió sin detalle al subir el ZIP."
+                )
+
+            val noEmparejadas = body.unmatchedFiles
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .toSet()
+
+            /*
+             * El backend devuelve estas referencias cuando sí existía photo_ref,
+             * pero no terminó con archivo `photo` guardado. Por seguridad no se
+             * mueven a uploaded y se reintentan después.
+             */
+            val checkpointsSinFoto = body.checkpointsWithoutPhoto
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .toSet()
+
+            val candidatas = zip.fileNames
+            val confirmadasPorNombre = candidatas -
+                    noEmparejadas -
+                    (checkpointsSinFoto intersect candidatas)
+
+            /*
+             * `matched` puede contar checkpoints, no solo archivos. Aun así, si
+             * viene en cero no movemos nada: evita perder fotos ante una respuesta
+             * incompleta del backend.
+             */
+            val confirmadas = if (body.matched > 0) {
+                confirmadasPorNombre
+            } else {
+                emptySet()
+            }
+
+            val pendientesDeEstaVuelta = candidatas - confirmadas
+
+            val movidas = if (confirmadas.isNotEmpty()) {
+                PhytoMediaStorage.confirmarFotosSubidas(
+                    context = context,
+                    idHeader = idHeaderLocal,
+                    fileNames = confirmadas
+                )
+            } else {
+                0
+            }
+
+            if (confirmadas.isNotEmpty()) {
+                actualizarRutasLocalesFotosConfirmadas(
+                    idHeaderLocal = idHeaderLocal,
+                    fileNames = confirmadas
+                )
+            }
+
+            ResultadoFotosZip.Exito(
+                movidas = movidas,
+                noEmparejadas = noEmparejadas.toList(),
+                checkpointsSinFoto = checkpointsSinFoto.toList(),
+                pendientesSinCheckpoint = pendientesSinCheckpoint.toList(),
+                pendientesSinConfirmar = (
+                        pendientesSinConfirmar +
+                                (pendientesDeEstaVuelta - noEmparejadas - checkpointsSinFoto)
+                        ).distinct()
+            )
+        } catch (e: Exception) {
+            ResultadoFotosZip.Error(
+                "No se pudo enviar el ZIP de evidencias: ${e.message ?: e.javaClass.simpleName}"
+            )
+        } finally {
+            PhytoMediaStorage.eliminarZipTemporal(zip)
+        }
     }
 
     private fun buscarTargetLocal(
@@ -954,6 +1644,29 @@ class PhytoCheckpointSyncRepository(
         }
     }
 
+    private fun normalizarUrlMedia(valor: String?): String? {
+        val limpio = valor
+            ?.trim()
+            ?.trim('"')
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+
+        val base = ApiConfig.BASE_URL.trimEnd('/')
+
+        return when {
+            limpio.startsWith("http://localhost:8500") ->
+                limpio.replace("http://localhost:8500", base)
+
+            limpio.startsWith("http://127.0.0.1:8500") ->
+                limpio.replace("http://127.0.0.1:8500", base)
+
+            limpio.startsWith("/") -> "$base$limpio"
+            limpio.startsWith("media/") -> "$base/$limpio"
+            limpio.startsWith("phyto_checkpoints/") -> "$base/media/$limpio"
+            else -> limpio
+        }
+    }
+
     private fun formatearIsoApi(timeMillis: Long): String {
         return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
@@ -1009,19 +1722,42 @@ class PhytoCheckpointSyncRepository(
 private data class CsvImportacion(
     val contenido: String,
     val filasValidas: Int,
-    val filasOmitidas: Int
+    val filasOmitidas: Int,
+    val mensajesOmitidos: List<String>
 )
 
+private sealed class ResultadoImportacionCsv {
+    data class Exito(val created: Int) : ResultadoImportacionCsv()
+    data class Error(val mensaje: String) : ResultadoImportacionCsv()
+}
+
+private sealed class ResultadoFotosZip {
+    data class Exito(
+        val movidas: Int,
+        val noEmparejadas: List<String> = emptyList(),
+        val checkpointsSinFoto: List<String> = emptyList(),
+        val pendientesSinCheckpoint: List<String> = emptyList(),
+        val pendientesSinConfirmar: List<String> = emptyList()
+    ) : ResultadoFotosZip()
+
+    data class Error(val mensaje: String) : ResultadoFotosZip()
+}
+
 data class ResultadoDescargaCheckpoints(
-    val cantidad: Int
-)
+    val cantidad: Int,
+    val error: String? = null
+) {
+    val fueExitosa: Boolean
+        get() = error == null
+}
 
 sealed class ResultadoCheckpointSync {
     data class Exito(
         val subidos: Int,
         val descargados: Int,
         val omitidos: Int,
-        val mensaje: String
+        val mensaje: String,
+        val fotosPendientes: Boolean = false
     ) : ResultadoCheckpointSync()
 
     data class Error(

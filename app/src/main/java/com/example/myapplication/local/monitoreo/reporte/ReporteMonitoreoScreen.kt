@@ -1,6 +1,7 @@
 package com.example.myapplication.local.monitoreo.reporte
 
 import android.widget.Toast
+import java.io.File
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -14,11 +15,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -37,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import com.example.myapplication.local.api.phytomonitoring.PhytoCheckpointSyncRepository
 import com.example.myapplication.local.api.phytomonitoring.ResultadoCheckpointSync
 import com.example.myapplication.local.common.EncabezadoApp
+import com.example.myapplication.local.common.ImageUriBox
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.LocalAgroUnitEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringCheckpointEntity
@@ -47,6 +52,7 @@ import com.example.myapplication.local.entities.LocalPlotEntity
 import com.example.myapplication.local.entities.LocalPlotVertexEntity
 import com.example.myapplication.local.entities.LocalProgramEntity
 import com.example.myapplication.local.entities.LocalRanchEntity
+import com.example.myapplication.local.monitoreo.media.PhytoMediaStorage
 import com.example.myapplication.local.monitoreo.severidad.calcularSeveridadPorPunto
 import com.example.myapplication.local.monitoreo.severidad.limpiarMetadataRangosSeveridad
 import kotlinx.coroutines.Dispatchers
@@ -119,6 +125,11 @@ fun ReporteMonitoreoScreen(
     var catalogo by remember { mutableStateOf<List<LocalPhytosanitaryCatalogEntity>>(emptyList()) }
     var nombreCultivo by remember { mutableStateOf("Cultivo no identificado") }
     var fotoCultivo by remember { mutableStateOf<String?>(null) }
+    var rutaFotoDetalle by remember { mutableStateOf<String?>(null) }
+    var mostrarFotoDetalle by remember { mutableStateOf(false) }
+    var descargandoFotoRemota by remember { mutableStateOf(false) }
+    var errorFotoDetalle by remember { mutableStateOf<String?>(null) }
+    var comentarioDetalle by remember { mutableStateOf<String?>(null) }
 
     suspend fun cargarReporteDesdeRoom(): ReporteDataUi {
         return withContext(Dispatchers.IO) {
@@ -186,7 +197,7 @@ fun ReporteMonitoreoScreen(
                     val headerFresco = database.localphytomonitoringheaderDao()
                         .getHeaderById(header.idHeader) ?: header
 
-                    kotlinx.coroutines.withTimeoutOrNull(20_000L) {
+                    kotlinx.coroutines.withTimeoutOrNull(120_000L) {
                         PhytoCheckpointSyncRepository(
                             context = context.applicationContext,
                             database = database
@@ -198,34 +209,110 @@ fun ReporteMonitoreoScreen(
                     null -> {
                         estadoSincronizacion = EstadoSincronizacionReporte.ERROR
                         ultimoMensajeSync =
-                            "Favor de conectar a internet e intenta nuevamente."
+                            "La sincronización tardó demasiado. Revisa internet e intenta nuevamente."
                     }
 
                     is ResultadoCheckpointSync.Exito -> {
                         val dataActualizada = cargarReporteDesdeRoom()
                         aplicarDataReporte(dataActualizada)
 
-                        estadoSincronizacion = EstadoSincronizacionReporte.SINCRONIZADO
-                        ultimoMensajeSync =
-                            "Sincronización realizada con éxito. Las capturas ya fueron enviadas."
+                        val hayPendientesDeFoto = resultadoSync.fotosPendientes
+
+                        estadoSincronizacion = if (hayPendientesDeFoto) {
+                            EstadoSincronizacionReporte.ERROR
+                        } else {
+                            EstadoSincronizacionReporte.SINCRONIZADO
+                        }
+                        ultimoMensajeSync = resultadoSync.mensaje
 
                         Toast.makeText(
                             context,
-                            "Sincronización realizada con éxito.",
+                            resultadoSync.mensaje,
                             Toast.LENGTH_LONG
                         ).show()
                     }
 
                     is ResultadoCheckpointSync.Error -> {
                         estadoSincronizacion = EstadoSincronizacionReporte.ERROR
-                        ultimoMensajeSync =
-                            "Favor de conectar a internet e intenta nuevamente."
+                        ultimoMensajeSync = resultadoSync.mensaje
                     }
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 estadoSincronizacion = EstadoSincronizacionReporte.ERROR
                 ultimoMensajeSync =
-                    "Favor de conectar a internet e intenta nuevamente."
+                    "No se pudo sincronizar: ${e.message ?: e.javaClass.simpleName}"
+            }
+        }
+    }
+
+    fun abrirFotoDetalle(fila: FilaReporteCapturaUi) {
+        val rutaLocal = fila.rutaFotoLocal
+            ?.trim()
+            ?.takeIf { ruta ->
+                runCatching {
+                    !ruta.startsWith("http://", ignoreCase = true) &&
+                            !ruta.startsWith("https://", ignoreCase = true) &&
+                            File(ruta).exists() &&
+                            File(ruta).length() > 0L
+                }.getOrDefault(false)
+            }
+
+        val urlRemota = fila.photoUrl
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+
+        if (rutaLocal == null && urlRemota == null) {
+            Toast.makeText(
+                context,
+                "Esta captura no tiene evidencia fotográfica disponible.",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        errorFotoDetalle = null
+        rutaFotoDetalle = rutaLocal
+        mostrarFotoDetalle = true
+
+        // Ya está en el teléfono: nunca intentes abrirla otra vez desde URL.
+        if (rutaLocal != null) return
+
+        if (descargandoFotoRemota) return
+
+        descargandoFotoRemota = true
+        coroutineScope.launch {
+            try {
+                val archivoLocal = withContext(Dispatchers.IO) {
+                    PhytoMediaStorage.descargarFotoRemotaComoUploaded(
+                        context = context.applicationContext,
+                        photoUrl = urlRemota!!,
+                        idHeader = fila.idHeader,
+                        idTargetPoint = fila.idTargetPoint,
+                        capturedAt = fila.capturedAtMillis
+                            ?: error("La captura no tiene fecha para guardar la evidencia."),
+                        photoRef = fila.photoRef
+                    )
+                }
+
+                if (!fila.photoRef.isNullOrBlank()) {
+                    withContext(Dispatchers.IO) {
+                        database.localphytomonitoringcheckpointDao()
+                            .actualizarRutaLocalFotoPorReferencia(
+                                idHeader = fila.idHeader,
+                                photoRef = fila.photoRef.trim(),
+                                photoLocalPath = archivoLocal.absolutePath
+                            )
+                    }
+                }
+
+                rutaFotoDetalle = archivoLocal.absolutePath
+                aplicarDataReporte(cargarReporteDesdeRoom())
+            } catch (e: Exception) {
+                rutaFotoDetalle = null
+                errorFotoDetalle =
+                    "No se pudo descargar la evidencia: ${e.message ?: "error desconocido"}"
+            } finally {
+                descargandoFotoRemota = false
             }
         }
     }
@@ -338,6 +425,21 @@ fun ReporteMonitoreoScreen(
                 val severidadPunto = severidadPorPuntoMap[numeroPunto]
                 val nivelPunto = severidadPunto?.nivelFinal
 
+                val rutaGuardada = checkpoint.photoLocalPath
+                    ?.takeIf { ruta ->
+                        runCatching {
+                            val archivo = File(ruta)
+                            archivo.exists() && archivo.length() > 0L
+                        }.getOrDefault(false)
+                    }
+
+                val rutaLocalDetectada = PhytoMediaStorage.buscarFotoLocal(
+                    context = context.applicationContext,
+                    idHeader = checkpoint.idHeader,
+                    idTargetPoint = checkpoint.idTargetPoint,
+                    capturedAt = checkpoint.capturedAt
+                )?.absolutePath
+
                 FilaReporteCapturaUi(
                     numeroPunto = numeroPunto,
                     lat = punto?.lat,
@@ -350,7 +452,13 @@ fun ReporteMonitoreoScreen(
                     severidad = nivelPunto?.etiqueta ?: "Sin plaga",
                     colorSeveridadHex = nivelPunto?.colorHex ?: "#16A34A",
                     fechaCaptura = formatearFechaOpcionalReporteUi(checkpoint.capturedAt),
-                    notas = limpiarMetadataRangosSeveridad(checkpoint.notes)
+                    notas = limpiarMetadataRangosSeveridad(checkpoint.notes),
+                    rutaFotoLocal = rutaGuardada ?: rutaLocalDetectada ?: checkpoint.photoUrl,
+                    photoRef = checkpoint.photoRef,
+                    photoUrl = checkpoint.photoUrl,
+                    idHeader = checkpoint.idHeader,
+                    idTargetPoint = checkpoint.idTargetPoint,
+                    capturedAtMillis = checkpoint.capturedAt
                 )
             }
     }
@@ -361,6 +469,86 @@ fun ReporteMonitoreoScreen(
             puntos = puntos,
             checkpoints = checkpoints,
             catalogo = catalogo
+        )
+    }
+
+    if (mostrarFotoDetalle) {
+        AlertDialog(
+            onDismissRequest = {
+                mostrarFotoDetalle = false
+                rutaFotoDetalle = null
+                errorFotoDetalle = null
+            },
+            title = {
+                Text(
+                    text = "Evidencia fotográfica",
+                    fontWeight = FontWeight.Black
+                )
+            },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    when {
+                        descargandoFotoRemota -> {
+                            CircularProgressIndicator(color = Color(0xFF1B5E20))
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Text(
+                                text = "Descargando evidencia...",
+                                color = Color(0xFF1B5E20),
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+
+                        !rutaFotoDetalle.isNullOrBlank() -> {
+                            ImageUriBox(
+                                photo = rutaFotoDetalle,
+                                fallbackIcon = "📷",
+                                sizeDp = 280,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                        }
+
+                        else -> {
+                            Text(
+                                text = errorFotoDetalle
+                                    ?: "No se encontró una imagen válida para esta captura.",
+                                color = Color(0xFFB3261E),
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        mostrarFotoDetalle = false
+                        rutaFotoDetalle = null
+                        errorFotoDetalle = null
+                    }
+                ) {
+                    Text("Cerrar")
+                }
+            }
+        )
+    }
+
+    comentarioDetalle?.let { comentario ->
+        AlertDialog(
+            onDismissRequest = { comentarioDetalle = null },
+            title = {
+                Text(
+                    text = "Observaciones",
+                    fontWeight = FontWeight.Black
+                )
+            },
+            text = { Text(comentario) },
+            confirmButton = {
+                TextButton(onClick = { comentarioDetalle = null }) {
+                    Text("Cerrar")
+                }
+            }
         )
     }
 
@@ -686,7 +874,15 @@ fun ReporteMonitoreoScreen(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            TablaReporteCapturasUi(filas = filasTabla)
+                            TablaReporteCapturasUi(
+                                filas = filasTabla,
+                                onFotoClick = { fila ->
+                                    abrirFotoDetalle(fila)
+                                },
+                                onComentarioClick = { fila ->
+                                    comentarioDetalle = fila.notas
+                                }
+                            )
                         }
                     }
 

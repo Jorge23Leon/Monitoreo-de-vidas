@@ -40,7 +40,6 @@ interface PhytoMonitoringApiService {
         @Query("page") page: Int? = null
     ): Response<PhytoPaginatedResponse<PhytoCheckpointApiItem>>
 
-
     @POST("api/v1/monitoring/phyto/target-points/create/")
     suspend fun crearTargetPoint(
         @Body body: PhytoTargetPointCreateRequest
@@ -51,12 +50,40 @@ interface PhytoMonitoringApiService {
         @Body body: PhytoCheckpointCreateRequest
     ): Response<PhytoCheckpointApiItem>
 
+    @PATCH("api/v1/monitoring/phyto/checkpoints/{id}/update/")
+    suspend fun actualizarCheckpoint(
+        @Path("id") id: String,
+        @Body body: PhytoCheckpointPatchRequest
+    ): Response<PhytoCheckpointApiItem>
+
+    /**
+     * Sube una foto directamente al campo `photo` de un checkpoint ya creado.
+     * No usa photo_ref ni ZIP.
+     */
+    @Multipart
+    @PATCH("api/v1/monitoring/phyto/checkpoints/{id}/update/")
+    suspend fun subirFotoCheckpoint(
+        @Path("id") id: String,
+        @Part photo: MultipartBody.Part
+    ): Response<PhytoCheckpointApiItem>
+
     @Multipart
     @POST("api/v1/monitoring/phyto/checkpoints/import/")
     suspend fun importarCheckpointsCsv(
         @Part("header") header: RequestBody,
         @Part csv_file: MultipartBody.Part
     ): Response<PhytoCheckpointImportResponse>
+
+    /*
+     * Déjalo por ahora, pero ya no se usará para las fotos nuevas.
+     * La sincronización nueva utiliza subirFotoCheckpoint().
+     */
+    @Multipart
+    @POST("api/v1/monitoring/phyto/checkpoints/upload-photos/")
+    suspend fun subirFotosCheckpointsZip(
+        @Part("header") header: RequestBody,
+        @Part photosZip: MultipartBody.Part
+    ): Response<PhytoCheckpointPhotosUploadResponse>
 
     @PATCH("api/v1/monitoring/phyto/headers/{id}/update/")
     suspend fun actualizarHeader(

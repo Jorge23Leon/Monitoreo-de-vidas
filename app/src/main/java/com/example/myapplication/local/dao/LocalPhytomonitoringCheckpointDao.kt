@@ -131,6 +131,22 @@ interface LocalPhytomonitoringCheckpointDao {
         idUser: Long
     ): Int
 
+    /**
+     * Después de mover una foto confirmada de pending a uploaded, conservamos
+     * en Room la nueva ruta para todas las etapas que comparten photo_ref.
+     */
+    @Query("""
+        UPDATE local_phytomonitoring_checkpoints
+        SET photo_local_path = :photoLocalPath
+        WHERE idHeader = :idHeader
+          AND photo_ref = :photoRef
+    """)
+    suspend fun actualizarRutaLocalFotoPorReferencia(
+        idHeader: Long,
+        photoRef: String,
+        photoLocalPath: String
+    ): Int
+
     @Delete
     suspend fun deleteCheckpoint(
         checkpoint: LocalPhytomonitoringCheckpointEntity

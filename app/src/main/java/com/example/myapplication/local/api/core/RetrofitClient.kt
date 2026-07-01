@@ -35,10 +35,16 @@ object RetrofitClient {
         context: Context,
         serviceClass: Class<T>
     ): T {
-        val tokenStorage = TokenStorage(context)
+        val tokenStorage = TokenStorage(context.applicationContext)
 
         val okHttpClientPrivado = OkHttpClient.Builder()
             .addInterceptor(AuthInterceptor(tokenStorage))
+            .authenticator(
+                TokenAuthenticator(
+                    tokenStorage = tokenStorage,
+                    authApiService = authApiService
+                )
+            )
             .addInterceptor(loggingInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)

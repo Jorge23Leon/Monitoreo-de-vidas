@@ -77,6 +77,14 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("androidx.exifinterface:exifinterface:1.4.2")
+
+    // CameraX: vista propia de la app, forzada a cámara trasera.
+    val cameraXVersion = "1.4.2"
+    implementation("androidx.camera:camera-core:$cameraXVersion")
+    implementation("androidx.camera:camera-camera2:$cameraXVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
+    implementation("androidx.camera:camera-view:$cameraXVersion")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

@@ -47,6 +47,7 @@ import androidx.room.PrimaryKey
         Index(value = ["idPhytosanitary"]),
         Index(value = ["idLocalPlot"]),
         Index(value = ["captured_at"]),
+        Index(value = ["photo_ref"]),
         Index(value = ["captured_by_user_id"])
     ]
 )
@@ -65,6 +66,16 @@ data class LocalPhytomonitoringCheckpointEntity(
 
     val stage: String? = null,
     val notes: String? = null,
+
+
+    @ColumnInfo(name = "photo_ref")
+    val photoRef: String? = null,
+
+    @ColumnInfo(name = "photo_local_path")
+    val photoLocalPath: String? = null,
+
+    @ColumnInfo(name = "photo_url")
+    val photoUrl: String? = null,
 
     @ColumnInfo(name = "captured_at")
     val capturedAt: Long? = null,

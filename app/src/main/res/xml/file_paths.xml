@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Foto temporal tomada con cámara -->
+    <cache-path
+        name="phyto_camera"
+        path="phyto_camera/" />
+
+    <!-- Compatibilidad con fotos anteriores -->
     <cache-path
         name="fotos_monitoreo"
         path="fotos_monitoreo/" />
@@ -9,18 +15,18 @@
         name="fotos_monitoreo_external"
         path="fotos_monitoreo/" />
 
-    <!-- CAMBIO CSV: permite abrir CSV guardados en Descargas/Monitoreos -->
+    <!-- CSV descargados -->
     <external-path
         name="csv_descargas"
         path="Download/Monitoreos/" />
 
-    <!-- CAMBIO CSV: respaldo en documentos privados de la app -->
     <external-files-path
         name="csv_documentos_app"
         path="Documents/Monitoreos/" />
 
+    <!-- phyto_media y archivos privados de la app -->
     <files-path
-        name="csv_archivos_internos"
+        name="archivos_internos_app"
         path="." />
 
 </paths>

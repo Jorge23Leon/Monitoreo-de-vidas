@@ -3,9 +3,14 @@ package com.example.myapplication.local.monitoreo.registro
 // CAMBIO PUNTOS/CSV: la pantalla de registro muestra el número real del label
 // y usa el orden local únicamente como respaldo para puntos antiguos.
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,7 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.myapplication.local.api.phytomonitoring.PhytoCheckpointSyncRepository
+import androidx.core.content.ContextCompat
 import com.example.myapplication.local.common.EncabezadoApp
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.LocalPhytomonitoringCheckpointEntity
@@ -41,6 +46,7 @@ import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringTargetPointEntity
 import com.example.myapplication.local.entities.LocalPhytosanitaryCatalogEntity
 import com.example.myapplication.local.entities.LocalPhytostageEntity
+import com.example.myapplication.local.monitoreo.media.PhytoMediaStorage
 import com.example.myapplication.local.monitoreo.severidad.NivelSeveridad
 import com.example.myapplication.local.monitoreo.severidad.RangosSeveridad
 import com.example.myapplication.local.monitoreo.severidad.SEVERIDAD_MAYOR_DEFAULT
@@ -97,6 +103,12 @@ fun RegistroPuntoMonitoreoScreen(
     }
 
     var observaciones by rememberSaveable { mutableStateOf("") }
+    var fotoUriSeleccionada by rememberSaveable(header.idHeader, punto.idTargetPoint) {
+        mutableStateOf<String?>(null)
+    }
+    var mostrarCamaraTrasera by rememberSaveable(header.idHeader, punto.idTargetPoint) {
+        mutableStateOf(false)
+    }
     var nombreCultivo by remember { mutableStateOf("Cultivo no identificado") }
     var fotoCultivo by remember { mutableStateOf<String?>(null) }
     var numeroPuntoVisible by remember { mutableStateOf(1) }
@@ -108,7 +120,42 @@ fun RegistroPuntoMonitoreoScreen(
     var mostrarAvisoRegresar by remember { mutableStateOf(false) }
     var tipoConfirmacionGuardado by remember { mutableStateOf<TipoConfirmacionGuardado?>(null) }
 
-    BackHandler(enabled = true) {
+    // La evidencia se toma con CameraX dentro de la app para forzar la cámara trasera.
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { permitido ->
+        if (permitido) {
+            mostrarCamaraTrasera = true
+        } else {
+            Toast.makeText(
+                context,
+                "Se necesita permiso de cámara para tomar la evidencia.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            fotoUriSeleccionada = uri.toString()
+        }
+    }
+
+    if (mostrarCamaraTrasera) {
+        CameraEvidenciaTraseraDialog(
+            onCancelar = {
+                mostrarCamaraTrasera = false
+            },
+            onFotoTomada = { uriFoto ->
+                fotoUriSeleccionada = uriFoto
+                mostrarCamaraTrasera = false
+            }
+        )
+    }
+
+    BackHandler(enabled = !mostrarCamaraTrasera) {
         mostrarAvisoRegresar = true
     }
 
@@ -138,17 +185,6 @@ fun RegistroPuntoMonitoreoScreen(
                 }
             }
         )
-    }
-
-    suspend fun intentarSincronizarCapturasConServidor() {
-        runCatching {
-            kotlinx.coroutines.withTimeoutOrNull(15000L) {
-                PhytoCheckpointSyncRepository(
-                    context = context.applicationContext,
-                    database = database
-                ).sincronizarHeaderCsv(header)
-            }
-        }
     }
 
     LaunchedEffect(Unit) {
@@ -327,13 +363,35 @@ fun RegistroPuntoMonitoreoScreen(
                             .getPhytosanitaryById(idNuevo)
                     }
 
+                    val capturedAt = System.currentTimeMillis()
+                    val notasSinPlaga = observaciones
+                        .trim()
+                        .ifBlank { "Punto revisado sin presencia de plagas o enfermedades" }
+
+
+
+                    val fotoGuardada = fotoUriSeleccionada
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { photoUri ->
+                            PhytoMediaStorage.guardarFotoPendiente(
+                                context = context.applicationContext,
+                                sourceUri = Uri.parse(photoUri),
+                                idHeader = header.idHeader,
+                                idTargetPoint = punto.idTargetPoint,
+                                capturedAt = capturedAt
+                            )
+                        }
+
                     if (sinPlaga != null) {
                         val checkpoint = LocalPhytomonitoringCheckpointEntity(
                             qty = 0,
                             presenceStatus = 0,
                             stage = null,
-                            notes = "Punto revisado sin presencia de plagas o enfermedades",
-                            capturedAt = System.currentTimeMillis(),
+                            notes = notasSinPlaga,
+                            photoRef = fotoGuardada?.name,
+                            photoLocalPath = fotoGuardada?.absolutePath,
+                            photoUrl = null,
+                            capturedAt = capturedAt,
                             capturedByUserId = idUsuarioActual,
                             idTargetPoint = punto.idTargetPoint,
                             idHeader = header.idHeader,
@@ -349,8 +407,6 @@ fun RegistroPuntoMonitoreoScreen(
                             idTargetPoint = punto.idTargetPoint,
                             status = "Completado"
                         )
-
-                    intentarSincronizarCapturasConServidor()
                 }
 
                 Toast.makeText(context, "Punto registrado sin plagas", Toast.LENGTH_SHORT).show()
@@ -409,12 +465,39 @@ fun RegistroPuntoMonitoreoScreen(
                         rangos = rangosPunto
                     )
 
+                    // Una sola imagen por punto + timestamp. Todas las etapas guardadas
+                    // en esta captura comparten photoRef y photoLocalPath.
+                    val parcela = database.localPlotDao().getPlotById(punto.idLocalPlot)
+                    val headerRefFoto = header.extId
+                        ?.trim()
+                        ?.takeIf { it.isNotBlank() }
+                        ?: "header_local_${header.idHeader}"
+                    val parcelaRefFoto = parcela?.extId
+                        ?.trim()
+                        ?.takeIf { it.isNotBlank() }
+                        ?: "parcela_local_${punto.idLocalPlot}"
+
+                    val fotoGuardada = fotoUriSeleccionada
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { photoUri ->
+                            PhytoMediaStorage.guardarFotoPendiente(
+                                context = context.applicationContext,
+                                sourceUri = Uri.parse(photoUri),
+                                idHeader = header.idHeader,
+                                idTargetPoint = punto.idTargetPoint,
+                                capturedAt = ahora
+                            )
+                        }
+
                     registrosConCantidad.forEach { (clave, cantidad) ->
                         val checkpoint = LocalPhytomonitoringCheckpointEntity(
                             qty = cantidad,
                             presenceStatus = 1,
                             stage = clave.stage,
                             notes = notasConSeveridad,
+                            photoRef = fotoGuardada?.name,
+                            photoLocalPath = fotoGuardada?.absolutePath,
+                            photoUrl = null,
                             capturedAt = ahora,
                             capturedByUserId = idUsuarioActual,
                             idTargetPoint = punto.idTargetPoint,
@@ -432,6 +515,9 @@ fun RegistroPuntoMonitoreoScreen(
                             presenceStatus = 1,
                             stage = null,
                             notes = notasConSeveridad,
+                            photoRef = fotoGuardada?.name,
+                            photoLocalPath = fotoGuardada?.absolutePath,
+                            photoUrl = null,
                             capturedAt = ahora,
                             capturedByUserId = idUsuarioActual,
                             idTargetPoint = punto.idTargetPoint,
@@ -448,8 +534,6 @@ fun RegistroPuntoMonitoreoScreen(
                             idTargetPoint = punto.idTargetPoint,
                             status = "Completado"
                         )
-
-                    intentarSincronizarCapturasConServidor()
                 }
 
                 Toast.makeText(context, "Punto finalizado correctamente", Toast.LENGTH_SHORT).show()
@@ -656,11 +740,37 @@ fun RegistroPuntoMonitoreoScreen(
                     onValueChange = { observaciones = it }
                 )
 
+                Spacer(modifier = Modifier.height(14.dp))
+
+                EvidenciaFotograficaCard(
+                    photoUri = fotoUriSeleccionada,
+                    enabled = !finalizando,
+                    onTomarFoto = {
+                        val permisoConcedido = ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.CAMERA
+                        ) == PackageManager.PERMISSION_GRANTED
+
+                        if (permisoConcedido) {
+                            mostrarCamaraTrasera = true
+                        } else {
+                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        }
+                    },
+                    onElegirImagen = {
+                        imagePickerLauncher.launch("image/*")
+                    },
+                    onEliminarFoto = {
+                        fotoUriSeleccionada = null
+                    }
+                )
+
                 Spacer(modifier = Modifier.height(10.dp))
 
                 InfoBox(
                     text = "Registros guardados: $registrosAgregados  •  Capturas por guardar: $registrosPendientes"
                 )
+
             }
 
             BarraAccionesRegistro(

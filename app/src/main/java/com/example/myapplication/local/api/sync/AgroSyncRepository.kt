@@ -36,6 +36,11 @@ class AgroSyncRepository(
 
     private val fieldOpsRepository = FieldOpsRepository(context)
 
+    private data class ReferenciasProgramasCia(
+        val productoresExtId: Set<String>,
+        val parcelasExtId: Set<String>
+    )
+
     suspend fun sincronizarProductoresRanchosParcelas(
         idLocalCia: Long
     ): ResultadoAgroSync {
@@ -60,9 +65,18 @@ class AgroSyncRepository(
                 ciaExtId = ciaExtId
             )
 
+            /*
+             * Los programas de esta CIA se consultan una sola vez y se reutilizan
+             * para identificar productores y parcelas permitidos.
+             */
+            val referenciasProgramas = obtenerReferenciasProgramasDeCia(
+                ciaExtId = ciaExtId
+            )
+
             val productoresJson = cargarProductoresVisiblesParaCia(
                 ciaExtId = ciaExtId,
-                productoresPermitidosExtId = productoresPermitidosExtId
+                productoresPermitidosExtId = productoresPermitidosExtId,
+                productoresDesdeProgramas = referenciasProgramas.productoresExtId
             )
 
             if (productoresJson.isEmpty()) {
@@ -86,7 +100,7 @@ class AgroSyncRepository(
 
             // Cuando el API no marca rancho/parcela con datacentral, el vínculo seguro
             // viene de los programas de la CIA: programa -> plot -> ranch.
-            val parcelasPermitidasExtId = obtenerParcelasDesdeProgramasDeCia(ciaExtId)
+            val parcelasPermitidasExtId = referenciasProgramas.parcelasExtId
             val ranchosPermitidosExtId = parcelasJson
                 .asSequence()
                 .filter { parcela ->
@@ -106,6 +120,47 @@ class AgroSyncRepository(
 
             val productoresLocalesPorExtId = mutableMapOf<String, Long>()
             val ranchosLocalesPorExtId = mutableMapOf<String, Long>()
+
+            /*
+             * Se lee Room una sola vez. Antes getAllRanches()/getAllPlots()
+             * se ejecutaba dentro de cada iteración y la sincronización se hacía
+             * más lenta conforme crecía la base local.
+             */
+            val ranchosLocalesExistentes = database.localRanchDao()
+                .getAllRanches()
+
+            val ranchosLocalesPorExtIdExistentes = ranchosLocalesExistentes
+                .mapNotNull { rancho ->
+                    rancho.extId?.trim()?.takeIf { it.isNotBlank() }?.let { extId ->
+                        extId to rancho
+                    }
+                }
+                .toMap()
+                .toMutableMap()
+
+            val ranchosLocalesPorProductorCodigo = ranchosLocalesExistentes
+                .associateBy { rancho ->
+                    "${rancho.idLocalAgroUnit}|${rancho.code}"
+                }
+                .toMutableMap()
+
+            val parcelasLocalesExistentes = database.localPlotDao()
+                .getAllPlots()
+
+            val parcelasLocalesPorExtIdExistentes = parcelasLocalesExistentes
+                .mapNotNull { parcela ->
+                    parcela.extId?.trim()?.takeIf { it.isNotBlank() }?.let { extId ->
+                        extId to parcela
+                    }
+                }
+                .toMap()
+                .toMutableMap()
+
+            val parcelasLocalesPorRanchoCodigo = parcelasLocalesExistentes
+                .associateBy { parcela ->
+                    "${parcela.idLocalRanch}|${parcela.code}"
+                }
+                .toMutableMap()
 
             /*
              * Solo limpiamos la relación CIA -> Productor cuando sí encontramos productores.
@@ -231,15 +286,8 @@ class AgroSyncRepository(
                 val lat = item.doubleOrNull("lat", "latitude")
                 val lon = item.doubleOrNull("lon", "lng", "longitude")
 
-                val existente = database.localRanchDao()
-                    .getAllRanches()
-                    .firstOrNull { rancho ->
-                        rancho.extId == extId ||
-                                (
-                                        rancho.idLocalAgroUnit == idProductorLocal &&
-                                                rancho.code == code
-                                        )
-                    }
+                val existente = ranchosLocalesPorExtIdExistentes[extId]
+                    ?: ranchosLocalesPorProductorCodigo["$idProductorLocal|$code"]
 
                 val idRanchoLocal = if (existente != null) {
                     database.localRanchDao().updateRanch(
@@ -268,6 +316,27 @@ class AgroSyncRepository(
                 }
 
                 ranchosLocalesPorExtId[extId] = idRanchoLocal
+
+                val ranchoPersistido = existente?.copy(
+                    idLocalRanch = idRanchoLocal,
+                    extId = extId,
+                    name = nombre,
+                    code = code,
+                    lat = lat,
+                    lon = lon,
+                    idLocalAgroUnit = idProductorLocal
+                ) ?: LocalRanchEntity(
+                    idLocalRanch = idRanchoLocal,
+                    extId = extId,
+                    name = nombre,
+                    code = code,
+                    lat = lat,
+                    lon = lon,
+                    idLocalAgroUnit = idProductorLocal
+                )
+
+                ranchosLocalesPorExtIdExistentes[extId] = ranchoPersistido
+                ranchosLocalesPorProductorCodigo["$idProductorLocal|$code"] = ranchoPersistido
                 ranchosGuardados++
             }
 
@@ -319,15 +388,8 @@ class AgroSyncRepository(
                 val lat = item.doubleOrNull("lat", "latitude")
                 val lon = item.doubleOrNull("lon", "lng", "longitude")
 
-                val existente = database.localPlotDao()
-                    .getAllPlots()
-                    .firstOrNull { parcela ->
-                        parcela.extId == extId ||
-                                (
-                                        parcela.idLocalRanch == idRanchoLocal &&
-                                                parcela.code == code
-                                        )
-                    }
+                val existente = parcelasLocalesPorExtIdExistentes[extId]
+                    ?: parcelasLocalesPorRanchoCodigo["$idRanchoLocal|$code"]
 
                 val idParcelaLocal = if (existente != null) {
                     database.localPlotDao().updatePlot(
@@ -354,6 +416,27 @@ class AgroSyncRepository(
                         )
                     )
                 }
+
+                val parcelaPersistida = existente?.copy(
+                    idLocalPlot = idParcelaLocal,
+                    extId = extId,
+                    name = nombre,
+                    code = code,
+                    lat = lat,
+                    lon = lon,
+                    idLocalRanch = idRanchoLocal
+                ) ?: LocalPlotEntity(
+                    idLocalPlot = idParcelaLocal,
+                    extId = extId,
+                    name = nombre,
+                    code = code,
+                    lat = lat,
+                    lon = lon,
+                    idLocalRanch = idRanchoLocal
+                )
+
+                parcelasLocalesPorExtIdExistentes[extId] = parcelaPersistida
+                parcelasLocalesPorRanchoCodigo["$idRanchoLocal|$code"] = parcelaPersistida
 
                 /*
                  * IMPORTANTE:
@@ -429,7 +512,8 @@ class AgroSyncRepository(
 
     private suspend fun cargarProductoresVisiblesParaCia(
         ciaExtId: String,
-        productoresPermitidosExtId: Set<String>
+        productoresPermitidosExtId: Set<String>,
+        productoresDesdeProgramas: Set<String>
     ): List<JsonObject> {
         /*
          * Flujo seguro para NO contaminar la relación CIA -> Productor.
@@ -442,18 +526,24 @@ class AgroSyncRepository(
             dataCentral = null
         )
 
-        val porDataCentral = cargarUnidadesAgroeconomicas(
-            datacentral = null,
-            dataCentral = ciaExtId
-        )
+        /*
+         * Algunos despliegues usan dataCentral en lugar de datacentral. Solo
+         * probamos la segunda variante si la primera no regresó productores.
+         */
+        val porDataCentral = if (porDatacentral.any { item -> esProductor(item) }) {
+            emptyList()
+        } else {
+            cargarUnidadesAgroeconomicas(
+                datacentral = null,
+                dataCentral = ciaExtId
+            )
+        }
 
         val filtradosPorEndpoint = (porDatacentral + porDataCentral)
             .filter { item -> esProductor(item) }
             .distinctBy { item ->
                 item.stringOrNull("id", "uuid", "ext_id", "extId") ?: item.toString()
             }
-
-        val productoresDesdeProgramas = obtenerProductoresDesdeProgramasDeCia(ciaExtId)
 
         /*
          * 1) Si existen asignaciones CIA-productor, usamos solo esas.
@@ -805,6 +895,38 @@ class AgroSyncRepository(
                 tipo.contains("producer") ||
                 tipo.contains("agrounit") ||
                 tipo.contains("agro unit")
+    }
+
+    private suspend fun obtenerReferenciasProgramasDeCia(
+        ciaExtId: String
+    ): ReferenciasProgramasCia {
+        return when (
+            val resultado = fieldOpsRepository.obtenerTodosLosProgramasCampo(
+                datacentral = ciaExtId
+            )
+        ) {
+            is ResultadoFieldOpsApi.Exito -> {
+                ReferenciasProgramasCia(
+                    productoresExtId = resultado.programas
+                        .mapNotNull { programa ->
+                            programa.agroUnit?.trim()?.takeIf { it.isNotBlank() }
+                        }
+                        .toSet(),
+                    parcelasExtId = resultado.programas
+                        .mapNotNull { programa ->
+                            programa.plot?.trim()?.takeIf { it.isNotBlank() }
+                        }
+                        .toSet()
+                )
+            }
+
+            is ResultadoFieldOpsApi.Error -> {
+                ReferenciasProgramasCia(
+                    productoresExtId = emptySet(),
+                    parcelasExtId = emptySet()
+                )
+            }
+        }
     }
 
     private suspend fun obtenerProductoresDesdeProgramasDeCia(

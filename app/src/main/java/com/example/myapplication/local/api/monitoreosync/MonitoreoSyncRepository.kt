@@ -16,12 +16,14 @@ import com.example.myapplication.local.api.phytomonitoring.PhytoMonitoringReposi
 import com.example.myapplication.local.api.phytomonitoring.PhytoTargetPointApiItem
 import com.example.myapplication.local.api.phytomonitoring.ResultadoPhytoHeadersApi
 import com.example.myapplication.local.api.phytomonitoring.ResultadoPhytoTargetPointsApi
+import com.example.myapplication.local.api.phytomonitoring.ResultadoActualizarHeaderApi
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.LocalCropCatalogEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringTargetPointEntity
 import com.example.myapplication.local.entities.LocalProgramEntity
 import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.abs
@@ -30,6 +32,7 @@ import com.example.myapplication.local.api.agrocatalogs.ResultadoCatalogoFitoSyn
 import com.example.myapplication.local.api.core.ApiConfig
 import com.google.gson.JsonElement
 import com.example.myapplication.local.common.ImageCache
+import com.example.myapplication.local.monitoreo.media.PhytoMediaStorage
 
 class MonitoreoSyncRepository(
     private val context: Context,
@@ -47,7 +50,8 @@ class MonitoreoSyncRepository(
      * así se evita descargar programas globales y mezclarlos en Room.
      */
     suspend fun sincronizarMonitoreosFitosanitarios(
-        idLocalCia: Long
+        idLocalCia: Long,
+        actualizarCatalogos: Boolean = false
     ): ResultadoMonitoreoSync {
         return try {
             var cultivosGuardados = 0
@@ -74,36 +78,69 @@ class MonitoreoSyncRepository(
                     "La CIA seleccionada no tiene ext_id. No se puede sincronizar monitoreos."
                 )
 
-            val resultadoCultivos = kotlinx.coroutines.withTimeoutOrNull(60_000L) {
-                agroCatalogsRepository.obtenerTodosLosCultivos()
-            } ?: return ResultadoMonitoreoSync.Error(
-                "Timeout cultivos: /api/v1/agro-catalogs/crops/ tardó más de 60 segundos"
+            /*
+             * Antes de descargar headers desde API, reintentamos los cambios de estado
+             * guardados localmente. Así una pausa/finalización hecha sin red no se pierde
+             * cuando llega una respuesta vieja del servidor.
+             */
+            val extIdsConEstadoLocalSinEnviar = sincronizarEstadosLocalesAntesDeDescargar(
+                idLocalCia = idLocalCia,
+                onAdvertencia = { mensaje -> advertir(mensaje) }
             )
 
-            val cultivosApi = when (resultadoCultivos) {
-                is ResultadoAgroCatalogsApi.Exito -> resultadoCultivos.cultivos
-                is ResultadoAgroCatalogsApi.Error -> return ResultadoMonitoreoSync.Error(resultadoCultivos.mensaje)
-            }
+            /*
+             * Cultivos y catálogo fitosanitario son catálogos globales. Descargar
+             * todo en cada actualización era uno de los principales cuellos de
+             * botella. Solo se cargan la primera vez o cuando se solicite
+             * explícitamente actualizar catálogo.
+             */
+            val hayCultivosLocales = database.localCropCatalogDao()
+                .getAllCrops()
+                .isNotEmpty()
 
-            cultivosApi.forEach { cultivoApi ->
-                runCatching { guardarOCrearCultivo(cultivoApi) }
-                    .onSuccess { id -> if (id != null) cultivosGuardados++ }
-                    .onFailure { error ->
-                        advertir("No se pudo guardar cultivo ${cultivoApi.id}: ${error.message}", error)
-                    }
-            }
-
-            when (
-                val resultadoCatalogoFito = kotlinx.coroutines.withTimeoutOrNull(120_000L) {
-                    agroCatalogsRepository.sincronizarCatalogoFitosanitario()
+            if (actualizarCatalogos || !hayCultivosLocales) {
+                val resultadoCultivos = kotlinx.coroutines.withTimeoutOrNull(60_000L) {
+                    agroCatalogsRepository.obtenerTodosLosCultivos()
                 } ?: return ResultadoMonitoreoSync.Error(
-                    "Timeout catálogo fitosanitario: /api/v1/agro-catalogs/phytosanitary/ tardó más de 120 segundos"
+                    "Timeout cultivos: /api/v1/agro-catalogs/crops/ tardó más de 60 segundos"
                 )
-            ) {
-                is ResultadoCatalogoFitoSync.Exito -> Unit
-                is ResultadoCatalogoFitoSync.Error -> return ResultadoMonitoreoSync.Error(
-                    resultadoCatalogoFito.mensaje
-                )
+
+                val cultivosApi = when (resultadoCultivos) {
+                    is ResultadoAgroCatalogsApi.Exito -> resultadoCultivos.cultivos
+                    is ResultadoAgroCatalogsApi.Error -> {
+                        return ResultadoMonitoreoSync.Error(resultadoCultivos.mensaje)
+                    }
+                }
+
+                cultivosApi.forEach { cultivoApi ->
+                    runCatching { guardarOCrearCultivo(cultivoApi) }
+                        .onSuccess { id -> if (id != null) cultivosGuardados++ }
+                        .onFailure { error ->
+                            advertir(
+                                "No se pudo guardar cultivo ${cultivoApi.id}: ${error.message}",
+                                error
+                            )
+                        }
+                }
+            }
+
+            val hayCatalogoFitoLocal = database.localphytosanitarycatalogDao()
+                .getAllCatalogo()
+                .isNotEmpty()
+
+            if (actualizarCatalogos || !hayCatalogoFitoLocal) {
+                when (
+                    val resultadoCatalogoFito = kotlinx.coroutines.withTimeoutOrNull(120_000L) {
+                        agroCatalogsRepository.sincronizarCatalogoFitosanitario()
+                    } ?: return ResultadoMonitoreoSync.Error(
+                        "Timeout catálogo fitosanitario: /api/v1/agro-catalogs/phytosanitary/ tardó más de 120 segundos"
+                    )
+                ) {
+                    is ResultadoCatalogoFitoSync.Exito -> Unit
+                    is ResultadoCatalogoFitoSync.Error -> {
+                        return ResultadoMonitoreoSync.Error(resultadoCatalogoFito.mensaje)
+                    }
+                }
             }
 
             val resultadoProgramas = kotlinx.coroutines.withTimeoutOrNull(60_000L) {
@@ -174,7 +211,8 @@ class MonitoreoSyncRepository(
                 runCatching {
                     guardarOCrearHeader(
                         headerApi = headerApi,
-                        idLocalCiaEsperada = idLocalCia
+                        idLocalCiaEsperada = idLocalCia,
+                        conservarEstadoLocal = headerApi.id in extIdsConEstadoLocalSinEnviar
                     )
                 }.onSuccess { idHeaderLocal ->
                     if (idHeaderLocal == null) {
@@ -201,36 +239,63 @@ class MonitoreoSyncRepository(
                 }
             }
 
-            // Algunos servidores no incluyen target_points dentro del header. El endpoint es global,
-            // pero guardarOCrearTargetPoint valida la CIA del programa antes de persistir cada fila.
-            when (
-                val resultadoTargetPoints = kotlinx.coroutines.withTimeoutOrNull(60_000L) {
-                    phytoMonitoringRepository.obtenerTodosLosTargetPoints()
-                }
-            ) {
-                null -> advertir("Timeout cargando puntos objetivo globales")
-                is ResultadoPhytoTargetPointsApi.Error -> {
-                    advertir("No se pudieron cargar puntos objetivo: ${resultadoTargetPoints.mensaje}")
-                }
-                is ResultadoPhytoTargetPointsApi.Exito -> {
-                    resultadoTargetPoints.puntos.forEach { puntoApi ->
-                        runCatching {
-                            guardarOCrearTargetPoint(
-                                puntoApi = puntoApi,
-                                headerExtIdFallback = puntoApi.header,
-                                idHeaderLocalFallback = null,
-                                idLocalCiaEsperada = idLocalCia
-                            )
-                        }.onSuccess { idPunto ->
-                            if (idPunto != null) puntosGuardados++
-                        }.onFailure { error ->
-                            advertir("Error guardando punto ${puntoApi.id}: ${error.message}", error)
-                        }
+            /*
+             * El endpoint de target points es global. Solo se consulta cuando
+             * alguno de los headers descargados no trajo sus puntos embebidos.
+             * Normalmente los headers ya los incluyen y evitamos esa descarga
+             * paginada completa.
+             */
+            val headersSinPuntosEmbebidos = headersPorExtId.values
+                .filter { header -> header.targetPoints.isEmpty() }
+                .map { header -> header.id }
+                .toSet()
+
+            if (headersSinPuntosEmbebidos.isNotEmpty()) {
+                when (
+                    val resultadoTargetPoints = kotlinx.coroutines.withTimeoutOrNull(60_000L) {
+                        phytoMonitoringRepository.obtenerTodosLosTargetPoints()
+                    }
+                ) {
+                    null -> advertir("Timeout cargando puntos objetivo")
+                    is ResultadoPhytoTargetPointsApi.Error -> {
+                        advertir(
+                            "No se pudieron cargar puntos objetivo: " +
+                                    resultadoTargetPoints.mensaje
+                        )
+                    }
+
+                    is ResultadoPhytoTargetPointsApi.Exito -> {
+                        resultadoTargetPoints.puntos
+                            .filter { punto ->
+                                punto.header in headersSinPuntosEmbebidos
+                            }
+                            .forEach { puntoApi ->
+                                runCatching {
+                                    guardarOCrearTargetPoint(
+                                        puntoApi = puntoApi,
+                                        headerExtIdFallback = puntoApi.header,
+                                        idHeaderLocalFallback = null,
+                                        idLocalCiaEsperada = idLocalCia
+                                    )
+                                }.onSuccess { idPunto ->
+                                    if (idPunto != null) puntosGuardados++
+                                }.onFailure { error ->
+                                    advertir(
+                                        "Error guardando punto ${puntoApi.id}: ${error.message}",
+                                        error
+                                    )
+                                }
+                            }
                     }
                 }
             }
 
-            val imagenesCacheadas = precachearImagenesOffline()
+            /*
+             * Descargar todas las imágenes de cultivos/plagas/etapas en cada
+             * sincronización bloqueaba la lista. ImageCache las resolverá cuando
+             * una tarjeta realmente las necesite.
+             */
+            val imagenesCacheadas = 0
 
             ResultadoMonitoreoSync.Exito(
                 cultivos = cultivosGuardados,
@@ -485,7 +550,8 @@ class MonitoreoSyncRepository(
 
     private suspend fun guardarOCrearHeader(
         headerApi: PhytoHeaderApiItem,
-        idLocalCiaEsperada: Long
+        idLocalCiaEsperada: Long,
+        conservarEstadoLocal: Boolean = false
     ): Long? {
         val extId = headerApi.id.takeIf { it.isNotBlank() } ?: return null
         val programaExtId = headerApi.fieldTask?.takeIf { it.isNotBlank() } ?: return null
@@ -518,11 +584,28 @@ class MonitoreoSyncRepository(
             cycle = programaLocal.cycle,
             estStartDate = parseFechaApi(headerApi.estimatedStartDate),
             estFinishDate = parseFechaApi(headerApi.estimatedEndDate),
-            startAt = parseFechaApi(headerApi.startedAt),
-            finishedAt = parseFechaApi(headerApi.finishedAt),
-            additionalNotes = headerApi.additionalNotes.orEmpty(),
+            // Cuando el PATCH no pudo salir, Room conserva el cambio local hasta reintentar.
+            startAt = if (conservarEstadoLocal) {
+                existente?.startAt ?: parseFechaApi(headerApi.startedAt)
+            } else {
+                parseFechaApi(headerApi.startedAt)
+            },
+            finishedAt = if (conservarEstadoLocal) {
+                existente?.finishedAt ?: parseFechaApi(headerApi.finishedAt)
+            } else {
+                parseFechaApi(headerApi.finishedAt)
+            },
+            additionalNotes = if (conservarEstadoLocal) {
+                existente?.additionalNotes ?: headerApi.additionalNotes.orEmpty()
+            } else {
+                headerApi.additionalNotes.orEmpty()
+            },
             radiusTolerance = headerApi.radiusTolerance ?: 50.0,
-            status = normalizarEstado(headerApi.status),
+            status = if (conservarEstadoLocal) {
+                existente?.status ?: normalizarEstado(headerApi.status)
+            } else {
+                normalizarEstado(headerApi.status)
+            },
             idProgram = programaLocal.idProgram,
             idCrop = cultivoLocal?.idCrop ?: programaLocal.idCrop,
             idLocalPlot = parcelaLocal.idLocalPlot,
@@ -652,6 +735,122 @@ class MonitoreoSyncRepository(
 
         Log.d("SYNC_MON", "Imágenes locales actualizadas: $actualizadas")
         return actualizadas
+    }
+
+    private suspend fun sincronizarEstadosLocalesAntesDeDescargar(
+        idLocalCia: Long,
+        onAdvertencia: (String) -> Unit
+    ): Set<String> {
+        val extIdsConError = linkedSetOf<String>()
+
+        database.localphytomonitoringheaderDao()
+            .getAllHeaders()
+            .forEach { headerLocal ->
+                val estadoApi = estadoApiDesdeLocal(headerLocal.status)
+                    ?: return@forEach
+
+                val programa = database.localprogramDao()
+                    .getProgramById(headerLocal.idProgram)
+                    ?: return@forEach
+
+                if (programa.idLocalCia != idLocalCia) return@forEach
+
+                val extId = headerLocal.extId
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: return@forEach
+
+                /*
+                 * El backend bloquea CSV/ZIP/patches de checkpoint cuando el
+                 * header ya está completed. Si aún falta crear targets, subir
+                 * checkpoints o mover fotos pending, el cierre remoto se difiere
+                 * hasta que ReporteMonitoreoScreen ejecute la sincronización completa.
+                 */
+                if (
+                    estadoApi == "completed" &&
+                    debeDiferirCierreRemoto(headerLocal)
+                ) {
+                    onAdvertencia(
+                        "El cierre de $extId se mantiene localmente hasta subir targets, capturas y evidencias."
+                    )
+                    return@forEach
+                }
+
+                when (
+                    val resultado = phytoMonitoringRepository.actualizarHeaderServidor(
+                        idHeaderExt = extId,
+                        status = estadoApi,
+                        startedAt = fechaApiUtc(headerLocal.startAt),
+                        finishedAt = fechaApiUtc(headerLocal.finishedAt),
+                        additionalNotes = headerLocal.additionalNotes
+                    )
+                ) {
+                    is ResultadoActualizarHeaderApi.Exito -> {
+                        Log.d("SYNC_MON", "Estado enviado para header $extId: $estadoApi")
+                    }
+
+                    is ResultadoActualizarHeaderApi.Error -> {
+                        extIdsConError.add(extId)
+                        onAdvertencia(
+                            "El estado local de $extId no pudo enviarse y se conservará: ${resultado.mensaje}"
+                        )
+                    }
+                }
+            }
+
+        return extIdsConError
+    }
+
+    private suspend fun debeDiferirCierreRemoto(
+        headerLocal: LocalPhytomonitoringHeaderEntity
+    ): Boolean {
+        val checkpoints = database.localphytomonitoringcheckpointDao()
+            .getCheckpointsByHeader(headerLocal.idHeader)
+
+        // Captura local aún sin POST /checkpoints/create/.
+        if (checkpoints.any { it.extId.isNullOrBlank() }) return true
+
+        // Un checkpoint ya existente pero sin UUID de su target requiere PATCH
+        // antes de cerrar el header remoto.
+        val targetsPorId = database.LocalPhytomonitoringTargetPointDao()
+            .getTargetPointsByHeader(headerLocal.idHeader)
+            .associateBy { it.idTargetPoint }
+
+        if (
+            checkpoints.any { checkpoint ->
+                targetsPorId[checkpoint.idTargetPoint]
+                    ?.extId
+                    .isNullOrBlank()
+            }
+        ) {
+            return true
+        }
+
+        // Fotos aún en pending deben subir antes del PATCH completed.
+        return PhytoMediaStorage.contarFotosPendientes(
+            context = context.applicationContext,
+            idHeader = headerLocal.idHeader
+        ) > 0
+    }
+
+    private fun estadoApiDesdeLocal(status: String): String? {
+        return when (status.trim().lowercase(Locale.getDefault())) {
+            "en proceso", "in_progress", "vigente" -> "in_progress"
+            "completado", "completed", "finalizado", "terminado", "cerrado" -> "completed"
+            "cancelado", "cancelled", "canceled" -> "cancelled"
+            else -> null
+        }
+    }
+
+    private fun fechaApiUtc(millis: Long?): String? {
+        if (millis == null) return null
+
+        return SimpleDateFormat(
+            "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+            Locale.US
+        ).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }.format(Date(millis))
     }
 
     private fun normalizarEstado(status: String?): String {

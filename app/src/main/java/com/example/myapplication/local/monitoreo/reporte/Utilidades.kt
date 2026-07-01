@@ -68,7 +68,15 @@ internal data class FilaReporteCapturaUi(
     val severidad: String,
     val colorSeveridadHex: String,
     val fechaCaptura: String,
-    val notas: String
+    val notas: String,
+
+    /** Ruta local válida o URL remota que se muestra mientras se guarda caché offline. */
+    val rutaFotoLocal: String? = null,
+    val photoRef: String? = null,
+    val photoUrl: String? = null,
+    val idHeader: Long = 0L,
+    val idTargetPoint: Long = 0L,
+    val capturedAtMillis: Long? = null
 )
 
 internal fun formatearCoordenadasReporteUi(lat: Double?, lon: Double?): String {

@@ -5,7 +5,7 @@ import android.content.Context
 class TokenStorage(
     context: Context
 ) {
-    private val prefs = context.getSharedPreferences(
+    private val prefs = context.applicationContext.getSharedPreferences(
         "tokens_api",
         Context.MODE_PRIVATE
     )
@@ -20,6 +20,12 @@ class TokenStorage(
             .apply()
     }
 
+    fun guardarAccessToken(access: String) {
+        prefs.edit()
+            .putString("access_token", access)
+            .apply()
+    }
+
     fun obtenerAccessToken(): String? {
         return prefs.getString("access_token", null)
     }
@@ -29,6 +35,9 @@ class TokenStorage(
     }
 
     fun limpiarTokens() {
-        prefs.edit().clear().apply()
+        prefs.edit()
+            .remove("access_token")
+            .remove("refresh_token")
+            .apply()
     }
 }

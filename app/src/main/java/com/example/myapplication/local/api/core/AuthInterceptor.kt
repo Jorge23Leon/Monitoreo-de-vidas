@@ -9,11 +9,14 @@ class AuthInterceptor(
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val requestOriginal = chain.request()
-        val accessToken = tokenStorage.obtenerAccessToken()
 
-        val requestNueva = if (!accessToken.isNullOrBlank()) {
+        val accessToken = tokenStorage.obtenerAccessToken()
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+
+        val requestNueva = if (accessToken != null) {
             requestOriginal.newBuilder()
-                .addHeader("Authorization", "Bearer $accessToken")
+                .header("Authorization", "Bearer $accessToken")
                 .build()
         } else {
             requestOriginal

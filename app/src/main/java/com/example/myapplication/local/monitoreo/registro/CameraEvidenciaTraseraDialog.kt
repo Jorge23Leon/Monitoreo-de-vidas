@@ -1,7 +1,8 @@
 package com.example.myapplication.local.monitoreo.registro
 
 import android.net.Uri
-import android.util.Size
+import android.view.Surface
+import androidx.camera.core.AspectRatio
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -15,8 +16,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
@@ -41,8 +44,13 @@ import androidx.core.content.ContextCompat
 import com.example.myapplication.local.monitoreo.media.PhytoMediaStorage
 
 /**
- * Cámara propia de la app. Se vincula exclusivamente a [CameraSelector.DEFAULT_BACK_CAMERA],
- * por lo que no abre la cámara frontal ni la última cámara usada por otra aplicación.
+ * Cámara propia de la app.
+ *
+ * - Fuerza la cámara trasera.
+ * - Toma la imagen con calidad alta.
+ * - Respeta la rotación física del teléfono antes de capturar.
+ * - La compresión final y la normalización de formato se realizan después en
+ *   [PhytoMediaStorage], donde todo se guarda como JPG de máximo 340 KB.
  */
 @Composable
 internal fun CameraEvidenciaTraseraDialog(
@@ -52,6 +60,7 @@ internal fun CameraEvidenciaTraseraDialog(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val executor = remember(context) { ContextCompat.getMainExecutor(context) }
+
     val previewView = remember(context) {
         PreviewView(context).apply {
             scaleType = PreviewView.ScaleType.FILL_CENTER
@@ -74,19 +83,26 @@ internal fun CameraEvidenciaTraseraDialog(
 
                 try {
                     val provider = future.get()
+
                     if (!provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)) {
                         errorCamara = "Este dispositivo no tiene cámara trasera disponible."
                         return@addListener
                     }
 
-                    val preview = Preview.Builder().build().also { useCase ->
-                        useCase.surfaceProvider = previewView.surfaceProvider
-                    }
+                    val targetRotation = previewView.display?.rotation ?: Surface.ROTATION_0
+
+                    val preview = Preview.Builder()
+                        .setTargetRotation(targetRotation)
+                        .build()
+                        .also { useCase ->
+                            useCase.surfaceProvider = previewView.surfaceProvider
+                        }
 
                     val capture = ImageCapture.Builder()
-                        .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                        .setTargetResolution(Size(1600, 1200))
-                        .setJpegQuality(92)
+                        .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                        .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+                        .setTargetRotation(targetRotation)
+                        .setJpegQuality(100)
                         .build()
 
                     provider.unbindAll()
@@ -121,10 +137,13 @@ internal fun CameraEvidenciaTraseraDialog(
             return
         }
 
+        // Esta línea es la que evita que la foto salga acostada o invertida.
+        capture.targetRotation = previewView.display?.rotation ?: Surface.ROTATION_0
+
         val temporal = runCatching {
             PhytoMediaStorage.crearArchivoTemporalCamara(context.applicationContext)
         }.getOrElse { error ->
-            errorCamara = "No se pudo preparar la evidencia: ${error.message}"
+            errorCamara = "No se pudo preparar la evidencia: ${error.message ?: "error desconocido"}"
             return
         }
 
@@ -170,7 +189,8 @@ internal fun CameraEvidenciaTraseraDialog(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.55f))
+                    .background(Color.Black.copy(alpha = 0.58f))
+                    .statusBarsPadding()
                     .padding(horizontal = 18.dp, vertical = 16.dp)
             ) {
                 Text(
@@ -179,8 +199,9 @@ internal fun CameraEvidenciaTraseraDialog(
                     fontSize = 19.sp,
                     fontWeight = FontWeight.Black
                 )
+
                 Text(
-                    text = "Cámara trasera · La foto se guardará en JPG con máximo 300 KB",
+                    text = "Cámara trasera · Captura en alta calidad y guarda JPG de máximo 340 KB",
                     color = Color(0xFFE2E8F0),
                     fontSize = 12.sp
                 )
@@ -192,7 +213,7 @@ internal fun CameraEvidenciaTraseraDialog(
                     modifier = Modifier
                         .align(Alignment.Center)
                         .padding(24.dp)
-                        .background(Color(0xFF7F1D1D).copy(alpha = 0.88f))
+                        .background(Color(0xFF7F1D1D).copy(alpha = 0.90f))
                         .padding(14.dp),
                     color = Color.White,
                     fontSize = 14.sp,
@@ -204,25 +225,32 @@ internal fun CameraEvidenciaTraseraDialog(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.62f))
-                    .padding(horizontal = 20.dp, vertical = 20.dp),
+                    // Separación extra para no chocar con Inicio / Atrás / Recientes.
+                    .padding(bottom = 100.dp)
+                    .navigationBarsPadding()
+                    .background(Color.Black.copy(alpha = 0.78f))
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Button(
                     onClick = onCancelar,
                     enabled = !capturando,
+                    modifier = Modifier.size(width = 138.dp, height = 54.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF374151)
                     )
                 ) {
-                    Text("Cancelar")
+                    Text(
+                        text = "Cancelar",
+                        fontWeight = FontWeight.Bold
+                    )
                 }
 
                 Button(
                     onClick = ::tomarFoto,
                     enabled = !capturando && imageCapture != null,
-                    modifier = Modifier.size(width = 142.dp, height = 54.dp),
+                    modifier = Modifier.size(width = 150.dp, height = 54.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF0B6B20)
                     )

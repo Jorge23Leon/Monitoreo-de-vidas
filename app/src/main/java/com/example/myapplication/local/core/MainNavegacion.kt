@@ -353,6 +353,11 @@ fun MainNavegacion(
                 parcelasResultado = uiState.parcelasResultado,
                 programasResultado = uiState.programasResultado,
                 cultivosResultado = uiState.cultivosResultado,
+                sincronizando = mainViewModel.sincronizandoMonitoreos,
+                textoUltimaSincronizacion = mainViewModel.textoUltimaSincronizacionMonitoreos,
+                onSincronizarClick = {
+                    mainViewModel.sincronizarInformacionActual()
+                },
 
                 onProductorChange = { productor ->
                     mainViewModel.onProductorChange(productor)
@@ -410,6 +415,11 @@ fun MainNavegacion(
                 parcelas = uiState.parcelasResultado,
                 programas = uiState.programasResultado,
                 cultivos = uiState.cultivosResultado,
+                sincronizando = mainViewModel.sincronizandoMonitoreos,
+                textoUltimaSincronizacion = mainViewModel.textoUltimaSincronizacionMonitoreos,
+                onSincronizarClick = {
+                    mainViewModel.sincronizarInformacionActual()
+                },
 
                 onAbrirMapaClick = { header ->
                     val rolNormalizado = normalizarRolVm(uiState.rolUsuarioActual)

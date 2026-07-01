@@ -21,6 +21,7 @@ import com.example.myapplication.local.models.UsuarioSesion
 import com.example.myapplication.local.api.sync.AgroSyncRepository
 import com.example.myapplication.local.api.sync.ResultadoAgroSync
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -122,7 +123,22 @@ class MainViewModel(
     var uiState by mutableStateOf(MainUiState())
         private set
 
+    /*
+     * La pantalla siempre lee Room. Estas variables solo controlan el botón
+     * manual de actualización; no bloquean el login ni la navegación.
+     */
+    var sincronizandoMonitoreos by mutableStateOf(false)
+        private set
+
+    var ultimaSincronizacionMonitoreosMillis by mutableStateOf<Long?>(null)
+        private set
+
+    private var trabajoSincronizacionMonitoreos: Job? = null
+
     init {
+        ultimaSincronizacionMonitoreosMillis = obtenerPrefsSincronizacion()
+            .getLong("ultima_sync_monitoreos_global", 0L)
+            .takeIf { it > 0L }
         insertarDatosInicialesSeguros()
         cargarSesionGuardadaAlIniciar()
     }
@@ -163,6 +179,32 @@ class MainViewModel(
             "sesion_app",
             android.content.Context.MODE_PRIVATE
         )
+
+    private fun obtenerPrefsSincronizacion() =
+        getApplication<Application>().getSharedPreferences(
+            "cache_sincronizacion_monitoreos",
+            Context.MODE_PRIVATE
+        )
+
+    val textoUltimaSincronizacionMonitoreos: String?
+        get() = ultimaSincronizacionMonitoreosMillis?.let { millis ->
+            val formato = java.text.SimpleDateFormat(
+                "dd MMM, HH:mm",
+                Locale("es", "MX")
+            )
+            "Actualizado: ${formato.format(java.util.Date(millis))}"
+        }
+
+    private fun marcarUltimaSincronizacionMonitoreos() {
+        val ahora = System.currentTimeMillis()
+
+        ultimaSincronizacionMonitoreosMillis = ahora
+
+        obtenerPrefsSincronizacion()
+            .edit()
+            .putLong("ultima_sync_monitoreos_global", ahora)
+            .apply()
+    }
 
     private fun guardarSesionBasica(idUser: Long) {
         obtenerPrefsSesion()
@@ -1215,9 +1257,12 @@ class MainViewModel(
                                 perfilApi = perfilServidor
                             )
 
-                            val mensajeSyncInicial = sincronizarDatosOfflineInicialDeUsuario(
-                                idUserLocal = usuarioLocal.idUser
-                            )
+                            /*
+                             * El login no descarga productores, ranchos, parcelas ni monitoreos.
+                             * Esa sincronización se hace al tocar ⟳ Sincronizar o cuando la
+                             * cache local está vacía, ya con la pantalla visible.
+                             */
+                            val mensajeSyncInicial: String? = null
 
                             val mensajeSync = listOfNotNull(
                                 mensajeCias,
@@ -1605,76 +1650,44 @@ class MainViewModel(
         cia: LocalCiaEntity,
         idProductorRestaurar: Long? = null
     ) {
+        /*
+         * Primero mostramos Room. No hay solicitudes de red al entrar a filtros:
+         * así seleccionar CIA, volver de mapa y abrir la app es inmediato.
+         */
         limpiarFiltros()
 
         actualizarEstado {
             it.copy(
                 ciaSeleccionada = cia,
                 pantallaActual = PantallaActual.FILTROS_MONITOREO,
-                cargando = true
+                cargando = false
             )
         }
 
+        cargarProductores(
+            idLocalCia = cia.idLocalCia,
+            idProductorRestaurar = idProductorRestaurar
+        )
+
+        /*
+         * Primera vez: si no hay programas locales para esta CIA, arrancamos una
+         * sola actualización en segundo plano. La pantalla no espera.
+         */
+        solicitarSincronizacionInicialSiCacheVacia(cia)
+    }
+
+    private fun solicitarSincronizacionInicialSiCacheVacia(cia: LocalCiaEntity) {
+        if (!hayConexionInternet() || sincronizandoMonitoreos) return
+
         viewModelScope.launch {
-            try {
-                if (!hayConexionInternet()) {
-                    cargarProductores(
-                        idLocalCia = cia.idLocalCia,
-                        idProductorRestaurar = idProductorRestaurar
-                    )
-                    mostrarMensaje("Sin internet. Mostrando datos locales de ${cia.nombre}.")
-                    return@launch
-                }
+            val cacheVacia = withContext(Dispatchers.IO) {
+                database.localprogramDao()
+                    .getProgramasByCia(cia.idLocalCia)
+                    .isEmpty()
+            }
 
-                val mensajeAgroSync = withContext(Dispatchers.IO) {
-                    when (
-                        val resultado = kotlinx.coroutines.withTimeoutOrNull(90_000L) {
-                            agroSyncRepository.sincronizarProductoresRanchosParcelas(
-                                idLocalCia = cia.idLocalCia
-                            )
-                        }
-                    ) {
-                        null -> "La actualización de productores/ranchos/parcelas tardó demasiado"
-                        is ResultadoAgroSync.Exito -> null
-                        is ResultadoAgroSync.Error -> resultado.mensaje
-                    }
-                }
-
-                val mensajeMonitoreoSync = withContext(Dispatchers.IO) {
-                    when (
-                        val resultado = kotlinx.coroutines.withTimeoutOrNull(90_000L) {
-                            monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
-                                idLocalCia = cia.idLocalCia
-                            )
-                        }
-                    ) {
-                        null -> "La actualización de monitoreos tardó demasiado"
-                        is ResultadoMonitoreoSync.Error -> resultado.mensaje
-                        is ResultadoMonitoreoSync.Exito -> resultado.advertencias
-                            .take(2)
-                            .takeIf { it.isNotEmpty() }
-                            ?.joinToString(" | ")
-                    }
-                }
-
-                // cargarProductores actualiza la pantalla y ejecuta un solo filtrado local.
-                cargarProductores(
-                    idLocalCia = cia.idLocalCia,
-                    idProductorRestaurar = idProductorRestaurar
-                )
-
-                val mensajeError = listOfNotNull(mensajeAgroSync, mensajeMonitoreoSync)
-                    .joinToString(" | ")
-                    .takeIf { it.isNotBlank() }
-
-                if (mensajeError != null) {
-                    mostrarMensaje("Sincronización parcial: $mensajeError")
-                }
-            } catch (e: Exception) {
-                Log.e("MAIN_VM", "No se pudieron cargar datos de CIA", e)
-                mostrarMensaje("No se pudieron cargar los datos: ${e.message ?: "detalle no disponible"}")
-            } finally {
-                actualizarEstado { it.copy(cargando = false) }
+            if (cacheVacia) {
+                sincronizarInformacionActual(mostrarMensajeFinal = false)
             }
         }
     }
@@ -2522,7 +2535,10 @@ class MainViewModel(
         }
     }
 
-    private fun cargarMonitoreosDirectoPorUsuario(sesion: UsuarioSesion) {
+    private fun cargarMonitoreosDirectoPorUsuario(
+        sesion: UsuarioSesion,
+        intentarSincronizacionInicial: Boolean = true
+    ) {
         viewModelScope.launch {
             try {
                 actualizarEstado {
@@ -2548,21 +2564,11 @@ class MainViewModel(
                     val ciasPermitidasUsuario = database.userLocalCiaDao()
                         .getCiasByUser(sesion.idUser)
 
-                    if (hayConexionInternet()) {
-                        ciasPermitidasUsuario.forEach { ciaPermitida ->
-                            when (
-                                val sync = kotlinx.coroutines.withTimeoutOrNull(90_000L) {
-                                    monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
-                                        idLocalCia = ciaPermitida.idLocalCia
-                                    )
-                                }
-                            ) {
-                                null -> Log.w("MAIN_VM", "Timeout sync CIA ${ciaPermitida.nombre}")
-                                is ResultadoMonitoreoSync.Error -> Log.w("MAIN_VM", sync.mensaje)
-                                is ResultadoMonitoreoSync.Exito -> Unit
-                            }
-                        }
-                    }
+                    /*
+                     * Técnico e invitado siempre abren desde Room.
+                     * La red se usa únicamente con el botón ⟳ Sincronizar
+                     * (o una sola vez cuando no existe cache local).
+                     */
 
                     val ciasPermitidasTecnico = if (sesion.esTecnico) {
                         ciasPermitidasUsuario
@@ -2728,7 +2734,21 @@ class MainViewModel(
                     )
                 }
 
-                if (resultado.headers.isEmpty()) {
+                val debeIniciarSincronizacionInicial =
+                    intentarSincronizacionInicial &&
+                            resultado.headers.isEmpty() &&
+                            hayConexionInternet() &&
+                            !sincronizandoMonitoreos
+
+                if (debeIniciarSincronizacionInicial) {
+                    /*
+                     * Usuario nuevo: la lista aparece de inmediato (vacía) y la
+                     * primera descarga corre en segundo plano, sin retrasar login.
+                     */
+                    sincronizarInformacionActual(mostrarMensajeFinal = false)
+                }
+
+                if (resultado.headers.isEmpty() && !debeIniciarSincronizacionInicial) {
                     val mensaje = if (sesion.esTecnico) {
                         "No tienes monitoreos asignados dentro de tus CIAS cargadas"
                     } else {
@@ -2741,6 +2761,152 @@ class MainViewModel(
                 mostrarMensaje("Error al cargar tus monitoreos: ${e.message}")
             } finally {
                 actualizarEstado { it.copy(cargando = false) }
+            }
+        }
+    }
+
+    /**
+     * Acción única para el botón ⟳ Sincronizar.
+     *
+     * No se ejecuta al login, al cambiar filtros ni al regresar de otra pantalla.
+     * Admin/gerente/supervisor actualizan solo su CIA actual; técnico/invitado
+     * actualizan únicamente las CIAs que el servidor les asignó.
+     */
+    fun sincronizarInformacionActual(
+        mostrarMensajeFinal: Boolean = true
+    ) {
+        if (sincronizandoMonitoreos) return
+
+        val sesion = uiState.usuarioSesion
+        if (sesion == null) {
+            mostrarMensaje("No hay sesión activa")
+            return
+        }
+
+        if (!hayConexionInternet()) {
+            mostrarMensaje("Sin internet. Se muestran los datos guardados.")
+            return
+        }
+
+        trabajoSincronizacionMonitoreos?.cancel()
+
+        trabajoSincronizacionMonitoreos = viewModelScope.launch {
+            sincronizandoMonitoreos = true
+
+            try {
+                val ciasObjetivo = withContext(Dispatchers.IO) {
+                    when {
+                        sesion.esAdmin || sesion.esGerente || sesion.esSupervisor -> {
+                            uiState.ciaSeleccionada?.let { listOf(it) }.orEmpty()
+                        }
+
+                        else -> {
+                            database.userLocalCiaDao()
+                                .getCiasByUser(sesion.idUser)
+                                .distinctBy { it.idLocalCia }
+                        }
+                    }
+                }
+
+                if (ciasObjetivo.isEmpty()) {
+                    if (mostrarMensajeFinal) {
+                        mostrarMensaje("No hay una CIA asignada para actualizar.")
+                    }
+                    return@launch
+                }
+
+                val errores = mutableListOf<String>()
+                var actualizacionesCorrectas = 0
+
+                ciasObjetivo.forEach { cia ->
+                    /*
+                     * Solo la CIA objetivo. Nunca se descarga información global de
+                     * todas las CIAs del usuario al tocar el botón.
+                     */
+                    val resultadoAgro = withContext(Dispatchers.IO) {
+                        agroSyncRepository.sincronizarProductoresRanchosParcelas(
+                            idLocalCia = cia.idLocalCia
+                        )
+                    }
+
+                    if (resultadoAgro is ResultadoAgroSync.Error) {
+                        errores += "${cia.nombre}: ${resultadoAgro.mensaje}"
+                        return@forEach
+                    }
+
+                    val resultadoMonitoreos = withContext(Dispatchers.IO) {
+                        monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
+                            idLocalCia = cia.idLocalCia
+                        )
+                    }
+
+                    when (resultadoMonitoreos) {
+                        is ResultadoMonitoreoSync.Exito -> {
+                            actualizacionesCorrectas++
+
+                            if (resultadoMonitoreos.advertencias.isNotEmpty()) {
+                                errores += resultadoMonitoreos.advertencias.take(2)
+                            }
+                        }
+
+                        is ResultadoMonitoreoSync.Error -> {
+                            errores += "${cia.nombre}: ${resultadoMonitoreos.mensaje}"
+                        }
+                    }
+                }
+
+                if (actualizacionesCorrectas > 0) {
+                    marcarUltimaSincronizacionMonitoreos()
+                }
+
+                /*
+                 * Releer Room una sola vez al terminar. Los filtros no vuelven a
+                 * tocar API y conservan la selección que ya tenía el usuario.
+                 */
+                if (sesion.esAdmin || sesion.esGerente || sesion.esSupervisor) {
+                    val cia = uiState.ciaSeleccionada
+                    if (cia != null) {
+                        cargarProductores(
+                            idLocalCia = cia.idLocalCia,
+                            idProductorRestaurar = uiState.productorSeleccionado?.idLocalAgroUnit
+                        )
+                    }
+                } else {
+                    cargarMonitoreosDirectoPorUsuario(
+                        sesion = sesion,
+                        intentarSincronizacionInicial = false
+                    )
+                }
+
+                if (mostrarMensajeFinal) {
+                    when {
+                        actualizacionesCorrectas <= 0 && errores.isNotEmpty() -> {
+                            mostrarMensaje(
+                                "No se pudo actualizar. ${errores.distinct().joinToString(" | ")}"
+                            )
+                        }
+
+                        errores.isEmpty() -> {
+                            mostrarMensaje("Información actualizada correctamente.")
+                        }
+
+                        else -> {
+                            mostrarMensaje(
+                                "Actualización parcial. ${errores.distinct().joinToString(" | ")}"
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MAIN_VM", "Error actualizando información", e)
+
+                if (mostrarMensajeFinal) {
+                    mostrarMensaje(
+                        "No se pudo actualizar la información: ${e.message ?: "detalle no disponible"}"
+                    )
+                }
+            } finally {
+                sincronizandoMonitoreos = false
             }
         }
     }
@@ -3016,7 +3182,7 @@ class MainViewModel(
                     }
 
                     mostrarMensaje(
-                        "Monitoreo terminado localmente. Sincroniza API desde el reporte."
+                        "Monitoreo finalizado. Si no había conexión, el estado se reenviará en la siguiente sincronización."
                     )
 
                     return@launch

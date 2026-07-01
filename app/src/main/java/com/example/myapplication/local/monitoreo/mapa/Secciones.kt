@@ -50,13 +50,9 @@ internal fun esMonitoreoPausadoMapa(
     status: String,
     additionalNotes: String
 ): Boolean {
-    val estado = status.trim().lowercase(Locale.getDefault())
-
-    val estadoValidoParaPausa = estado == "in_progress" ||
-            estado == "en proceso" ||
-            estado == "vigente"
-
-    return estadoValidoParaPausa &&
+    // Pausado conserva el ciclo real in_progress. Solo se identifica por la nota.
+    // Un monitoreo cerrado nunca se considera pausado.
+    return !esEstadoCerradoMapa(status) &&
             additionalNotes.trim().startsWith("PAUSADO", ignoreCase = true)
 }
 

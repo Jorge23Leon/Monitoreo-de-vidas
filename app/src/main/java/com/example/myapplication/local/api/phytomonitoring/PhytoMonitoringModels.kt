@@ -64,8 +64,13 @@ data class PhytoGeomApi(
 
 data class PhytoTargetPointCreateRequest(
     val header: String,
-    val plot: String,
     val geom: PhytoGeomApi,
+
+    /*
+     * El backend hereda la parcela desde header.plot. Se conserva opcional para
+     * compatibilidad con instalaciones antiguas, pero la app ya no la envía.
+     */
+    val plot: String? = null,
 
     @SerializedName("radius_m")
     val radiusM: Double? = null,
@@ -98,8 +103,22 @@ data class PhytoCheckpointCreateRequest(
     val geom: PhytoGeomApi,
     val notes: String? = null,
 
+    /*
+     * Es la llave con la que upload-photos/ empareja el ZIP con el checkpoint.
+     * Debe viajar desde Room al crear el checkpoint por JSON.
+     */
+    @SerializedName("photo_ref")
+    val photoRef: String? = null,
+
     @SerializedName("captured_at")
     val capturedAt: String? = null
+)
+
+data class PhytoCheckpointPatchRequest(
+    val target: String? = null,
+
+    @SerializedName("photo_ref")
+    val photoRef: String? = null
 )
 
 data class PhytoHeaderPatchRequest(
@@ -152,7 +171,18 @@ data class PhytoCheckpointApiItem(
     val capturedBy: JsonElement? = null,
 
     @SerializedName("captured_by_user")
-    val capturedByUser: JsonElement? = null
+    val capturedByUser: JsonElement? = null,
+
+    // Referencia local del archivo que el backend usa para relacionar el ZIP.
+    @SerializedName("photo_ref")
+    val photoRef: String? = null,
+
+    // Opcionales: el backend puede devolver la URL con cualquiera de estos nombres.
+    @SerializedName("photo_url")
+    val photoUrl: String? = null,
+
+    @SerializedName("photo")
+    val photo: String? = null
 )
 
 data class PhytoCheckpointImportResponse(
@@ -160,6 +190,19 @@ data class PhytoCheckpointImportResponse(
 
     @SerializedName("header_id")
     val headerId: String? = null,
+
+    val detail: String? = null
+)
+
+
+data class PhytoCheckpointPhotosUploadResponse(
+    val matched: Int = 0,
+
+    @SerializedName("unmatched_files")
+    val unmatchedFiles: List<String> = emptyList(),
+
+    @SerializedName("checkpoints_without_photo")
+    val checkpointsWithoutPhoto: List<String> = emptyList(),
 
     val detail: String? = null
 )
