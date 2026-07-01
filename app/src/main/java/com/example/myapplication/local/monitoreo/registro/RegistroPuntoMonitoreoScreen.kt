@@ -50,6 +50,7 @@ import com.example.myapplication.local.monitoreo.media.PhytoMediaStorage
 import com.example.myapplication.local.monitoreo.severidad.NivelSeveridad
 import com.example.myapplication.local.monitoreo.severidad.RangosSeveridad
 import com.example.myapplication.local.monitoreo.severidad.SEVERIDAD_MAYOR_DEFAULT
+import com.example.myapplication.local.monitoreo.severidad.agregarMetadataRangosSeveridad
 import com.example.myapplication.local.monitoreo.severidad.calcularNivelSeveridad
 import com.example.myapplication.local.monitoreo.severidad.rangosSeveridadDesdeTexto
 import kotlinx.coroutines.Dispatchers
@@ -92,15 +93,6 @@ fun RegistroPuntoMonitoreoScreen(
     val fotosRepresentativasPorFito = remember { mutableStateMapOf<Long, String?>() }
     val cantidadesPorEtapa = remember { mutableStateMapOf<ClaveEtapaUi, Int>() }
     val fitosSinEtapasSeleccionados = remember { mutableStateMapOf<Long, Boolean>() }
-
-    /*
-     * Las enfermedades se evalúan sin cantidades:
-     * - No presente.
-     * - Presente con una fase: Inicio, Desarrollo o Avanzado.
-     */
-    val estadosEnfermedadPorFito = remember {
-        mutableStateMapOf<Long, EstadoEnfermedadUi>()
-    }
     var severidadMayorPunto by rememberSaveable(header.idHeader) {
         mutableStateOf(
             preferenciasSeveridad.getString(
@@ -276,22 +268,12 @@ fun RegistroPuntoMonitoreoScreen(
                         etapasPorFito[fito.idPhytosanitary] = etapasCargadas
                     }
 
-                fotosRepresentativasPorFito[fito.idPhytosanitary] =
-                    fotoRepresentativaFitoRegistro(fito, etapasDb)
-
-                if (esEnfermedadRegistro(fito.type)) {
-                    /*
-                     * Para enfermedad no hay contadores. Solo se muestran las
-                     * tres fases permitidas cuando el técnico marca "Presente".
-                     */
-                    etapas = fasesEnfermedadPermitidas(etapasDb)
-                    return@LaunchedEffect
-                }
-
                 val etapasOrdenadas = ordenarEtapasParaRegistro(
                     etapas = etapasDb,
                     tipoFito = fito.type
                 )
+                fotosRepresentativasPorFito[fito.idPhytosanitary] =
+                    fotoRepresentativaFitoRegistro(fito, etapasDb)
 
                 etapas = etapasOrdenadas
 
@@ -317,21 +299,13 @@ fun RegistroPuntoMonitoreoScreen(
 
     val registrosPendientesPorEtapa = cantidadesPorEtapa.values.count { cantidad -> cantidad > 0 }
     val registrosPendientesSinEtapas = fitosSinEtapasSeleccionados.values.count { seleccionado -> seleccionado }
-    val registrosPendientesEnfermedad = estadosEnfermedadPorFito.size
-    val registrosPendientes = (
-            registrosPendientesPorEtapa +
-                    registrosPendientesSinEtapas +
-                    registrosPendientesEnfermedad
-            )
+    val registrosPendientes = registrosPendientesPorEtapa + registrosPendientesSinEtapas
 
     fun totalCantidadPuntoActual(): Int {
         val totalEtapas = cantidadesPorEtapa.values.sum()
         val presenciaGeneral = fitosSinEtapasSeleccionados.values.count { seleccionado -> seleccionado }
-        val enfermedadesPresentes = estadosEnfermedadPorFito.values.count { estado ->
-            estado.presencia == PresenciaEnfermedadUi.PRESENTE
-        }
 
-        return totalEtapas + presenciaGeneral + enfermedadesPresentes
+        return totalEtapas + presenciaGeneral
     }
 
     fun rangosTextoValidosParaPunto(): RangosSeveridad? {
@@ -392,7 +366,7 @@ fun RegistroPuntoMonitoreoScreen(
                     val capturedAt = System.currentTimeMillis()
                     val notasSinPlaga = observaciones
                         .trim()
-                        .takeIf { it.isNotBlank() }
+                        .ifBlank { "" }
 
 
 
@@ -456,33 +430,16 @@ fun RegistroPuntoMonitoreoScreen(
         val fitosSinEtapasPendientes = fitosSinEtapasSeleccionados
             .filter { it.value }
             .keys
-        val enfermedadesPendientes = estadosEnfermedadPorFito.toMap()
 
         if (
             registrosConCantidad.isEmpty() &&
             fitosSinEtapasPendientes.isEmpty() &&
-            enfermedadesPendientes.isEmpty() &&
             registrosAgregados <= 0
         ) {
             Toast.makeText(
                 context,
-                "Selecciona una plaga o evalúa una enfermedad antes de guardar.",
+                "Selecciona una o varias plagas/enfermedades y captura cantidades",
                 Toast.LENGTH_SHORT
-            ).show()
-            return
-        }
-
-        val enfermedadesPresentesSinFase = enfermedadesPendientes
-            .filterValues { estado ->
-                estado.presencia == PresenciaEnfermedadUi.PRESENTE &&
-                        estado.stage.isNullOrBlank()
-            }
-
-        if (enfermedadesPresentesSinFase.isNotEmpty()) {
-            Toast.makeText(
-                context,
-                "Selecciona Inicio, Desarrollo o Avanzado para cada enfermedad presente.",
-                Toast.LENGTH_LONG
             ).show()
             return
         }
@@ -503,9 +460,10 @@ fun RegistroPuntoMonitoreoScreen(
             try {
                 withContext(Dispatchers.IO) {
                     val ahora = System.currentTimeMillis()
-                    val notasLimpias = observaciones
-                        .trim()
-                        .takeIf { it.isNotBlank() }
+                    val notasConSeveridad = agregarMetadataRangosSeveridad(
+                        notas = observaciones.ifBlank { null },
+                        rangos = rangosPunto
+                    )
 
                     // Una sola imagen por punto + timestamp. Todas las etapas guardadas
                     // en esta captura comparten photoRef y photoLocalPath.
@@ -536,7 +494,7 @@ fun RegistroPuntoMonitoreoScreen(
                             qty = cantidad,
                             presenceStatus = 1,
                             stage = clave.stage,
-                            notes = notasLimpias,
+                            notes = notasConSeveridad,
                             photoRef = fotoGuardada?.name,
                             photoLocalPath = fotoGuardada?.absolutePath,
                             photoUrl = null,
@@ -556,35 +514,7 @@ fun RegistroPuntoMonitoreoScreen(
                             qty = 1,
                             presenceStatus = 1,
                             stage = null,
-                            notes = notasLimpias,
-                            photoRef = fotoGuardada?.name,
-                            photoLocalPath = fotoGuardada?.absolutePath,
-                            photoUrl = null,
-                            capturedAt = ahora,
-                            capturedByUserId = idUsuarioActual,
-                            idTargetPoint = punto.idTargetPoint,
-                            idHeader = header.idHeader,
-                            idPhytosanitary = idPhytosanitary,
-                            idLocalPlot = punto.idLocalPlot
-                        )
-
-                        database.localphytomonitoringcheckpointDao().insertCheckpoint(checkpoint)
-                    }
-
-                    enfermedadesPendientes.forEach { (idPhytosanitary, estado) ->
-                        val presente = estado.presencia == PresenciaEnfermedadUi.PRESENTE
-
-                        val checkpoint = LocalPhytomonitoringCheckpointEntity(
-                            qty = if (presente) 1 else 0,
-                            presenceStatus = if (presente) 1 else 0,
-                            stage = if (presente) {
-                                estado.stage
-                                    ?.trim()
-                                    ?.takeIf { it.isNotBlank() }
-                            } else {
-                                null
-                            },
-                            notes = notasLimpias,
+                            notes = notasConSeveridad,
                             photoRef = fotoGuardada?.name,
                             photoLocalPath = fotoGuardada?.absolutePath,
                             photoUrl = null,
@@ -770,42 +700,7 @@ fun RegistroPuntoMonitoreoScreen(
                 Spacer(modifier = Modifier.height(14.dp))
 
                 fitoSeleccionado?.let { fito ->
-                    if (esEnfermedadRegistro(fito.type)) {
-                        val estadoActual = estadosEnfermedadPorFito[fito.idPhytosanitary]
-
-                        PresenciaFaseEnfermedadCard(
-                            presencia = estadoActual?.presencia,
-                            fases = etapas,
-                            faseSeleccionada = estadoActual?.stage,
-                            onNoPresente = {
-                                estadosEnfermedadPorFito[fito.idPhytosanitary] =
-                                    EstadoEnfermedadUi(
-                                        presencia = PresenciaEnfermedadUi.NO_PRESENTE,
-                                        stage = null
-                                    )
-                            },
-                            onPresente = {
-                                val faseAnterior = estadoActual
-                                    ?.takeIf {
-                                        it.presencia == PresenciaEnfermedadUi.PRESENTE
-                                    }
-                                    ?.stage
-
-                                estadosEnfermedadPorFito[fito.idPhytosanitary] =
-                                    EstadoEnfermedadUi(
-                                        presencia = PresenciaEnfermedadUi.PRESENTE,
-                                        stage = faseAnterior
-                                    )
-                            },
-                            onFaseSeleccionada = { fase ->
-                                estadosEnfermedadPorFito[fito.idPhytosanitary] =
-                                    EstadoEnfermedadUi(
-                                        presencia = PresenciaEnfermedadUi.PRESENTE,
-                                        stage = fase.stage
-                                    )
-                            }
-                        )
-                    } else if (etapas.isEmpty()) {
+                    if (etapas.isEmpty()) {
                         InfoBox(
                             text = "${textoTipoFitoRegistro(fito.type)} seleccionada sin etapas. Se guardará como presencia general."
                         )

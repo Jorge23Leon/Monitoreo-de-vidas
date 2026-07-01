@@ -768,7 +768,11 @@ class PhytoCheckpointSyncRepository(
         val nuevo = LocalPhytomonitoringCheckpointEntity(
             extId = extId,
             qty = qty,
-            presenceStatus = presenceStatusLocal(item.presenceStatus, qty),
+            presenceStatus = if (esCheckpointEnfermedad(fitoLocal)) {
+                presenceStatusLocal(item.presenceStatus, qty)
+            } else {
+                null
+            },
             stage = item.stage,
             notes = item.notes,
             photoRef = photoRefApi ?: existentePorExtId?.photoRef,
