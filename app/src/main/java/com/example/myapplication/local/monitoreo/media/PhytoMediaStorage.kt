@@ -49,6 +49,10 @@ object PhytoMediaStorage {
         val file: File,
         val fileNames: Set<String>
     )
+    private data class BitmapDecodificado(
+        val bitmap: Bitmap,
+        val orientacionExifYaAplicada: Boolean
+    )
 
     /** Archivo temporal usado por CameraX antes de normalizar la evidencia. */
     fun crearArchivoTemporalCamara(context: Context): File {
@@ -511,14 +515,23 @@ object PhytoMediaStorage {
         sourceUri: Uri,
         destination: File
     ) {
-        var bitmap = decodificarBitmapCompatible(
+        val decodificado = decodificarBitmapCompatible(
             context = context,
             sourceUri = sourceUri,
             maxSide = INITIAL_MAX_SIDE
         )
 
+        var bitmap = decodificado.bitmap
+
         try {
-            bitmap = aplicarOrientacionExif(context, sourceUri, bitmap)
+            /*
+             * ImageDecoder ya respeta EXIF.
+             * BitmapFactory no, por eso solo aplicamos EXIF cuando hubo fallback.
+             */
+            if (!decodificado.orientacionExifYaAplicada) {
+                bitmap = aplicarOrientacionExif(context, sourceUri, bitmap)
+            }
+
             bitmap = aplicarFondoBlancoSiTieneTransparencia(bitmap)
 
             repeat(14) {
@@ -590,13 +603,14 @@ object PhytoMediaStorage {
         context: Context,
         sourceUri: Uri,
         maxSide: Int
-    ): Bitmap {
+    ): BitmapDecodificado {
         val decodedByImageDecoder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             runCatching {
                 val source = when (sourceUri.scheme?.lowercase(Locale.ROOT)) {
                     "file" -> ImageDecoder.createSource(
                         File(requireNotNull(sourceUri.path))
                     )
+
                     else -> ImageDecoder.createSource(
                         context.contentResolver,
                         sourceUri
@@ -611,10 +625,23 @@ object PhytoMediaStorage {
             null
         }
 
-        val decoded = decodedByImageDecoder
-            ?: decodificarConBitmapFactory(context, sourceUri)
+        if (decodedByImageDecoder != null) {
+            return BitmapDecodificado(
+                bitmap = escalarBitmapSiEsNecesario(
+                    decodedByImageDecoder,
+                    maxSide
+                ),
+                orientacionExifYaAplicada = true
+            )
+        }
 
-        return escalarBitmapSiEsNecesario(decoded, maxSide)
+        return BitmapDecodificado(
+            bitmap = escalarBitmapSiEsNecesario(
+                decodificarConBitmapFactory(context, sourceUri),
+                maxSide
+            ),
+            orientacionExifYaAplicada = false
+        )
     }
 
     private fun decodificarConBitmapFactory(context: Context, sourceUri: Uri): Bitmap {

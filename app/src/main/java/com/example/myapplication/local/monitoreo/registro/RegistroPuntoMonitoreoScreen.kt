@@ -50,7 +50,6 @@ import com.example.myapplication.local.monitoreo.media.PhytoMediaStorage
 import com.example.myapplication.local.monitoreo.severidad.NivelSeveridad
 import com.example.myapplication.local.monitoreo.severidad.RangosSeveridad
 import com.example.myapplication.local.monitoreo.severidad.SEVERIDAD_MAYOR_DEFAULT
-import com.example.myapplication.local.monitoreo.severidad.agregarMetadataRangosSeveridad
 import com.example.myapplication.local.monitoreo.severidad.calcularNivelSeveridad
 import com.example.myapplication.local.monitoreo.severidad.rangosSeveridadDesdeTexto
 import kotlinx.coroutines.Dispatchers
@@ -366,7 +365,7 @@ fun RegistroPuntoMonitoreoScreen(
                     val capturedAt = System.currentTimeMillis()
                     val notasSinPlaga = observaciones
                         .trim()
-                        .ifBlank { "Punto revisado sin presencia de plagas o enfermedades" }
+                        .takeIf { it.isNotBlank() }
 
 
 
@@ -460,10 +459,9 @@ fun RegistroPuntoMonitoreoScreen(
             try {
                 withContext(Dispatchers.IO) {
                     val ahora = System.currentTimeMillis()
-                    val notasConSeveridad = agregarMetadataRangosSeveridad(
-                        notas = observaciones.ifBlank { null },
-                        rangos = rangosPunto
-                    )
+                    val notasLimpias = observaciones
+                        .trim()
+                        .takeIf { it.isNotBlank() }
 
                     // Una sola imagen por punto + timestamp. Todas las etapas guardadas
                     // en esta captura comparten photoRef y photoLocalPath.
@@ -494,7 +492,7 @@ fun RegistroPuntoMonitoreoScreen(
                             qty = cantidad,
                             presenceStatus = 1,
                             stage = clave.stage,
-                            notes = notasConSeveridad,
+                            notes = notasLimpias,
                             photoRef = fotoGuardada?.name,
                             photoLocalPath = fotoGuardada?.absolutePath,
                             photoUrl = null,
@@ -514,7 +512,7 @@ fun RegistroPuntoMonitoreoScreen(
                             qty = 1,
                             presenceStatus = 1,
                             stage = null,
-                            notes = notasConSeveridad,
+                            notes = notasLimpias,
                             photoRef = fotoGuardada?.name,
                             photoLocalPath = fotoGuardada?.absolutePath,
                             photoUrl = null,
