@@ -17,6 +17,64 @@ internal fun textoTipoCatalogo(type: String?): String {
     }
 }
 
+internal fun esEnfermedadReporte(type: String?): Boolean {
+    return type
+        ?.trim()
+        ?.lowercase()
+        ?.contains("enfermedad") == true
+}
+
+internal fun esSinPlagaReporte(
+    checkpoint: LocalPhytomonitoringCheckpointEntity,
+    fito: LocalPhytosanitaryCatalogEntity?
+): Boolean {
+    if (checkpoint.idPhytosanitary == null) return true
+
+    val texto = listOf(
+        fito?.name.orEmpty(),
+        fito?.type.orEmpty(),
+        fito?.description.orEmpty()
+    ).joinToString(" ")
+        .trim()
+        .uppercase(Locale.getDefault())
+        .replace("Á", "A")
+        .replace("É", "E")
+        .replace("Í", "I")
+        .replace("Ó", "O")
+        .replace("Ú", "U")
+
+    return texto.contains("SIN_PLAGA") ||
+            texto.contains("SIN PLAGA") ||
+            texto.contains("NO PLAGA") ||
+            texto.contains("AUSENTE")
+}
+
+internal fun textoPresenciaFaseReporte(
+    checkpoint: LocalPhytomonitoringCheckpointEntity,
+    fito: LocalPhytosanitaryCatalogEntity?
+): String {
+    if (esSinPlagaReporte(checkpoint, fito)) return "-"
+
+    if (esEnfermedadReporte(fito?.type)) {
+        if (checkpoint.presenceStatus == 0) return "No presente"
+
+        val fase = checkpoint.stage
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+
+        return if (fase == null) {
+            "Presente"
+        } else {
+            "Presente / $fase"
+        }
+    }
+
+    return checkpoint.stage
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: "-"
+}
+
 internal fun textoEstadoReporteUi(status: String): String {
     return when (status.lowercase().trim()) {
         "pending", "pendiente" -> "Pendiente"

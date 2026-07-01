@@ -24,6 +24,22 @@ internal data class EtapaCantidadUi(
     val onMas: () -> Unit
 )
 
+/**
+ * Estado de una enfermedad evaluada en el punto.
+ *
+ * - NO_PRESENTE: se registra que la enfermedad se revisó y no fue detectada.
+ * - PRESENTE: además requiere una fase entre inicio, desarrollo o avanzado.
+ */
+internal enum class PresenciaEnfermedadUi {
+    NO_PRESENTE,
+    PRESENTE
+}
+
+internal data class EstadoEnfermedadUi(
+    val presencia: PresenciaEnfermedadUi,
+    val stage: String? = null
+)
+
 internal fun esEnfermedadRegistro(type: String?): Boolean {
     return type
         ?.trim()
@@ -85,22 +101,39 @@ internal fun colorIconoEtapaRegistro(stage: String): Color {
         else -> Color(0xFFEDEDED)
     }
 }
+/**
+ * Para enfermedades se permiten únicamente tres fases.
+ * "Terminal" deja de estar disponible en el registro nuevo.
+ */
+internal fun fasesEnfermedadPermitidas(
+    etapas: List<LocalPhytostageEntity>
+): List<LocalPhytostageEntity> {
+    return etapas
+        .filter { etapa ->
+            val nombre = etapa.stage.trim().lowercase()
+
+            nombre.contains("inicio") ||
+                    nombre.contains("desarrollo") ||
+                    nombre.contains("avanz")
+        }
+        .sortedBy { etapa ->
+            val nombre = etapa.stage.trim().lowercase()
+
+            when {
+                nombre.contains("inicio") -> 0
+                nombre.contains("desarrollo") -> 1
+                nombre.contains("avanz") -> 2
+                else -> 99
+            }
+        }
+}
+
 internal fun ordenarEtapasParaRegistro(
     etapas: List<LocalPhytostageEntity>,
     tipoFito: String?
 ): List<LocalPhytostageEntity> {
     return if (esEnfermedadRegistro(tipoFito)) {
-        etapas.sortedBy { etapa ->
-            val nombre = etapa.stage.trim().lowercase()
-
-            when {
-                nombre.contains("avanz") -> 0
-                nombre.contains("inicio") -> 1
-                nombre.contains("desarrollo") -> 2
-                nombre.contains("terminal") -> 3
-                else -> 99
-            }
-        }
+        fasesEnfermedadPermitidas(etapas)
     } else {
         etapas.sortedBy { etapa ->
             val nombre = etapa.stage.trim().lowercase()

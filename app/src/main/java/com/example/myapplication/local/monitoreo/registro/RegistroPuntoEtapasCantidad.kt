@@ -182,6 +182,197 @@ private fun CircleCounterButtonModerno(
 }
 
 @Composable
+internal fun PresenciaFaseEnfermedadCard(
+    presencia: PresenciaEnfermedadUi?,
+    fases: List<LocalPhytostageEntity>,
+    faseSeleccionada: String?,
+    onNoPresente: () -> Unit,
+    onPresente: () -> Unit,
+    onFaseSeleccionada: (LocalPhytostageEntity) -> Unit
+) {
+    val enfermedadPresente = presencia == PresenciaEnfermedadUi.PRESENTE
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Presencia y fase",
+                    fontSize = 19.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Color(0xFF1D2430)
+                )
+
+                Spacer(modifier = Modifier.size(6.dp))
+
+                Text(
+                    text = "ⓘ",
+                    fontSize = 15.sp,
+                    color = Color(0xFF6E7580)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = "Indica si la enfermedad está presente y, si aplica, selecciona la fase.",
+                fontSize = 13.sp,
+                color = Color(0xFF6E7580)
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OpcionPresenciaEnfermedad(
+                    text = "⊘  No presente",
+                    seleccionada = presencia == PresenciaEnfermedadUi.NO_PRESENTE,
+                    onClick = onNoPresente,
+                    modifier = Modifier.weight(1f)
+                )
+
+                OpcionPresenciaEnfermedad(
+                    text = "✓  Presente",
+                    seleccionada = enfermedadPresente,
+                    onClick = onPresente,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            if (enfermedadPresente) {
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Text(
+                    text = "Fase de la enfermedad",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Color(0xFF1D2430)
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (fases.isEmpty()) {
+                    Text(
+                        text = "No hay fases disponibles. Configura Inicio, Desarrollo y Avanzado en el catálogo.",
+                        fontSize = 13.sp,
+                        color = Color(0xFFC62828)
+                    )
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(9.dp)
+                    ) {
+                        fases.forEach { fase ->
+                            OpcionFaseEnfermedad(
+                                etapa = fase,
+                                seleccionada = fase.stage.trim() == faseSeleccionada?.trim(),
+                                onClick = { onFaseSeleccionada(fase) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OpcionPresenciaEnfermedad(
+    text: String,
+    seleccionada: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier.height(58.dp),
+        shape = RoundedCornerShape(15.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (seleccionada) Color(0xFFF1F6FF) else Color.White,
+            contentColor = if (seleccionada) Color(0xFF0D47C5) else Color(0xFF1D2430)
+        ),
+        border = BorderStroke(
+            1.5.dp,
+            if (seleccionada) Color(0xFF0D47C5) else Color(0xFFD9DEE6)
+        ),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+    ) {
+        Text(
+            text = text,
+            textAlign = TextAlign.Center,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Black
+        )
+    }
+}
+
+@Composable
+private fun OpcionFaseEnfermedad(
+    etapa: LocalPhytostageEntity,
+    seleccionada: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier.height(130.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (seleccionada) Color(0xFFF1F6FF) else Color.White,
+            contentColor = if (seleccionada) Color(0xFF0D47C5) else Color(0xFF1D2430)
+        ),
+        border = BorderStroke(
+            1.5.dp,
+            if (seleccionada) Color(0xFF0D47C5) else Color(0xFFD9DEE6)
+        ),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
+        contentPadding = PaddingValues(6.dp)
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(CircleShape)
+                    .background(colorIconoEtapaRegistro(etapa.stage)),
+                contentAlignment = Alignment.Center
+            ) {
+                ImageUriBox(
+                    photo = etapa.photo,
+                    fallbackIcon = iconoEtapaRegistro(etapa.stage),
+                    sizeDp = 48
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = etapa.stage,
+                textAlign = TextAlign.Center,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 2
+            )
+        }
+    }
+}
+
+@Composable
 internal fun SemaforoSeveridadCard(
     mayorTexto: String,
     totalSeleccionado: Int,

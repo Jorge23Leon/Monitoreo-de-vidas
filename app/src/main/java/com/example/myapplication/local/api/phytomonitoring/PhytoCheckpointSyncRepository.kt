@@ -167,6 +167,7 @@ class PhytoCheckpointSyncRepository(
 
                 val fito = checkpoint.idPhytosanitary?.let { catalogo[it] }
                 val esSinPlaga = esCheckpointSinPlaga(fito, checkpoint)
+                val esEnfermedad = esCheckpointEnfermedad(fito)
 
                 val phytoIssueId = if (esSinPlaga) {
                     null
@@ -187,10 +188,21 @@ class PhytoCheckpointSyncRepository(
                     return@forEach
                 }
 
-                if (!esSinPlaga && stage.isBlank()) {
+                val enfermedadNoPresente = esEnfermedad && checkpoint.presenceStatus == 0
+
+                /*
+                 * La enfermedad no presente se sincroniza sin etapa.
+                 * Cuando está presente, debe llevar una de las tres fases permitidas.
+                 * Las plagas conservan su requisito normal de etapa.
+                 */
+                if (!esSinPlaga && !enfermedadNoPresente && stage.isBlank()) {
                     omitidos++
                     capturasPendientes = true
-                    mensajes += "Checkpoint ${checkpoint.idCheckpoint}: falta etapa."
+                    mensajes += if (esEnfermedad) {
+                        "Checkpoint ${checkpoint.idCheckpoint}: enfermedad presente sin fase."
+                    } else {
+                        "Checkpoint ${checkpoint.idCheckpoint}: falta etapa."
+                    }
                     return@forEach
                 }
 
@@ -208,7 +220,8 @@ class PhytoCheckpointSyncRepository(
                     checkpoint = checkpoint,
                     puntoLocal = punto,
                     phytoIssueId = phytoIssueId,
-                    esSinPlaga = esSinPlaga
+                    esSinPlaga = esSinPlaga,
+                    esEnfermedad = esEnfermedad
                 )
 
                 val checkpointExtId = creado?.id
@@ -414,6 +427,15 @@ class PhytoCheckpointSyncRepository(
                 sinEtapaReal
     }
 
+    private fun esCheckpointEnfermedad(
+        fitoLocal: LocalPhytosanitaryCatalogEntity?
+    ): Boolean {
+        return fitoLocal?.type
+            ?.trim()
+            ?.lowercase(Locale.getDefault())
+            ?.contains("enfermedad") == true
+    }
+
     private suspend fun asegurarTargetPointEnApi(
         headerLocal: LocalPhytomonitoringHeaderEntity,
         puntoLocal: LocalPhytomonitoringTargetPointEntity
@@ -526,9 +548,12 @@ class PhytoCheckpointSyncRepository(
         checkpoint: LocalPhytomonitoringCheckpointEntity,
         puntoLocal: LocalPhytomonitoringTargetPointEntity,
         phytoIssueId: Int?,
-        esSinPlaga: Boolean
+        esSinPlaga: Boolean,
+        esEnfermedad: Boolean
     ): PhytoCheckpointApiItem? {
-        val stage = if (esSinPlaga) {
+        val enfermedadNoPresente = esEnfermedad && checkpoint.presenceStatus == 0
+
+        val stage = if (esSinPlaga || enfermedadNoPresente) {
             null
         } else {
             checkpoint.stage
@@ -537,14 +562,23 @@ class PhytoCheckpointSyncRepository(
         }
 
         /*
-         * Para una captura normal la API requiere etapa y problema fitosanitario.
-         * Para SIN_PLAGA ambos valores se dejan nulos para registrar presencia cero.
+         * Sin plaga no lleva fitosanitario ni etapa.
+         * Una enfermedad No presente conserva su fitosanitario, pero no lleva etapa.
+         * Cualquier plaga o enfermedad presente requiere etapa.
          */
-        if (!esSinPlaga && (phytoIssueId == null || stage == null)) {
+        if (!esSinPlaga && phytoIssueId == null) {
             return null
         }
 
-        val qty = if (esSinPlaga) 0 else (checkpoint.qty ?: 0)
+        if (!esSinPlaga && !enfermedadNoPresente && stage == null) {
+            return null
+        }
+
+        val qty = if (esSinPlaga || enfermedadNoPresente) {
+            0
+        } else {
+            checkpoint.qty ?: 0
+        }
 
         val body = PhytoCheckpointCreateRequest(
             header = headerExtId,

@@ -150,9 +150,21 @@ internal fun crearHtmlMapaReporteUi(
             val capturasArray = JSONArray().apply {
                 severidadPunto.fitos.forEach { fito ->
                     put(JSONObject().apply {
+                        val esEnfermedad = esEnfermedadReporte(fito.tipo)
+                        val fasesResumen = fito.etapasResumen
+                            ?.trim()
+                            .orEmpty()
+
+                        val fase = when {
+                            !esEnfermedad -> fasesResumen.ifBlank { "-" }
+                            fito.cantidadTotal <= 0 -> "No presente"
+                            fasesResumen.isBlank() || fasesResumen == "-" -> "Presente"
+                            else -> "Presente / $fasesResumen"
+                        }
+
                         put("nombre", fito.nombre)
                         put("tipo", textoTipoCatalogo(fito.tipo))
-                        put("fase", fito.etapasResumen)
+                        put("fase", fase)
                         put("cantidad", fito.cantidadTotal)
                         put("fecha", formatearFechaOpcionalReporteUi(fito.fechaUltimaCaptura))
                         put("severidad", fito.nivel.etiqueta)

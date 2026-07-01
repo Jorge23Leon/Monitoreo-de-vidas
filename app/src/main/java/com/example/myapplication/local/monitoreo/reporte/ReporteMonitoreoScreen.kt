@@ -419,8 +419,10 @@ fun ReporteMonitoreoScreen(
                 val item = checkpoint.idPhytosanitary?.let { id ->
                     catalogoMap[id]
                 }
-                val esSinPlaga =
-                    checkpoint.presenceStatus == 0 || checkpoint.idPhytosanitary == null
+                val esSinPlaga = esSinPlagaReporte(
+                    checkpoint = checkpoint,
+                    fito = item
+                )
                 val numeroPunto = numeroPuntoMap[checkpoint.idTargetPoint] ?: 0
                 val severidadPunto = severidadPorPuntoMap[numeroPunto]
                 val nivelPunto = severidadPunto?.nivelFinal
@@ -447,7 +449,10 @@ fun ReporteMonitoreoScreen(
                     coordenadas = formatearCoordenadasReporteUi(punto?.lat, punto?.lon),
                     plagaEnfermedad = if (esSinPlaga) "Sin plaga" else item?.name ?: "Sin identificar",
                     tipo = if (esSinPlaga) "-" else textoTipoCatalogo(item?.type),
-                    fase = if (esSinPlaga) "-" else checkpoint.stage ?: "-",
+                    fase = textoPresenciaFaseReporte(
+                        checkpoint = checkpoint,
+                        fito = item
+                    ),
                     cantidad = checkpoint.qty ?: 0,
                     severidad = nivelPunto?.etiqueta ?: "Sin plaga",
                     colorSeveridadHex = nivelPunto?.colorHex ?: "#16A34A",
