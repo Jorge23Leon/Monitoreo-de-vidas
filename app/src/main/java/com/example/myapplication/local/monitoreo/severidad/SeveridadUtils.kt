@@ -3,17 +3,8 @@ package com.example.myapplication.local.monitoreo.severidad
 import com.example.myapplication.local.entities.LocalPhytomonitoringCheckpointEntity
 import com.example.myapplication.local.entities.LocalPhytosanitaryCatalogEntity
 
-/*
- * Solo se captura la SEVERIDAD MAYOR.
- * La severidad menor se calcula automáticamente como la mitad de la mayor.
- *
- * Ejemplo si mayor = 10:
- * Verde: 0
- * Severidad menor: 1-5
- * Severidad mayor: 6-10
- * Rojo: 11+
- */
-internal const val SEVERIDAD_MAYOR_DEFAULT = 20
+
+internal const val SEVERIDAD_MAYOR_DEFAULT = 5
 
 internal enum class NivelSeveridad(
     val orden: Int,
