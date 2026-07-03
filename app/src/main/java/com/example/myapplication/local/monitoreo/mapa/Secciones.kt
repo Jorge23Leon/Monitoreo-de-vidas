@@ -113,9 +113,10 @@ internal fun textoTiempoRestanteMonitoreo(
     startAt: Long?,
     ahoraMs: Long
 ): String {
-    if (startAt == null) return "Inicia al abrir"
+    if (startAt == null) return "Inicia al confirmar el primer punto"
 
-    val cierreAutomaticoMs = obtenerCierreAutomaticoMs(startAt) ?: return "Inicia al abrir"
+    val cierreAutomaticoMs = obtenerCierreAutomaticoMs(startAt)
+        ?: return "Inicia al confirmar el primer punto"
     val restanteMs = cierreAutomaticoMs - ahoraMs
 
     if (restanteMs <= 0L) return "Tiempo agotado"
@@ -270,13 +271,13 @@ internal fun InstruccionMapaLibre(
     puntosCapturados: Int
 ) {
     val titulo = if (puntosCapturados <= 0) {
-        "Camina al lugar y toca el mapa"
+        "Toca cualquier parte de la parcela"
     } else {
         "Sigue caminando y toca el mapa"
     }
 
     val descripcion = if (puntosCapturados <= 0) {
-        "Aquí harás el primer monitoreo."
+        "Confirma el punto elegido para iniciar el monitoreo."
     } else {
         "El siguiente punto será el número ${puntosCapturados + 1}."
     }
@@ -359,12 +360,37 @@ internal fun ConfirmarPuntoLibreCard(
     onConfirmarClick: () -> Unit,
     onCancelarClick: () -> Unit
 ) {
+    val esPrimerPunto = numeroPunto <= 1
+
+    val titulo = if (esPrimerPunto) {
+        "¿Iniciar monitoreo aquí?"
+    } else {
+        "¿Registrar el punto $numeroPunto aquí?"
+    }
+
+    val descripcion = if (esPrimerPunto) {
+        "Al confirmar iniciará el monitoreo. La coordenada se guardará con tu ubicación GPS actual."
+    } else {
+        "Se registrará el punto $numeroPunto con tu ubicación GPS actual, no con el lugar que tocaste en el mapa."
+    }
+
+    val textoBoton = when {
+        creandoPunto -> "Preparando punto..."
+        esPrimerPunto -> "✓  Iniciar monitoreo"
+        else -> "✓  Registrar punto"
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .navigationBarsPadding()
             .padding(horizontal = 12.dp, vertical = 12.dp),
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
+        shape = RoundedCornerShape(
+            topStart = 24.dp,
+            topEnd = 24.dp,
+            bottomStart = 18.dp,
+            bottomEnd = 18.dp
+        ),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
@@ -383,7 +409,7 @@ internal fun ConfirmarPuntoLibreCard(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "¿Realizar monitoreo aquí?",
+                text = titulo,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Black,
                 color = Color(0xFF1D2430),
@@ -393,7 +419,7 @@ internal fun ConfirmarPuntoLibreCard(
             Spacer(modifier = Modifier.height(6.dp))
 
             Text(
-                text = "Se registrará el punto $numeroPunto en tu ubicación seleccionada.",
+                text = descripcion,
                 fontSize = 13.sp,
                 color = Color(0xFF6E7580),
                 textAlign = TextAlign.Center
@@ -414,11 +440,7 @@ internal fun ConfirmarPuntoLibreCard(
                 )
             ) {
                 Text(
-                    text = if (creandoPunto) {
-                        "Creando punto..."
-                    } else {
-                        "✓  Confirmar monitoreo"
-                    },
+                    text = textoBoton,
                     color = Color.White,
                     fontWeight = FontWeight.Black,
                     fontSize = 16.sp
@@ -449,7 +471,6 @@ internal fun ConfirmarPuntoLibreCard(
         }
     }
 }
-
 @Composable
 internal fun AccionesMapaMonitoreo(
     totalPuntos: Int,

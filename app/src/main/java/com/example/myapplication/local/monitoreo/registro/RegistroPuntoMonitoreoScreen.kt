@@ -12,15 +12,21 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -87,6 +93,9 @@ fun RegistroPuntoMonitoreoScreen(
     var catalogo by remember { mutableStateOf<List<LocalPhytosanitaryCatalogEntity>>(emptyList()) }
     var etapas by remember { mutableStateOf<List<LocalPhytostageEntity>>(emptyList()) }
     var fitoSeleccionado by remember { mutableStateOf<LocalPhytosanitaryCatalogEntity?>(null) }
+    var tipoCatalogoSeleccionado by rememberSaveable {
+        mutableStateOf(TipoCatalogoRegistroUi.PLAGAS)
+    }
 
     val etapasPorFito = remember { mutableStateMapOf<Long, List<LocalPhytostageEntity>>() }
     val fotosRepresentativasPorFito = remember { mutableStateMapOf<Long, String?>() }
@@ -246,6 +255,18 @@ fun RegistroPuntoMonitoreoScreen(
             }
 
             catalogo = resultado.catalogo
+
+            val hayPlagas = resultado.catalogo.any { fito ->
+                esPlagaRegistro(fito.type)
+            }
+            val hayEnfermedades = resultado.catalogo.any { fito ->
+                esEnfermedadRegistro(fito.type)
+            }
+
+            if (!hayPlagas && hayEnfermedades) {
+                tipoCatalogoSeleccionado = TipoCatalogoRegistroUi.ENFERMEDADES
+            }
+
             nombreCultivo = resultado.nombreCultivo
             fotoCultivo = resultado.fotoCultivo
             numeroPuntoVisible = resultado.numeroPuntoVisible
@@ -691,6 +712,19 @@ fun RegistroPuntoMonitoreoScreen(
         )
     }
 
+    val catalogoPlagas = catalogoPorTipoOrdenadoRegistro(
+        catalogo = catalogo,
+        tipoSeleccionado = TipoCatalogoRegistroUi.PLAGAS
+    )
+    val catalogoEnfermedades = catalogoPorTipoOrdenadoRegistro(
+        catalogo = catalogo,
+        tipoSeleccionado = TipoCatalogoRegistroUi.ENFERMEDADES
+    )
+    val catalogoVisible = when (tipoCatalogoSeleccionado) {
+        TipoCatalogoRegistroUi.PLAGAS -> catalogoPlagas
+        TipoCatalogoRegistroUi.ENFERMEDADES -> catalogoEnfermedades
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -784,12 +818,39 @@ fun RegistroPuntoMonitoreoScreen(
                     }
 
                     else -> {
-                        CatalogoPlagasHorizontal(
-                            catalogo = catalogo,
-                            fitoSeleccionado = fitoSeleccionado,
-                            fotosRepresentativas = fotosRepresentativasPorFito,
-                            onSelected = { item -> fitoSeleccionado = item }
+                        SelectorTipoCatalogoRegistro(
+                            tipoSeleccionado = tipoCatalogoSeleccionado,
+                            totalPlagas = catalogoPlagas.size,
+                            totalEnfermedades = catalogoEnfermedades.size,
+                            onTipoSeleccionado = { nuevoTipo ->
+                                if (nuevoTipo != tipoCatalogoSeleccionado) {
+                                    tipoCatalogoSeleccionado = nuevoTipo
+                                    fitoSeleccionado = null
+                                    etapas = emptyList()
+                                }
+                            }
                         )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        if (catalogoVisible.isEmpty()) {
+                            val textoTipo = when (tipoCatalogoSeleccionado) {
+                                TipoCatalogoRegistroUi.PLAGAS -> "plagas"
+                                TipoCatalogoRegistroUi.ENFERMEDADES -> "enfermedades"
+                            }
+
+                            InfoBox(
+                                text = "No hay $textoTipo cargadas para este monitoreo.",
+                                isError = true
+                            )
+                        } else {
+                            CatalogoPlagasHorizontal(
+                                catalogo = catalogoVisible,
+                                fitoSeleccionado = fitoSeleccionado,
+                                fotosRepresentativas = fotosRepresentativasPorFito,
+                                onSelected = { item -> fitoSeleccionado = item }
+                            )
+                        }
                     }
                 }
 
@@ -920,6 +981,95 @@ fun RegistroPuntoMonitoreoScreen(
                     .align(Alignment.BottomCenter)
                     .padding(horizontal = 14.dp)
                     .padding(bottom = 42.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun SelectorTipoCatalogoRegistro(
+    tipoSeleccionado: TipoCatalogoRegistroUi,
+    totalPlagas: Int,
+    totalEnfermedades: Int,
+    onTipoSeleccionado: (TipoCatalogoRegistroUi) -> Unit
+) {
+    fun esSeleccionado(tipo: TipoCatalogoRegistroUi): Boolean {
+        return tipoSeleccionado == tipo
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Button(
+            onClick = {
+                onTipoSeleccionado(TipoCatalogoRegistroUi.PLAGAS)
+            },
+            modifier = Modifier
+                .weight(1f)
+                .height(46.dp)
+                .border(
+                    width = 1.dp,
+                    color = if (esSeleccionado(TipoCatalogoRegistroUi.PLAGAS)) {
+                        Color(0xFF0B6B20)
+                    } else {
+                        Color(0xFFD0D7DE)
+                    },
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp)
+                ),
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (esSeleccionado(TipoCatalogoRegistroUi.PLAGAS)) {
+                    Color(0xFF0B6B20)
+                } else {
+                    Color.White
+                }
+            )
+        ) {
+            Text(
+                text = " Plagas ($totalPlagas)",
+                color = if (esSeleccionado(TipoCatalogoRegistroUi.PLAGAS)) {
+                    Color.White
+                } else {
+                    Color(0xFF1D2430)
+                },
+                fontWeight = FontWeight.Black
+            )
+        }
+
+        Button(
+            onClick = {
+                onTipoSeleccionado(TipoCatalogoRegistroUi.ENFERMEDADES)
+            },
+            modifier = Modifier
+                .weight(1f)
+                .height(46.dp)
+                .border(
+                    width = 1.dp,
+                    color = if (esSeleccionado(TipoCatalogoRegistroUi.ENFERMEDADES)) {
+                        Color(0xFF2E7D32)
+                    } else {
+                        Color(0xFFD0D7DE)
+                    },
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp)
+                ),
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (esSeleccionado(TipoCatalogoRegistroUi.ENFERMEDADES)) {
+                    Color(0xFF2E7D32)
+                } else {
+                    Color.White
+                }
+            )
+        ) {
+            Text(
+                text = " Enfermedades ($totalEnfermedades)",
+                color = if (esSeleccionado(TipoCatalogoRegistroUi.ENFERMEDADES)) {
+                    Color.White
+                } else {
+                    Color(0xFF1D2430)
+                },
+                fontWeight = FontWeight.Black
             )
         }
     }

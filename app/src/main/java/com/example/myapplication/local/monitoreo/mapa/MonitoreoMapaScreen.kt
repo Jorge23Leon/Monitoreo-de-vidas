@@ -186,6 +186,40 @@ fun MonitoreoMapaScreen(
     }
 
     /**
+     * El toque al mapa solo funciona como una confirmación de intención.
+     * La coordenada que se guarda siempre es la ubicación GPS obtenida por Android.
+     */
+    fun ubicacionGpsEstaDentroDeParcela(
+        ubicacionGps: Pair<Double, Double>
+    ): Boolean {
+        if (vertices.size < 3) return true
+
+        val latitud = ubicacionGps.first
+        val longitud = ubicacionGps.second
+        var dentro = false
+        var indiceAnterior = vertices.lastIndex
+
+        vertices.indices.forEach { indiceActual ->
+            val verticeActual = vertices[indiceActual]
+            val verticeAnterior = vertices[indiceAnterior]
+
+            val intersecta =
+                ((verticeActual.lat > latitud) != (verticeAnterior.lat > latitud)) &&
+                        (longitud <
+                                (verticeAnterior.lon - verticeActual.lon) *
+                                (latitud - verticeActual.lat) /
+                                ((verticeAnterior.lat - verticeActual.lat)
+                                    .takeIf { it != 0.0 } ?: 0.000000001) +
+                                verticeActual.lon)
+
+            if (intersecta) dentro = !dentro
+            indiceAnterior = indiceActual
+        }
+
+        return dentro
+    }
+
+    /**
      * Room se actualiza primero para que el trabajo de campo no se pierda.
      * Cuando hay red, el mismo cambio se manda al PATCH de Django.
      * Si falla, MonitoreoSyncRepository lo reintentará antes de volver a descargar headers.
@@ -225,31 +259,16 @@ fun MonitoreoMapaScreen(
         internetDisponible = hayInternet(context)
 
         try {
+            /*
+             * Abrir el mapa NO inicia el monitoreo.
+             * El header permanece pendiente hasta confirmar el primer punto.
+             */
             val resultado = withContext(Dispatchers.IO) {
                 val headerFresco = database.localphytomonitoringheaderDao()
                     .getHeaderById(header.idHeader) ?: header
 
-                val estaPausado = esMonitoreoPausadoMapa(
-                    status = headerFresco.status,
-                    additionalNotes = headerFresco.additionalNotes
-                )
-
-                val estaCerrado = esEstadoCerradoMapa(headerFresco.status)
-                val estabaPendiente = esEstadoPendienteLocal(headerFresco.status)
-
-                if (estabaPendiente && !estaPausado && !estaCerrado) {
-                    database.localphytomonitoringheaderDao()
-                        .iniciarMonitoreoSiEstaPendiente(
-                            idHeader = headerFresco.idHeader,
-                            now = System.currentTimeMillis()
-                        )
-                }
-
-                val headerFinal = database.localphytomonitoringheaderDao()
-                    .getHeaderById(header.idHeader) ?: headerFresco
-
                 MapaCargaResultado(
-                    header = headerFinal,
+                    header = headerFresco,
                     vertices = database.LocalPlotVertexDao()
                         .getVerticesByPlot(header.idLocalPlot),
                     puntos = database.LocalPhytomonitoringTargetPointDao()
@@ -257,11 +276,7 @@ fun MonitoreoMapaScreen(
                     checkpoints = database.localphytomonitoringcheckpointDao()
                         .getCheckpointsByHeader(header.idHeader),
                     catalogo = database.localphytosanitarycatalogDao()
-                        .getAllCatalogo(),
-                    debeSincronizarInicio = estabaPendiente &&
-                            !estaPausado &&
-                            !estaCerrado &&
-                            !esEstadoPendienteLocal(headerFinal.status)
+                        .getAllCatalogo()
                 )
             }
 
@@ -270,20 +285,6 @@ fun MonitoreoMapaScreen(
             puntos = resultado.puntos
             checkpoints = resultado.checkpoints
             catalogo = resultado.catalogo
-
-            if (resultado.debeSincronizarInicio) {
-                val errorServidor = sincronizarEstadoHeaderServidor(
-                    headerLocal = resultado.header,
-                    statusApi = "in_progress"
-                )
-
-                if (errorServidor != null) {
-                    Log.w(
-                        "PHYTO_STATUS",
-                        "Inicio guardado localmente; se reintentará al sincronizar: $errorServidor"
-                    )
-                }
-            }
         } catch (e: Exception) {
             error = "Error al cargar mapa: ${e.message}"
         } finally {
@@ -557,12 +558,27 @@ fun MonitoreoMapaScreen(
     )
 
     fun crearPuntoLibreYRegistrar() {
-        val puntoSeleccionado = puntoLibreSeleccionado ?: run {
+        /*
+         * puntoLibreSeleccionado contiene una captura de la ubicación GPS real
+         * tomada cuando la persona tocó el mapa. Nunca contiene la coordenada
+         * visual del toque sobre el mapa.
+         */
+        val ubicacionGpsSeleccionada = puntoLibreSeleccionado ?: run {
             Toast.makeText(
                 context,
-                "Toca el mapa donde quieres hacer el monitoreo",
-                Toast.LENGTH_SHORT
+                "Aún no se obtiene tu ubicación GPS. Espera unos segundos e inténtalo de nuevo.",
+                Toast.LENGTH_LONG
             ).show()
+            return
+        }
+
+        if (!ubicacionGpsEstaDentroDeParcela(ubicacionGpsSeleccionada)) {
+            Toast.makeText(
+                context,
+                "Tu ubicación GPS actual está fuera de la parcela. Acércate al área verde para registrar el punto.",
+                Toast.LENGTH_LONG
+            ).show()
+            puntoLibreSeleccionado = null
             return
         }
 
@@ -591,7 +607,7 @@ fun MonitoreoMapaScreen(
 
         coroutineScope.launch {
             try {
-                val idNuevoPunto = withContext(Dispatchers.IO) {
+                val resultadoCreacion = withContext(Dispatchers.IO) {
                     val fresco = database.localphytomonitoringheaderDao()
                         .getHeaderById(headerActual.idHeader) ?: headerActual
 
@@ -599,28 +615,67 @@ fun MonitoreoMapaScreen(
                         throw IllegalStateException("El monitoreo ya está cerrado")
                     }
 
-                    database.localphytomonitoringheaderDao()
-                        .iniciarMonitoreoSiEstaPendiente(
-                            idHeader = fresco.idHeader,
-                            now = System.currentTimeMillis()
-                        )
+                    if (esMonitoreoPausadoMapa(fresco.status, fresco.additionalNotes)) {
+                        throw IllegalStateException("El monitoreo está pausado")
+                    }
 
-                    database.LocalPhytomonitoringTargetPointDao()
+                    /*
+                     * Este es el único punto donde un header pendiente se inicia.
+                     * Ocurre después de que la persona tocó la parcela y confirmó.
+                     */
+                    val estabaPendiente = esEstadoPendienteLocal(fresco.status)
+
+                    if (estabaPendiente) {
+                        database.localphytomonitoringheaderDao()
+                            .iniciarMonitoreoSiEstaPendiente(
+                                idHeader = fresco.idHeader,
+                                now = System.currentTimeMillis()
+                            )
+                    }
+
+                    val headerDespuesDeInicio = database.localphytomonitoringheaderDao()
+                        .getHeaderById(fresco.idHeader) ?: fresco
+
+                    val idNuevoPunto = database.LocalPhytomonitoringTargetPointDao()
                         .insertTargetPoint(
                             LocalPhytomonitoringTargetPointEntity(
                                 extId = null,
                                 radiusM = 5,
-                                lat = puntoSeleccionado.first,
-                                lon = puntoSeleccionado.second,
+                                // Se guarda la ubicación GPS real; no la coordenada del toque visual.
+                                lat = ubicacionGpsSeleccionada.first,
+                                lon = ubicacionGpsSeleccionada.second,
                                 status = "En proceso",
-                                idHeader = fresco.idHeader,
-                                idLocalPlot = fresco.idLocalPlot
+                                idHeader = headerDespuesDeInicio.idHeader,
+                                idLocalPlot = headerDespuesDeInicio.idLocalPlot
                             )
                         )
+
+                    PuntoLibreCreadoResultado(
+                        idTargetPoint = idNuevoPunto,
+                        headerActualizado = headerDespuesDeInicio,
+                        inicioConfirmado = estabaPendiente &&
+                                !esEstadoPendienteLocal(headerDespuesDeInicio.status)
+                    )
+                }
+
+                headerActual = resultadoCreacion.headerActualizado
+
+                if (resultadoCreacion.inicioConfirmado) {
+                    val errorServidor = sincronizarEstadoHeaderServidor(
+                        headerLocal = resultadoCreacion.headerActualizado,
+                        statusApi = "in_progress"
+                    )
+
+                    if (errorServidor != null) {
+                        Log.w(
+                            "PHYTO_STATUS",
+                            "Inicio guardado localmente; se reenviará al sincronizar: $errorServidor"
+                        )
+                    }
                 }
 
                 puntoLibreSeleccionado = null
-                onPuntoValidoActual(idNuevoPunto)
+                onPuntoValidoActual(resultadoCreacion.idTargetPoint)
             } catch (e: Exception) {
                 Toast.makeText(
                     context,
@@ -866,16 +921,42 @@ fun MonitoreoMapaScreen(
                                 onInternetDisponibleChange = {
                                     // Se ignora para evitar recargar el WebView.
                                 },
-                                onPuntoLibreSeleccionado = { lat, lon ->
-                                    if (!tiempoAgotado && !estaPausado && !estaCerrado) {
-                                        puntoLibreSeleccionado = Pair(lat, lon)
-                                    } else {
+                                onPuntoLibreSeleccionado = { _, _ ->
+                                    if (tiempoAgotado || estaPausado || estaCerrado) {
                                         Toast.makeText(
                                             context,
                                             "Este monitoreo no permite capturar puntos en este estado",
                                             Toast.LENGTH_SHORT
                                         ).show()
+                                        return@MapaMonitoreoWebViewSeguro
                                     }
+
+                                    /*
+                                     * El mapa solo dispara la acción. Ignoramos sus lat/lon
+                                     * para impedir que se guarde una coordenada elegida con el dedo.
+                                     */
+                                    val ubicacionGpsActual = ubicacionUsuario
+
+                                    if (ubicacionGpsActual == null) {
+                                        Toast.makeText(
+                                            context,
+                                            "Aún no se obtiene tu ubicación GPS. Espera unos segundos e inténtalo de nuevo.",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                        return@MapaMonitoreoWebViewSeguro
+                                    }
+
+                                    if (!ubicacionGpsEstaDentroDeParcela(ubicacionGpsActual)) {
+                                        Toast.makeText(
+                                            context,
+                                            "Tu ubicación GPS actual está fuera de la parcela. No se puede registrar un punto fuera del área verde.",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                        return@MapaMonitoreoWebViewSeguro
+                                    }
+
+                                    // Esta es la coordenada que verá la confirmación y que se guardará.
+                                    puntoLibreSeleccionado = ubicacionGpsActual
                                 }
                             )
 
@@ -928,6 +1009,11 @@ private data class MapaCargaResultado(
     val vertices: List<LocalPlotVertexEntity>,
     val puntos: List<LocalPhytomonitoringTargetPointEntity>,
     val checkpoints: List<LocalPhytomonitoringCheckpointEntity>,
-    val catalogo: List<LocalPhytosanitaryCatalogEntity>,
-    val debeSincronizarInicio: Boolean
+    val catalogo: List<LocalPhytosanitaryCatalogEntity>
+)
+
+private data class PuntoLibreCreadoResultado(
+    val idTargetPoint: Long,
+    val headerActualizado: LocalPhytomonitoringHeaderEntity,
+    val inicioConfirmado: Boolean
 )

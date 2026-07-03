@@ -414,16 +414,34 @@ internal fun crearHtmlMapaMonitoreo(
                 window.setSelectedFreePoint = setSelectedFreePoint;
                 window.clearSelectedFreePoint = clearSelectedFreePoint;
 
-                function seleccionarDesdeMapa(lat, lon) {
-                    if (!puntoDentroPoligono(lat, lon)) {
-                        alert('Selecciona un punto dentro de la parcela.');
+                /*
+                 * El toque al mapa NO define las coordenadas del punto.
+                 * Solamente confirma que la persona desea capturar un punto.
+                 * La posición usada es siempre currentUserLocation, recibida del GPS de Android.
+                 */
+                function seleccionarDesdeMapa() {
+                    if (currentUserLocation == null) {
+                        alert('Aún no se obtiene tu ubicación GPS. Espera unos segundos e inténtalo de nuevo.');
                         return;
                     }
 
-                    setSelectedFreePoint(lat, lon);
+                    const latGps = Number(currentUserLocation.lat);
+                    const lonGps = Number(currentUserLocation.lon);
+
+                    if (isNaN(latGps) || isNaN(lonGps)) {
+                        alert('La ubicación GPS no es válida todavía. Inténtalo nuevamente.');
+                        return;
+                    }
+
+                    if (!puntoDentroPoligono(latGps, lonGps)) {
+                        alert('Tu ubicación GPS actual está fuera de la parcela. Acércate al área verde para registrar el punto.');
+                        return;
+                    }
+
+                    setSelectedFreePoint(latGps, lonGps);
 
                     if (window.Android && Android.onPuntoLibreSeleccionado) {
-                        Android.onPuntoLibreSeleccionado(String(lat), String(lon));
+                        Android.onPuntoLibreSeleccionado(String(latGps), String(lonGps));
                     }
                 }
 
@@ -477,7 +495,7 @@ internal fun crearHtmlMapaMonitoreo(
 
                     control.onAdd = function() {
                         const div = L.DomUtil.create('div', 'map-title-box');
-                        div.innerHTML = 'Toca el mapa donde estás parado';
+                        div.innerHTML = 'Toca el mapa para confirmar tu ubicación GPS';
                         return div;
                     };
 
@@ -612,11 +630,19 @@ internal fun crearHtmlMapaMonitoreo(
                             fillOpacity: internetDisponible ? 0.26 : 0.45
                         }).addTo(map);
 
-                        polygon.bindPopup(
-                            '<b>Parcela del monitoreo</b><br>' +
-                            escapeHtml(nombreMonitoreo) +
-                            '<br><br>Toca dentro de la parcela para crear un punto.'
-                        );
+                        /*
+                         * El polígono también debe aceptar toques. Antes tenía un
+                         * bindPopup(), por lo que el toque abría este globo y no
+                         * llegaba a la selección del punto. Aquí lo mandamos directo
+                         * al mismo flujo de confirmación que usa el mapa.
+                         */
+                        polygon.on('click', function(e) {
+                            if (e && e.originalEvent) {
+                                L.DomEvent.stopPropagation(e.originalEvent);
+                            }
+
+                            seleccionarDesdeMapa();
+                        });
 
                         const boundsParcela = polygon.getBounds();
                         aplicarLimitesDeParcela(boundsParcela);
@@ -636,7 +662,7 @@ internal fun crearHtmlMapaMonitoreo(
                     });
 
                     map.on('click', function(e) {
-                        seleccionarDesdeMapa(e.latlng.lat, e.latlng.lng);
+                        seleccionarDesdeMapa();
                     });
 
                     if (usuarioInicial != null) {

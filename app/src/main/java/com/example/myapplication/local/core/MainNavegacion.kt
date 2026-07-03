@@ -640,19 +640,47 @@ fun MainNavegacion(
                     rolUsuario = uiState.rolUsuarioActual,
                     nombreCia = uiState.ciaSeleccionada?.nombre ?: "Sin CIA",
                     puedeCrearMonitoreos = puedeCrearMonitoreosVm(uiState.rolUsuarioActual),
-                    puedeGestionCatalogos = puedeGestionCatalogosVm(uiState.rolUsuarioActual),
-                    puedeGestionAgricola = puedeGestionAgricolaVm(uiState.rolUsuarioActual),
+
+                    /*
+                     * TEMPORAL: se oculta la tarjeta de Administrador de catálogos.
+                     *
+                     * El módulo, sus pantallas y sus datos permanecen intactos.
+                     * Cuando se implementen las mejoras futuras, reemplaza `false` por:
+                     * puedeGestionCatalogosVm(uiState.rolUsuarioActual)
+                     */
+                    puedeGestionCatalogos = false,
+
+                    /*
+                     * TEMPORAL: se oculta la tarjeta de Gestión agrícola.
+                     *
+                     * El módulo, sus pantallas y sus datos permanecen intactos.
+                     * Cuando se implementen las mejoras futuras, reemplaza `false` por:
+                     * puedeGestionAgricolaVm(uiState.rolUsuarioActual)
+                     */
+                    puedeGestionAgricola = false,
 
                     onMonitoreosAdminClick = {
                         mainViewModel.irA(PantallaActual.ADMIN_MONITOREOS)
                     },
 
                     onCatalogosClick = {
-                        mainViewModel.irA(PantallaActual.ADMIN_CATALOGOS)
+                        /*
+                         * TEMPORALMENTE DESHABILITADO.
+                         * La tarjeta no se muestra porque `puedeGestionCatalogos = false`.
+                         *
+                         * Para habilitar la navegación nuevamente, descomenta esta línea:
+                         * mainViewModel.irA(PantallaActual.ADMIN_CATALOGOS)
+                         */
                     },
 
                     onGestionAgricolaClick = {
-                        mainViewModel.irA(PantallaActual.ADMIN_GESTION_AGRICOLA)
+                        /*
+                         * TEMPORALMENTE DESHABILITADO.
+                         * La tarjeta no se muestra porque `puedeGestionAgricola = false`.
+                         *
+                         * Para habilitar la navegación nuevamente, descomenta esta línea:
+                         * mainViewModel.irA(PantallaActual.ADMIN_GESTION_AGRICOLA)
+                         */
                     },
 
                     onPerfilClick = {
