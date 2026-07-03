@@ -124,6 +124,19 @@ class MainViewModel(
         private set
 
     /*
+     * Credenciales mostradas únicamente en la pantalla de Login cuando
+     * la persona marcó “Recordar usuario y contraseña”.
+     */
+    var usernameRecordadoLogin by mutableStateOf("")
+        private set
+
+    var passwordRecordadaLogin by mutableStateOf("")
+        private set
+
+    var recordarCredencialesLogin by mutableStateOf(false)
+        private set
+
+    /*
      * La pantalla siempre lee Room. Estas variables solo controlan el botón
      * manual de actualización; no bloquean el login ni la navegación.
      */
@@ -139,6 +152,8 @@ class MainViewModel(
         ultimaSincronizacionMonitoreosMillis = obtenerPrefsSincronizacion()
             .getLong("ultima_sync_monitoreos_global", 0L)
             .takeIf { it > 0L }
+
+        cargarCredencialesRecordadasEnLogin()
         insertarDatosInicialesSeguros()
         cargarSesionGuardadaAlIniciar()
     }
@@ -334,6 +349,38 @@ class MainViewModel(
             .clear()
             .apply()
     }
+
+    private fun cargarCredencialesRecordadasEnLogin() {
+        val credenciales = tokenStorage.obtenerCredencialesRecordadas()
+
+        usernameRecordadoLogin = credenciales?.username.orEmpty()
+        passwordRecordadaLogin = credenciales?.password.orEmpty()
+        recordarCredencialesLogin = credenciales != null
+    }
+
+    private fun guardarOClearCredencialesRecordadas(
+        username: String,
+        password: String,
+        recordarCredenciales: Boolean
+    ) {
+        if (recordarCredenciales) {
+            val seGuardaron = tokenStorage.guardarCredencialesRecordadas(
+                username = username,
+                password = password
+            )
+
+            if (!seGuardaron) {
+                mostrarMensaje(
+                    "No se pudieron guardar las credenciales en este dispositivo."
+                )
+            }
+        } else {
+            tokenStorage.limpiarCredencialesRecordadas()
+        }
+
+        cargarCredencialesRecordadasEnLogin()
+    }
+
     private fun cargarSesionGuardadaAlIniciar() {
         viewModelScope.launch {
             try {
@@ -426,6 +473,7 @@ class MainViewModel(
 
                 if (resultado == null) {
                     borrarSesionGuardada()
+                    tokenStorage.limpiarTokens()
 
                     actualizarEstado {
                         it.copy(
@@ -508,6 +556,7 @@ class MainViewModel(
                 e.printStackTrace()
 
                 borrarSesionGuardada()
+                tokenStorage.limpiarTokens()
 
                 actualizarEstado {
                     it.copy(
@@ -1176,10 +1225,11 @@ class MainViewModel(
 
     fun onLoginClick(
         usernameInput: String,
-        passwordInput: String
+        passwordInput: String,
+        recordarCredenciales: Boolean
     ) {
         val username = usernameInput.trim()
-        val password = passwordInput.trim()
+        val password = passwordInput
 
         if (username.isBlank() || password.isBlank()) {
             mostrarMensaje("Ingresa usuario y contraseña")
@@ -1300,7 +1350,17 @@ class MainViewModel(
                         val parentCias = resultado.parentCias
                         val ciasHijasUsuario = resultado.ciasHijasUsuario
 
+                        /*
+                         * La casilla ahora solo controla si se recuerdan usuario y contraseña.
+                         * La sesión activa se conserva mientras no se use “Cerrar sesión”.
+                         */
                         guardarSesionBasica(sesion.idUser)
+
+                        guardarOClearCredencialesRecordadas(
+                            username = username,
+                            password = password,
+                            recordarCredenciales = recordarCredenciales
+                        )
 
                         actualizarEstado {
                             it.copy(
@@ -1721,6 +1781,73 @@ class MainViewModel(
             )
         }
     }
+
+    private suspend fun obtenerRanchosDisponiblesParaCiaYProductor(
+        idLocalCia: Long,
+        idProductor: Long
+    ): List<LocalRanchEntity> {
+        val idsParcelasCia = database.localprogramDao()
+            .getProgramasByCia(idLocalCia)
+            .map { programa -> programa.idLocalPlot }
+            .filter { idParcela -> idParcela > 0L }
+            .toSet()
+
+        if (idsParcelasCia.isEmpty()) {
+            return emptyList()
+        }
+
+        val idsRanchosConPrograma = database.localPlotDao()
+            .getAllPlots()
+            .asSequence()
+            .filter { parcela ->
+                parcela.idLocalPlot in idsParcelasCia
+            }
+            .map { parcela ->
+                parcela.idLocalRanch
+            }
+            .filter { idRancho ->
+                idRancho > 0L
+            }
+            .toSet()
+
+        return database.localRanchDao()
+            .getRanchosByProductor(idProductor)
+            .filter { rancho ->
+                rancho.idLocalRanch in idsRanchosConPrograma
+            }
+            .sortedBy { rancho ->
+                rancho.name.trim().lowercase(Locale.getDefault())
+            }
+    }
+
+    private suspend fun obtenerParcelasDisponiblesParaCiaYRancho(
+        idLocalCia: Long,
+        idRancho: Long
+    ): List<LocalPlotEntity> {
+        val idsParcelasCia = database.localprogramDao()
+            .getProgramasByCia(idLocalCia)
+            .map { programa -> programa.idLocalPlot }
+            .filter { idParcela -> idParcela > 0L }
+            .toSet()
+
+        if (idsParcelasCia.isEmpty()) {
+            return emptyList()
+        }
+
+        return database.localPlotDao()
+            .getParcelasByRancho(idRancho)
+            .filter { parcela ->
+                parcela.idLocalPlot in idsParcelasCia
+            }
+            .distinctBy { parcela ->
+                parcela.idLocalPlot
+            }
+            .sortedBy { parcela ->
+                parcela.code?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: parcela.name.trim()
+            }
+    }
     fun cargarProductores(
         idLocalCia: Long,
         idProductorRestaurar: Long? = null
@@ -1741,11 +1868,10 @@ class MainViewModel(
                         }
 
                     val ranchosFiltro = if (productorRestaurado != null) {
-                        database.localRanchDao()
-                            .getRanchosByCiaAndProductor(
-                                idLocalCia = idLocalCia,
-                                idProductor = productorRestaurado.idLocalAgroUnit
-                            )
+                        obtenerRanchosDisponiblesParaCiaYProductor(
+                            idLocalCia = idLocalCia,
+                            idProductor = productorRestaurado.idLocalAgroUnit
+                        )
                     } else {
                         emptyList()
                     }
@@ -1903,6 +2029,7 @@ class MainViewModel(
 
     fun cargarRanchos(idProductor: Long) {
         val cia = uiState.ciaSeleccionada
+
         if (cia == null) {
             mostrarMensaje("Selecciona una CIA antes de cargar ranchos")
             return
@@ -1911,7 +2038,7 @@ class MainViewModel(
         viewModelScope.launch {
             try {
                 val lista = withContext(Dispatchers.IO) {
-                    database.localRanchDao().getRanchosByCiaAndProductor(
+                    obtenerRanchosDisponiblesParaCiaYProductor(
                         idLocalCia = cia.idLocalCia,
                         idProductor = idProductor
                     )
@@ -1929,7 +2056,9 @@ class MainViewModel(
                 }
 
                 if (lista.isEmpty()) {
-                    mostrarMensaje("El productor seleccionado no tiene ranchos con programas en esta CIA")
+                    mostrarMensaje(
+                        "El productor seleccionado no tiene ranchos con programas en esta CIA"
+                    )
                 }
             } catch (e: Exception) {
                 Log.e("MAIN_VM", "Error al cargar ranchos", e)
@@ -2001,9 +2130,9 @@ class MainViewModel(
                             )
                         }
                         cia != null -> {
-                            database.localPlotDao().getParcelasByCiaAndRancho(
+                            obtenerParcelasDisponiblesParaCiaYRancho(
                                 idLocalCia = cia.idLocalCia,
-                                idRanch = idRanch
+                                idRancho = idRanch
                             )
                         }
                         else -> emptyList()
@@ -3426,6 +3555,10 @@ class MainViewModel(
     }
 
     fun onPerfilActualizado(usuario: UserEntity) {
+        // Si se modificó la contraseña desde Perfil, relee la credencial cifrada
+        // para que al cerrar sesión aparezca la contraseña nueva.
+        cargarCredencialesRecordadasEnLogin()
+
         actualizarEstado {
             it.copy(
                 idUsuarioActual = usuario.idUser,

@@ -777,15 +777,14 @@ fun ReporteMonitoreoScreen(
                                             descargarCsvReporteUi(
                                                 context = context.applicationContext,
                                                 header = header,
-                                                nombreCia = nombreCia,
                                                 productor = productor?.commercial_name ?: "-",
                                                 rancho = rancho?.name ?: "-",
                                                 parcela = parcela?.code ?: "-",
-                                                cultivo = nombreCultivo,
-                                                filas = filasTabla
+                                                checkpoints = checkpoints,
+                                                puntos = puntos,
+                                                catalogo = catalogo
                                             )
                                         }
-
                                         // CSV: muestra notificación y permite abrir el archivo exacto.
                                         NotificacionCsvReporte.mostrar(
                                             context = context.applicationContext,

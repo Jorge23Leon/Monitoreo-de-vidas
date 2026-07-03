@@ -23,6 +23,7 @@ data class RefreshResponse(
 data class LogoutRequest(
     val refresh: String
 )
+
 data class SignupRequest(
     val username: String,
     val email: String,
@@ -36,5 +37,14 @@ data class SignupResponse(
     val username: String? = null,
     val email: String? = null,
     val status: String? = null,
+    val detail: String? = null
+)
+
+data class ChangePasswordRequest(
+    val old_password: String,
+    val new_password: String
+)
+
+data class ChangePasswordResponse(
     val detail: String? = null
 )

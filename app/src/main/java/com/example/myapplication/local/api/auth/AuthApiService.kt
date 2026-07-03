@@ -21,9 +21,13 @@ interface AuthApiService {
         @Body request: LogoutRequest
     ): Response<Unit>
 
-
     @POST("api/v1/auth/signup/")
     suspend fun signup(
         @Body request: SignupRequest
     ): Response<SignupResponse>
+
+    @POST("api/v1/auth/change-password/")
+    suspend fun changePassword(
+        @Body request: ChangePasswordRequest
+    ): Response<ChangePasswordResponse>
 }

@@ -556,9 +556,7 @@ class PhytoCheckpointSyncRepository(
         val stage = if (esSinPlaga || enfermedadNoPresente) {
             null
         } else {
-            checkpoint.stage
-                ?.trim()
-                ?.takeIf { it.isNotBlank() }
+            normalizarEtapaParaServidor(checkpoint.stage)
         }
 
         /*
@@ -768,10 +766,19 @@ class PhytoCheckpointSyncRepository(
         val nuevo = LocalPhytomonitoringCheckpointEntity(
             extId = extId,
             qty = qty,
-            presenceStatus = if (esCheckpointEnfermedad(fitoLocal)) {
-                presenceStatusLocal(item.presenceStatus, qty)
-            } else {
-                null
+            /*
+             * Las plagas se registran por cantidad; por eso localmente pueden
+             * venir con presenceStatus=null. Normalizamos a 1 cuando qty > 0
+             * para que Room y el semáforo las reconozcan como presentes.
+             * Las enfermedades conservan 0/1 porque sí manejan "No presente".
+             */
+            presenceStatus = when {
+                esCheckpointEnfermedad(fitoLocal) -> {
+                    presenceStatusLocal(item.presenceStatus, qty)
+                }
+
+                (qty ?: 0) > 0 -> 1
+                else -> null
             },
             stage = item.stage,
             notes = item.notes,
@@ -1013,6 +1020,25 @@ class PhytoCheckpointSyncRepository(
 
         return database.localphytosanitarycatalogDao()
             .getPhytosanitaryById(idNuevo)
+    }
+    private fun normalizarEtapaParaServidor(etapa: String?): String? {
+        return when (etapa?.trim()?.lowercase()) {
+            null, "" -> null
+
+            "huevecillo", "huevesillo" -> "huevesillo"
+            "larva", "larva / joven" -> "larva"
+            "ninfa", "ninfa / joven" -> "ninfa"
+            "pupa" -> "pupa"
+            "adulto" -> "adulto"
+            "adulto con alas" -> "adulto_alas"
+
+            "inicio" -> "inicio"
+            "desarrollo" -> "desarrollo"
+            "avanzado", "avanzado / crítico", "avanzado / critico" -> "avanzado"
+            "terminal", "terminal / podrido" -> "terminal"
+
+            else -> etapa.trim().lowercase()
+        }
     }
 
     private fun construirCsvImportacion(

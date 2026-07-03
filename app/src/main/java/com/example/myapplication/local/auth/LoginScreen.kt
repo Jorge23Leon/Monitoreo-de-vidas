@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,6 +20,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
@@ -49,15 +51,37 @@ import com.example.myapplication.local.R
 
 @Composable
 fun LoginScreen(
-    onLoginClick: (username: String, password: String) -> Unit,
+    usernameRecordado: String,
+    passwordRecordada: String,
+    recordarCredencialesInicial: Boolean,
+    onLoginClick: (
+        username: String,
+        password: String,
+        recordarCredenciales: Boolean
+    ) -> Unit,
     onRegisterClick: () -> Unit,
     onForgotPasswordClick: () -> Unit,
     onInformationClick: () -> Unit,
     onContactClick: () -> Unit
 ) {
-    var username by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    var username by remember(usernameRecordado) {
+        mutableStateOf(usernameRecordado)
+    }
+
+    var password by remember(passwordRecordada) {
+        mutableStateOf(passwordRecordada)
+    }
+
     var showPassword by remember { mutableStateOf(false) }
+
+    var recordarCredenciales by remember(
+        usernameRecordado,
+        passwordRecordada,
+        recordarCredencialesInicial
+    ) {
+        mutableStateOf(recordarCredencialesInicial)
+    }
+
     var expandedMenu by remember { mutableStateOf(false) }
 
     Box(
@@ -243,7 +267,23 @@ fun LoginScreen(
                             }
                         )
 
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = recordarCredenciales,
+                                onCheckedChange = { recordarCredenciales = it }
+                            )
+
+                            Text(
+                                text = "Recordar usuario y contraseña",
+                                fontSize = 14.sp,
+                                color = Color(0xFF355A3B)
+                            )
+                        }
 
                         TextButton(
                             onClick = onForgotPasswordClick
@@ -273,7 +313,8 @@ fun LoginScreen(
                             onClick = {
                                 onLoginClick(
                                     username.trim(),
-                                    password.trim()
+                                    password,
+                                    recordarCredenciales
                                 )
                             },
                             modifier = Modifier
@@ -305,7 +346,10 @@ fun LoginScreen(
 private fun LoginScreenPreview() {
     MaterialTheme {
         LoginScreen(
-            onLoginClick = { _, _ -> },
+            usernameRecordado = "admin",
+            passwordRecordada = "contraseña",
+            recordarCredencialesInicial = true,
+            onLoginClick = { _, _, _ -> },
             onRegisterClick = {},
             onForgotPasswordClick = {},
             onInformationClick = {},

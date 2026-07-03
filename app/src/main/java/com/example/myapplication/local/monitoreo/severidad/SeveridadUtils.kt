@@ -146,13 +146,28 @@ internal fun combinarNivelSeveridad(
     return niveles.maxByOrNull { it.orden } ?: NivelSeveridad.VERDE
 }
 
+/**
+ * Para plagas, presenceStatus normalmente queda null porque se registran por
+ * cantidad. Para enfermedades, 0 significa explícitamente "no presente".
+ *
+ * Una captura aporta al semáforo cuando tiene cantidad positiva y no es una
+ * enfermedad marcada como ausente. Así se cuentan las plagas locales y las
+ * descargadas del servidor, aun cuando presenceStatus sea null.
+ */
+private fun esCheckpointConPresenciaParaSeveridad(
+    checkpoint: LocalPhytomonitoringCheckpointEntity
+): Boolean {
+    return (checkpoint.qty ?: 0) > 0 && checkpoint.presenceStatus != 0
+}
+
 internal fun totalCantidadPorFitosanitario(
     checkpoints: List<LocalPhytomonitoringCheckpointEntity>,
     idPhytosanitary: Long
 ): Int {
     return checkpoints
         .filter { checkpoint ->
-            checkpoint.idPhytosanitary == idPhytosanitary && checkpoint.presenceStatus == 1
+            checkpoint.idPhytosanitary == idPhytosanitary &&
+                    esCheckpointConPresenciaParaSeveridad(checkpoint)
         }
         .sumOf { checkpoint -> checkpoint.qty ?: 0 }
 }
@@ -163,8 +178,8 @@ internal fun calcularSeveridadPorPunto(
     rangos: RangosSeveridad = RangosSeveridad()
 ): SeveridadPuntoUi {
     val capturasConPresencia = checkpointsPunto.filter { checkpoint ->
-        checkpoint.presenceStatus == 1 &&
-                checkpoint.idPhytosanitary != null
+        checkpoint.idPhytosanitary != null &&
+                esCheckpointConPresenciaParaSeveridad(checkpoint)
     }
 
     val totalPunto = capturasConPresencia.sumOf { checkpoint ->
@@ -172,7 +187,8 @@ internal fun calcularSeveridadPorPunto(
     }
 
     val tieneSinPlaga = checkpointsPunto.any { checkpoint ->
-        checkpoint.presenceStatus == 0
+        checkpoint.presenceStatus == 0 ||
+                ((checkpoint.qty ?: 0) <= 0 && checkpoint.idPhytosanitary == null)
     }
 
     val rangosPunto = rangosSeveridadDesdeCheckpoints(checkpointsPunto) ?: rangos
@@ -224,7 +240,6 @@ private fun resumenEtapasCapturadas(
     capturas: List<LocalPhytomonitoringCheckpointEntity>
 ): String {
     return capturas
-        .filter { checkpoint -> checkpoint.presenceStatus == 1 }
         .groupBy { checkpoint -> checkpoint.stage?.trim()?.takeIf { it.isNotBlank() } ?: "General" }
         .map { (stage, capturasStage) ->
             val totalStage = capturasStage.sumOf { checkpoint -> checkpoint.qty ?: 0 }

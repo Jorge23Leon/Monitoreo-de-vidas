@@ -37,6 +37,9 @@ import androidx.compose.ui.unit.sp
 import com.example.myapplication.local.common.EncabezadoApp
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.UserEntity
+import com.example.myapplication.local.api.auth.AuthRepository
+import com.example.myapplication.local.api.auth.ResultadoCambiarPasswordApi
+import com.example.myapplication.local.api.core.TokenStorage
 import com.example.myapplication.local.security.PasswordHasher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -58,6 +61,12 @@ fun PerfilUsuarioScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val authRepository = remember(context) {
+        AuthRepository(context.applicationContext)
+    }
+    val tokenStorage = remember(context) {
+        TokenStorage(context.applicationContext)
+    }
 
     var usuarioActual by remember {
         mutableStateOf<UserEntity?>(null)
@@ -243,46 +252,66 @@ fun PerfilUsuarioScreen(
                                 ).show()
                             }
 
-                            !PasswordHasher.verificarPassword(
-                                passwordIngresado = actualLimpia,
-                                passwordGuardado = usuarioBase.password
-                            ) -> {
-                                Toast.makeText(
-                                    context,
-                                    "La contraseña actual no es correcta",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-
                             else -> {
                                 guardandoPassword = true
 
                                 coroutineScope.launch {
                                     try {
-                                        val usuarioConPasswordNueva = usuarioBase.copy(
-                                            password = PasswordHasher.generarHash(nuevaLimpia)
-                                        )
+                                        when (
+                                            val resultado = withContext(Dispatchers.IO) {
+                                                authRepository.cambiarPassword(
+                                                    oldPassword = actualLimpia,
+                                                    newPassword = nuevaLimpia
+                                                )
+                                            }
+                                        ) {
+                                            is ResultadoCambiarPasswordApi.Exito -> {
+                                                // Se actualiza el hash local para que el login sin
+                                                // internet use la nueva contraseña, nunca el texto plano.
+                                                val usuarioConPasswordNueva = usuarioBase.copy(
+                                                    password = PasswordHasher.generarHash(nuevaLimpia)
+                                                )
 
-                                        withContext(Dispatchers.IO) {
-                                            database.userDao().updateUser(usuarioConPasswordNueva)
+                                                withContext(Dispatchers.IO) {
+                                                    database.userDao().updateUser(usuarioConPasswordNueva)
+                                                }
+
+                                                /*
+                                                 * Si el usuario pidió recordar sus credenciales,
+                                                 * sustituimos la contraseña anterior por la nueva.
+                                                 */
+                                                tokenStorage.actualizarPasswordRecordada(
+                                                    username = usuarioConPasswordNueva.username,
+                                                    nuevaPassword = nuevaLimpia
+                                                )
+
+                                                usuarioActual = usuarioConPasswordNueva
+                                                onPerfilActualizado(usuarioConPasswordNueva)
+
+                                                passwordActual = ""
+                                                nuevaPassword = ""
+                                                confirmarPassword = ""
+                                                mostrarDialogCambiarPassword = false
+
+                                                Toast.makeText(
+                                                    context,
+                                                    resultado.mensaje,
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                            }
+
+                                            is ResultadoCambiarPasswordApi.Error -> {
+                                                Toast.makeText(
+                                                    context,
+                                                    resultado.mensaje,
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                            }
                                         }
-
-                                        usuarioActual = usuarioConPasswordNueva
-
-                                        passwordActual = ""
-                                        nuevaPassword = ""
-                                        confirmarPassword = ""
-                                        mostrarDialogCambiarPassword = false
-
-                                        Toast.makeText(
-                                            context,
-                                            "Contraseña actualizada correctamente",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
                                     } catch (e: Exception) {
                                         Toast.makeText(
                                             context,
-                                            "Error al cambiar contraseña: ${e.message}",
+                                            "No se pudo actualizar la contraseña.",
                                             Toast.LENGTH_LONG
                                         ).show()
                                     } finally {

@@ -7,33 +7,38 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.core.content.FileProvider
+import com.example.myapplication.local.entities.LocalPhytomonitoringCheckpointEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
+import com.example.myapplication.local.entities.LocalPhytomonitoringTargetPointEntity
+import com.example.myapplication.local.entities.LocalPhytosanitaryCatalogEntity
+import com.example.myapplication.local.monitoreo.media.PhytoMediaStorage
 import java.io.File
 import java.io.OutputStreamWriter
 import java.text.Normalizer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
-/**
- * CAMBIO CSV:
- * Conserva el Uri real del archivo para abrir exactamente el CSV desde la notificación.
- */
 internal data class ArchivoCsvReporteUi(
     val nombreArchivo: String,
     val ubicacionVisible: String,
     val uri: Uri
 )
 
+/**
+ * Descarga un CSV técnico con los mismos datos que se mandan al endpoint
+ * POST /api/v1/monitoring/phyto/checkpoints/create/
+ */
 internal fun descargarCsvReporteUi(
     context: Context,
     header: LocalPhytomonitoringHeaderEntity,
-    nombreCia: String,
     productor: String,
     rancho: String,
     parcela: String,
-    cultivo: String,
-    filas: List<FilaReporteCapturaUi>
+    checkpoints: List<LocalPhytomonitoringCheckpointEntity>,
+    puntos: List<LocalPhytomonitoringTargetPointEntity>,
+    catalogo: List<LocalPhytosanitaryCatalogEntity>
 ): ArchivoCsvReporteUi {
     val nombreArchivo = crearNombreArchivoCsvReporteUi(
         productor = productor,
@@ -42,14 +47,12 @@ internal fun descargarCsvReporteUi(
         fecha = System.currentTimeMillis()
     )
 
-    val contenido = crearContenidoCsvReporteUi(
+    val contenido = crearContenidoCsvCheckpointApiUi(
+        context = context,
         header = header,
-        nombreCia = nombreCia,
-        productor = productor,
-        rancho = rancho,
-        parcela = parcela,
-        cultivo = cultivo,
-        filas = filas
+        checkpoints = checkpoints,
+        puntos = puntos,
+        catalogo = catalogo
     )
 
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -81,21 +84,27 @@ private fun crearNombreArchivoCsvReporteUi(
     parcela: String,
     fecha: Long
 ): String {
-    val fechaTexto = SimpleDateFormat("dd_MM_yyyy", Locale("es", "MX"))
-        .format(Date(fecha))
+    val fechaTexto = SimpleDateFormat(
+        "dd_MM_yyyy",
+        Locale("es", "MX")
+    ).format(Date(fecha))
 
     val nombreBase = listOf(productor, rancho, parcela, fechaTexto)
         .joinToString("_") { limpiarParteNombreArchivoCsvUi(it) }
         .replace(Regex("_+"), "_")
         .trim('_')
-        .ifBlank { "REPORTE_MONITOREO_$fechaTexto" }
+        .ifBlank { "CHECKPOINTS_$fechaTexto" }
 
-    return "$nombreBase.csv"
+    return "${nombreBase}_CHECKPOINTS.csv"
 }
 
-private fun limpiarParteNombreArchivoCsvUi(valor: String): String {
-    val sinAcentos = Normalizer.normalize(valor.trim(), Normalizer.Form.NFD)
-        .replace(Regex("\\p{Mn}+"), "")
+private fun limpiarParteNombreArchivoCsvUi(
+    valor: String
+): String {
+    val sinAcentos = Normalizer.normalize(
+        valor.trim(),
+        Normalizer.Form.NFD
+    ).replace(Regex("\\p{Mn}+"), "")
 
     return sinAcentos
         .uppercase(Locale("es", "MX"))
@@ -104,59 +113,217 @@ private fun limpiarParteNombreArchivoCsvUi(valor: String): String {
         .ifBlank { "SIN_DATO" }
 }
 
-private fun crearContenidoCsvReporteUi(
+/**
+ * Refleja el contenido enviado al endpoint crearCheckpoint:
+ *
+ * header
+ * target
+ * phyto_issue
+ * stage
+ * presence_status
+ * qty
+ * geom.coordinates = [lon, lat]
+ * notes
+ * photo_ref
+ * captured_at
+ */
+private fun crearContenidoCsvCheckpointApiUi(
+    context: Context,
     header: LocalPhytomonitoringHeaderEntity,
-    nombreCia: String,
-    productor: String,
-    rancho: String,
-    parcela: String,
-    cultivo: String,
-    filas: List<FilaReporteCapturaUi>
+    checkpoints: List<LocalPhytomonitoringCheckpointEntity>,
+    puntos: List<LocalPhytomonitoringTargetPointEntity>,
+    catalogo: List<LocalPhytosanitaryCatalogEntity>
 ): String {
+    val headerExtId = header.extId
+        ?.trim()
+        .orEmpty()
+
+    val puntosPorId = puntos.associateBy { it.idTargetPoint }
+    val catalogoPorId = catalogo.associateBy { it.idPhytosanitary }
+
     return buildString {
+        // UTF-8 para que Excel muestre acentos correctamente.
         append('\uFEFF')
-        appendLine("sep=,")
-        appendLine("Monitoreo de plagas y enfermedades en parcelas")
-        appendLine("field,value")
 
-        appendLine(listOf("idHeader", header.idHeader.toString()).joinToString(",") { escaparCsvUi(it) })
-        appendLine(listOf("name", nombreCia).joinToString(",") { escaparCsvUi(it) })
-        appendLine(listOf("commercial_name", productor).joinToString(",") { escaparCsvUi(it) })
-        appendLine(listOf("ranch_name", rancho).joinToString(",") { escaparCsvUi(it) })
-        appendLine(listOf("plot_name", parcela).joinToString(",") { escaparCsvUi(it) })
-        appendLine(listOf("crop_name", cultivo).joinToString(",") { escaparCsvUi(it) })
-        appendLine(listOf("status", header.status).joinToString(",") { escaparCsvUi(it) })
-        appendLine(listOf("est_start_date", formatearFechaReporteUi(header.estStartDate)).joinToString(",") { escaparCsvUi(it) })
-        appendLine(listOf("start_at", formatearFechaOpcionalReporteUi(header.startAt)).joinToString(",") { escaparCsvUi(it) })
-        appendLine(listOf("finished_at", formatearFechaOpcionalReporteUi(header.finishedAt)).joinToString(",") { escaparCsvUi(it) })
+        appendLine(
+            "header,target,phyto_issue_id,stage,presence_status," +
+                    "qty,geom_lon,geom_lat,notes,photo_ref,captured_at"
+        )
 
-        appendLine()
-        appendLine("Monitoreos")
-        appendLine("point_number,lat,lon,name,type,stage,qty,point_severity,captured_at,notes")
-
-        filas.forEach { fila ->
-            appendLine(
-                listOf(
-                    fila.numeroPunto.toString(),
-                    fila.lat?.toString() ?: "",
-                    fila.lon?.toString() ?: "",
-                    fila.plagaEnfermedad,
-                    fila.tipo,
-                    fila.fase,
-                    fila.cantidad.toString(),
-                    fila.severidad,
-                    fila.fechaCaptura,
-                    fila.notas
-                ).joinToString(",") { escaparCsvUi(it) }
+        checkpoints
+            .sortedWith(
+                compareBy<LocalPhytomonitoringCheckpointEntity> {
+                    it.capturedAt ?: 0L
+                }.thenBy {
+                    it.idCheckpoint
+                }
             )
-        }
+            .forEach { checkpoint ->
+                val punto = puntosPorId[checkpoint.idTargetPoint]
+                    ?: return@forEach
+
+                val targetExtId = punto.extId
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: return@forEach
+
+                val fito = checkpoint.idPhytosanitary?.let {
+                    catalogoPorId[it]
+                }
+
+                val esSinPlaga = esCheckpointSinPlagaCsv(
+                    fito = fito,
+                    checkpoint = checkpoint
+                )
+
+                val esEnfermedad = esCheckpointEnfermedadCsv(fito)
+
+                val enfermedadNoPresente = esEnfermedad &&
+                        checkpoint.presenceStatus == 0
+
+                val phytoIssue = if (esSinPlaga) {
+                    ""
+                } else {
+                    fito?.extId
+                        ?.trim()
+                        ?.toIntOrNull()
+                        ?.toString()
+                        ?: return@forEach
+                }
+
+                val stage = if (esSinPlaga || enfermedadNoPresente) {
+                    ""
+                } else {
+                    checkpoint.stage
+                        ?.trim()
+                        ?.takeIf { it.isNotBlank() }
+                        ?: return@forEach
+                }
+
+                val qty = if (esSinPlaga || enfermedadNoPresente) {
+                    0
+                } else {
+                    checkpoint.qty ?: 0
+                }
+
+                val photoRef = obtenerPhotoRefCsv(
+                    context = context,
+                    checkpoint = checkpoint
+                ).orEmpty()
+
+                val capturedAt = checkpoint.capturedAt
+                    ?: System.currentTimeMillis()
+
+                appendLine(
+                    listOf(
+                        headerExtId,
+                        targetExtId,
+                        phytoIssue,
+                        stage,
+                        presenceStatusApiCsv(checkpoint),
+                        qty.toString(),
+                        punto.lon.toString(),
+                        punto.lat.toString(),
+                        checkpoint.notes?.takeIf { it.isNotBlank() }.orEmpty(),
+                        photoRef,
+                        formatearIsoApiCsv(capturedAt)
+                    ).joinToString(",") { valor ->
+                        escaparCsvUi(valor)
+                    }
+                )
+            }
     }
 }
 
-/**
- * CAMBIO CSV:
- * Android 10+ guarda en Descargas/Monitoreos y devuelve el Uri de MediaStore.
- */
+private fun esCheckpointSinPlagaCsv(
+    fito: LocalPhytosanitaryCatalogEntity?,
+    checkpoint: LocalPhytomonitoringCheckpointEntity
+): Boolean {
+    val texto = listOf(
+        fito?.name.orEmpty(),
+        fito?.type.orEmpty(),
+        fito?.description.orEmpty()
+    ).joinToString(" ")
+        .trim()
+        .uppercase(Locale.getDefault())
+        .replace("Á", "A")
+        .replace("É", "E")
+        .replace("Í", "I")
+        .replace("Ó", "O")
+        .replace("Ú", "U")
+
+    val esCatalogoSinPlaga = texto.contains("SIN_PLAGA") ||
+            texto.contains("SIN PLAGA") ||
+            texto.contains("NO PLAGA") ||
+            texto.contains("AUSENTE")
+
+    val stageLimpio = checkpoint.stage
+        ?.trim()
+        ?.lowercase(Locale.getDefault())
+        .orEmpty()
+
+    val sinEtapa = stageLimpio.isBlank() ||
+            stageLimpio == "-" ||
+            stageLimpio == "sin etapa"
+
+    return esCatalogoSinPlaga &&
+            (checkpoint.qty ?: 0) <= 0 &&
+            sinEtapa
+}
+
+private fun esCheckpointEnfermedadCsv(
+    fito: LocalPhytosanitaryCatalogEntity?
+): Boolean {
+    return fito?.type
+        ?.trim()
+        ?.lowercase(Locale.getDefault())
+        ?.contains("enfermedad") == true
+}
+
+private fun presenceStatusApiCsv(
+    checkpoint: LocalPhytomonitoringCheckpointEntity
+): String {
+    val qty = checkpoint.qty ?: 0
+
+    return when {
+        checkpoint.presenceStatus == 0 -> "low"
+        qty >= 10 -> "critical"
+        qty > 0 -> "warning"
+        checkpoint.presenceStatus == 1 -> "warning"
+        else -> "low"
+    }
+}
+
+private fun obtenerPhotoRefCsv(
+    context: Context,
+    checkpoint: LocalPhytomonitoringCheckpointEntity
+): String? {
+    checkpoint.photoRef
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?.let { return it }
+
+    val capturedAt = checkpoint.capturedAt ?: return null
+
+    return PhytoMediaStorage.buscarFotoPendiente(
+        context = context,
+        idHeader = checkpoint.idHeader,
+        idTargetPoint = checkpoint.idTargetPoint,
+        capturedAt = capturedAt
+    )?.name
+}
+
+private fun formatearIsoApiCsv(
+    timeMillis: Long
+): String {
+    return SimpleDateFormat(
+        "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+        Locale.US
+    ).apply {
+        timeZone = TimeZone.getTimeZone("UTC")
+    }.format(Date(timeMillis))
+}
+
 private fun guardarCsvEnDescargasMediaStore(
     context: Context,
     nombreArchivo: String,
@@ -169,7 +336,7 @@ private fun guardarCsvEnDescargasMediaStore(
         put(MediaStore.MediaColumns.MIME_TYPE, "text/csv")
         put(
             MediaStore.MediaColumns.RELATIVE_PATH,
-            Environment.DIRECTORY_DOWNLOADS + "/Monitoreos"
+            "${Environment.DIRECTORY_DOWNLOADS}/Monitoreos"
         )
         put(MediaStore.MediaColumns.IS_PENDING, 1)
     }
@@ -179,17 +346,22 @@ private fun guardarCsvEnDescargasMediaStore(
     )
 
     val uri = resolver.insert(collection, values)
-        ?: throw IllegalStateException("No se pudo crear el archivo CSV en Descargas")
+        ?: throw IllegalStateException(
+            "No se pudo crear el archivo CSV en Descargas"
+        )
 
     try {
         resolver.openOutputStream(uri)?.use { output ->
             OutputStreamWriter(output, Charsets.UTF_8).use { writer ->
                 writer.write(contenido)
             }
-        } ?: throw IllegalStateException("No se pudo abrir el archivo CSV")
+        } ?: throw IllegalStateException(
+            "No se pudo abrir el archivo CSV"
+        )
 
         values.clear()
         values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+
         resolver.update(uri, values, null, null)
     } catch (e: Exception) {
         resolver.delete(uri, null, null)
@@ -203,10 +375,6 @@ private fun guardarCsvEnDescargasMediaStore(
     )
 }
 
-/**
- * Compatibilidad para Android 9 o anterior.
- * Usa el FileProvider que ya existe en tu AndroidManifest.xml.
- */
 private fun guardarCsvEnDescargasLegacy(
     context: Context,
     nombreArchivo: String,
@@ -220,7 +388,9 @@ private fun guardarCsvEnDescargasLegacy(
             "Monitoreos"
         )
 
-        if (!carpeta.exists()) carpeta.mkdirs()
+        if (!carpeta.exists()) {
+            carpeta.mkdirs()
+        }
 
         val archivo = File(carpeta, nombreArchivo)
         archivo.writeText(contenido, Charsets.UTF_8)
@@ -233,7 +403,9 @@ private fun guardarCsvEnDescargasLegacy(
             "Monitoreos"
         )
 
-        if (!carpetaApp.exists()) carpetaApp.mkdirs()
+        if (!carpetaApp.exists()) {
+            carpetaApp.mkdirs()
+        }
 
         val archivo = File(carpetaApp, nombreArchivo)
         archivo.writeText(contenido, Charsets.UTF_8)
@@ -257,7 +429,9 @@ private fun guardarCsvEnDescargasLegacy(
     )
 }
 
-private fun escaparCsvUi(valor: String): String {
+private fun escaparCsvUi(
+    valor: String
+): String {
     val limpio = valor.replace("\"", "\"\"")
     return "\"$limpio\""
 }

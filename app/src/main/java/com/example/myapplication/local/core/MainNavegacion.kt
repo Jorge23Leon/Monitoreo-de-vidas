@@ -210,10 +210,18 @@ fun MainNavegacion(
 
         PantallaActual.LOGIN -> {
             LoginScreen(
-                onLoginClick = { usernameInput, passwordInput ->
+                usernameRecordado = mainViewModel.usernameRecordadoLogin,
+                passwordRecordada = mainViewModel.passwordRecordadaLogin,
+                recordarCredencialesInicial = mainViewModel.recordarCredencialesLogin,
+                onLoginClick = {
+                        usernameInput,
+                        passwordInput,
+                        recordarCredenciales
+                    ->
                     mainViewModel.onLoginClick(
                         usernameInput = usernameInput,
-                        passwordInput = passwordInput
+                        passwordInput = passwordInput,
+                        recordarCredenciales = recordarCredenciales
                     )
                 },
                 onRegisterClick = {
