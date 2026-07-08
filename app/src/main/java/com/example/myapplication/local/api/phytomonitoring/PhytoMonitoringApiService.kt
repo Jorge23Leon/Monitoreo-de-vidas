@@ -24,6 +24,11 @@ interface PhytoMonitoringApiService {
         @Query("page") page: Int? = null
     ): Response<PhytoPaginatedResponse<PhytoHeaderApiItem>>
 
+    @POST("api/v1/monitoring/phyto/headers/create/")
+    suspend fun crearHeader(
+        @Body body: PhytoHeaderCreateRequest
+    ): Response<PhytoHeaderApiItem>
+
     @GET("api/v1/monitoring/phyto/headers/{id}/")
     suspend fun obtenerHeaderDetalle(
         @Path("id") id: String
@@ -75,8 +80,8 @@ interface PhytoMonitoringApiService {
     ): Response<PhytoCheckpointImportResponse>
 
     /*
-     * Déjalo por ahora, pero ya no se usará para las fotos nuevas.
-     * La sincronización nueva utiliza subirFotoCheckpoint().
+     * Se conserva por compatibilidad con capturas antiguas.
+     * Las fotos nuevas usan subirFotoCheckpoint().
      */
     @Multipart
     @POST("api/v1/monitoring/phyto/checkpoints/upload-photos/")

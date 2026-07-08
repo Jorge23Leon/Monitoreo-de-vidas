@@ -1,9 +1,11 @@
 package com.example.myapplication.local.api.fieldops
 
 import retrofit2.Response
+import retrofit2.http.Body
 import retrofit2.http.GET
-import retrofit2.http.Query
+import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 interface FieldOpsApiService {
 
@@ -15,8 +17,20 @@ interface FieldOpsApiService {
         @Query("status") status: String? = null,
         @Query("page") page: Int? = null
     ): Response<FieldOpsPaginatedResponse<FieldTaskApiItem>>
-    @GET("api/v1/field_ops/master-programs/{id}/tree/")
 
+    /**
+     * Crea un Programa remoto bajo un MasterProgram.
+     *
+     * Importante:
+     * - El backend espera crop_id, no crop.
+     * - master_program y plot son UUID remotos.
+     */
+    @POST("api/v1/field_ops/tasks/create/")
+    suspend fun crearProgramaCampo(
+        @Body body: FieldTaskCreateRequest
+    ): Response<FieldTaskApiItem>
+
+    @GET("api/v1/field_ops/master-programs/{id}/tree/")
     suspend fun obtenerArbolProgramaMaestro(
         @Path("id") id: String
     ): Response<MasterProgramTreeApiItem>

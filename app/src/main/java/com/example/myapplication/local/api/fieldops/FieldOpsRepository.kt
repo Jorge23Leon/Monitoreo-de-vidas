@@ -8,7 +8,7 @@ class FieldOpsRepository(
 ) {
     private val api: FieldOpsApiService =
         RetrofitClient.crearServicioAutenticado(
-            context = context,
+            context = context.applicationContext,
             serviceClass = FieldOpsApiService::class.java
         )
 
@@ -39,21 +39,56 @@ class FieldOpsRepository(
                 }
 
                 val body = response.body()
-                    ?: return ResultadoFieldOpsApi.Error("El servidor respondió vacío en programas campo")
+                    ?: return ResultadoFieldOpsApi.Error(
+                        "El servidor respondió vacío en programas campo"
+                    )
 
                 todos.addAll(body.results)
 
-                if (body.next.isNullOrBlank()) {
-                    break
-                }
-
+                if (body.next.isNullOrBlank()) break
                 page++
             }
 
             ResultadoFieldOpsApi.Exito(todos)
         } catch (e: Exception) {
             ResultadoFieldOpsApi.Error(
-                "No se pudieron cargar programas campo: ${e.message}"
+                "No se pudieron cargar programas campo: ${e.message ?: e.javaClass.simpleName}"
+            )
+        }
+    }
+
+    /**
+     * Crea el Programa remoto. La pantalla de administración debe usar este método
+     * antes de crear el Header fitosanitario.
+     */
+    suspend fun crearProgramaCampo(
+        body: FieldTaskCreateRequest
+    ): ResultadoCrearFieldTaskApi {
+        return try {
+            val response = api.crearProgramaCampo(body)
+
+            if (!response.isSuccessful) {
+                val error = response.errorBody()?.string()
+                return ResultadoCrearFieldTaskApi.Error(
+                    "Error creando programa remoto: ${response.code()} ${error ?: response.message()}"
+                )
+            }
+
+            val programa = response.body()
+                ?: return ResultadoCrearFieldTaskApi.Error(
+                    "El servidor creó el programa, pero respondió sin información."
+                )
+
+            if (programa.id.isBlank()) {
+                return ResultadoCrearFieldTaskApi.Error(
+                    "El servidor respondió un programa sin UUID."
+                )
+            }
+
+            ResultadoCrearFieldTaskApi.Exito(programa)
+        } catch (e: Exception) {
+            ResultadoCrearFieldTaskApi.Error(
+                "No se pudo crear el programa remoto: ${e.message ?: e.javaClass.simpleName}"
             )
         }
     }
@@ -83,21 +118,20 @@ class FieldOpsRepository(
                 }
 
                 val body = response.body()
-                    ?: return ResultadoMasterProgramsApi.Error("El servidor respondió vacío en programas maestros")
+                    ?: return ResultadoMasterProgramsApi.Error(
+                        "El servidor respondió vacío en programas maestros"
+                    )
 
                 todos.addAll(body.results)
 
-                if (body.next.isNullOrBlank()) {
-                    break
-                }
-
+                if (body.next.isNullOrBlank()) break
                 page++
             }
 
             ResultadoMasterProgramsApi.Exito(todos)
         } catch (e: Exception) {
             ResultadoMasterProgramsApi.Error(
-                "No se pudieron cargar programas maestros: ${e.message}"
+                "No se pudieron cargar programas maestros: ${e.message ?: e.javaClass.simpleName}"
             )
         }
     }
@@ -116,12 +150,14 @@ class FieldOpsRepository(
             }
 
             val body = response.body()
-                ?: return ResultadoMasterProgramTreeApi.Error("El servidor respondió vacío en árbol programa maestro")
+                ?: return ResultadoMasterProgramTreeApi.Error(
+                    "El servidor respondió vacío en árbol programa maestro"
+                )
 
             ResultadoMasterProgramTreeApi.Exito(body)
         } catch (e: Exception) {
             ResultadoMasterProgramTreeApi.Error(
-                "No se pudo cargar árbol programa maestro: ${e.message}"
+                "No se pudo cargar árbol programa maestro: ${e.message ?: e.javaClass.simpleName}"
             )
         }
     }
@@ -135,6 +171,16 @@ sealed class ResultadoFieldOpsApi {
     data class Error(
         val mensaje: String
     ) : ResultadoFieldOpsApi()
+}
+
+sealed class ResultadoCrearFieldTaskApi {
+    data class Exito(
+        val programa: FieldTaskApiItem
+    ) : ResultadoCrearFieldTaskApi()
+
+    data class Error(
+        val mensaje: String
+    ) : ResultadoCrearFieldTaskApi()
 }
 
 sealed class ResultadoMasterProgramsApi {

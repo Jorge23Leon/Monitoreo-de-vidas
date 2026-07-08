@@ -41,6 +41,45 @@ data class PhytoHeaderApiItem(
     val createdAt: String?
 )
 
+
+/**
+ * Cuerpo para POST /api/v1/monitoring/phyto/headers/create/.
+ *
+ * plot_id y field_task_id son UUID remotos. Se mandan los dos explícitamente
+ * para que la sesión quede relacionada al Programa remoto y a su parcela.
+ */
+/**
+ * Cuerpo real para POST /api/v1/monitoring/phyto/headers/create/.
+ *
+ * IMPORTANTE:
+ * El backend actual NO recibe "monitoring_date".
+ * Su serializer/modelo exige "estimated_start_date" y acepta
+ * "estimated_end_date" de forma opcional.
+ */
+data class PhytoHeaderCreateRequest(
+    @SerializedName("plot_id")
+    val plotId: String? = null,
+
+    @SerializedName("field_task_id")
+    val fieldTaskId: String? = null,
+
+    @SerializedName("estimated_start_date")
+    val estimatedStartDate: String,
+
+    @SerializedName("estimated_end_date")
+    val estimatedEndDate: String? = null,
+
+    @SerializedName("strict_mode")
+    val strictMode: Boolean = true,
+
+    /*
+     * En Django el campo es IntegerField, por eso se manda un entero JSON
+     * como 15 y no 15.0.
+     */
+    @SerializedName("radius_tolerance")
+    val radiusTolerance: Int = 15
+)
+
 data class PhytoTargetPointApiItem(
     val id: String,
     val header: String?,

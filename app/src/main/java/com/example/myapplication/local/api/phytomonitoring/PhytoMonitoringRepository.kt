@@ -54,7 +54,42 @@ class PhytoMonitoringRepository(
             ResultadoPhytoHeadersApi.Exito(todos)
         } catch (e: Exception) {
             ResultadoPhytoHeadersApi.Error(
-                "No se pudieron cargar headers fitosanitarios: ${e.message}"
+                "No se pudieron cargar headers fitosanitarios: ${e.message ?: e.javaClass.simpleName}"
+            )
+        }
+    }
+
+    /**
+     * Crea la sesión fitosanitaria remota, vinculada a un Programa ya creado.
+     */
+    suspend fun crearHeader(
+        body: PhytoHeaderCreateRequest
+    ): ResultadoCrearPhytoHeaderApi {
+        return try {
+            val response = api.crearHeader(body)
+
+            if (!response.isSuccessful) {
+                val error = response.errorBody()?.string()
+                return ResultadoCrearPhytoHeaderApi.Error(
+                    "Error creando sesión fitosanitaria: ${response.code()} ${error ?: response.message()}"
+                )
+            }
+
+            val header = response.body()
+                ?: return ResultadoCrearPhytoHeaderApi.Error(
+                    "El servidor creó la sesión, pero respondió sin información."
+                )
+
+            if (header.id.isBlank()) {
+                return ResultadoCrearPhytoHeaderApi.Error(
+                    "El servidor respondió una sesión sin UUID."
+                )
+            }
+
+            ResultadoCrearPhytoHeaderApi.Exito(header)
+        } catch (e: Exception) {
+            ResultadoCrearPhytoHeaderApi.Error(
+                "No se pudo crear la sesión fitosanitaria: ${e.message ?: e.javaClass.simpleName}"
             )
         }
     }
@@ -88,7 +123,7 @@ class PhytoMonitoringRepository(
             ResultadoPhytoTargetPointsApi.Exito(todos)
         } catch (e: Exception) {
             ResultadoPhytoTargetPointsApi.Error(
-                "No se pudieron cargar puntos objetivo: ${e.message}"
+                "No se pudieron cargar puntos objetivo: ${e.message ?: e.javaClass.simpleName}"
             )
         }
     }
@@ -130,10 +165,20 @@ class PhytoMonitoringRepository(
             ResultadoActualizarHeaderApi.Exito(body)
         } catch (e: Exception) {
             ResultadoActualizarHeaderApi.Error(
-                "No se pudo actualizar header en servidor: ${e.message}"
+                "No se pudo actualizar header en servidor: ${e.message ?: e.javaClass.simpleName}"
             )
         }
     }
+}
+
+sealed class ResultadoCrearPhytoHeaderApi {
+    data class Exito(
+        val header: PhytoHeaderApiItem
+    ) : ResultadoCrearPhytoHeaderApi()
+
+    data class Error(
+        val mensaje: String
+    ) : ResultadoCrearPhytoHeaderApi()
 }
 
 sealed class ResultadoActualizarHeaderApi {

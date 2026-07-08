@@ -10,6 +10,32 @@ data class FieldOpsPaginatedResponse<T>(
     val results: List<T> = emptyList()
 )
 
+/**
+ * Cuerpo para POST /api/v1/field_ops/tasks/create/.
+ *
+ * crop_id es el ID remoto del catálogo de cultivos; el idCrop de Room es local
+ * y por eso NO se debe mandar directamente al backend.
+ */
+data class FieldTaskCreateRequest(
+    @SerializedName("master_program")
+    val masterProgram: String,
+
+    val plot: String,
+
+    @SerializedName("crop_id")
+    val cropId: Int,
+
+    val title: String? = null,
+    val cycle: String? = null,
+    val status: String = "pending",
+
+    @SerializedName("est_start_date")
+    val estStartDate: String? = null,
+
+    @SerializedName("est_finish_date")
+    val estFinishDate: String? = null
+)
+
 data class FieldTaskApiItem(
     val id: String,
 
@@ -71,6 +97,7 @@ data class FieldCropApiItem(
     @SerializedName("attachments_url")
     val attachmentsUrl: JsonElement? = null
 )
+
 data class MasterProgramApiItem(
     val id: String,
     val title: String? = null,
