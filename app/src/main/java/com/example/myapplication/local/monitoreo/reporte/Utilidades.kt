@@ -118,7 +118,6 @@ internal data class FilaReporteCapturaUi(
     val numeroPunto: Int,
     val lat: Double?,
     val lon: Double?,
-    val coordenadas: String,
     val plagaEnfermedad: String,
     val tipo: String,
     val fase: String,
@@ -137,10 +136,6 @@ internal data class FilaReporteCapturaUi(
     val capturedAtMillis: Long? = null
 )
 
-internal fun formatearCoordenadasReporteUi(lat: Double?, lon: Double?): String {
-    if (lat == null || lon == null) return "-"
-    return String.format(Locale.US, "%.6f, %.6f", lat, lon)
-}
 internal fun crearNumeroPuntoMapPorCoordenada(
     puntos: List<LocalPhytomonitoringTargetPointEntity>
 ): Map<Long, Int> {

@@ -4,6 +4,7 @@ import android.content.Context
 import com.example.myapplication.local.api.fieldops.FieldOpsRepository
 import com.example.myapplication.local.api.fieldops.FieldTaskApiItem
 import com.example.myapplication.local.api.fieldops.FieldTaskCreateRequest
+import com.example.myapplication.local.api.fieldops.FieldTaskPatchRequest
 import com.example.myapplication.local.api.fieldops.MasterProgramApiItem
 import com.example.myapplication.local.api.fieldops.ResultadoCrearFieldTaskApi
 import com.example.myapplication.local.api.fieldops.ResultadoFieldOpsApi
@@ -91,6 +92,16 @@ class AdminMonitoreoRepository(
         val fechaFinIso = formatearIsoUtc(fechaFinMillis)
         val fechaInicioSolicitada = formatearSoloFecha(fechaInicioMillis)
         val fechaFinSolicitada = formatearSoloFecha(fechaFinMillis)
+        val tituloProgramaVisible = crearTituloProgramaVisible(
+            ciclo = ciclo,
+            parcela = parcela,
+            cultivo = cultivo
+        )
+        val codigoProgramaVisible = crearCodigoProgramaVisible(
+            ciclo = ciclo,
+            parcela = parcela,
+            fechaInicio = fechaInicioSolicitada
+        )
 
         /*
          * Un intento anterior puede haber creado el Programa remoto y fallar después
@@ -101,7 +112,7 @@ class AdminMonitoreoRepository(
          * se reutiliza ese Programa y se continúa con la creación/recuperación del
          * Header. Nunca se intenta duplicarlo.
          */
-        val programaRemoto = when (
+        val programaRemotoBase = when (
             val buscado = fieldOpsRepository.obtenerTodosLosProgramasCampo(
                 masterProgram = masterProgramExtId,
                 plot = parcelaExtId
@@ -162,7 +173,7 @@ class AdminMonitoreoRepository(
                                 masterProgram = masterProgramExtId,
                                 plot = parcelaExtId,
                                 cropId = cultivoExtId.toInt(),
-                                title = "Monitoreo $ciclo",
+                                title = tituloProgramaVisible,
                                 cycle = ciclo,
                                 status = "pending",
                                 estStartDate = fechaInicioIso,
@@ -176,6 +187,20 @@ class AdminMonitoreoRepository(
                         }
                     }
             }
+        }
+
+        val programaRemoto = when (
+            val reparado = asegurarProgramaRemotoConDatosVisibles(
+                programa = programaRemotoBase,
+                tituloPrograma = tituloProgramaVisible,
+                codigoPrograma = codigoProgramaVisible,
+                ciclo = ciclo,
+                fechaInicioIso = fechaInicioIso,
+                fechaFinIso = fechaFinIso
+            )
+        ) {
+            is ResultadoProgramaVisible.Exito -> reparado.programa
+            is ResultadoProgramaVisible.Error -> return ResultadoCrearMonitoreoAdmin.Error(reparado.mensaje)
         }
 
         val programaExtId = programaRemoto.id.trim()
@@ -275,6 +300,128 @@ class AdminMonitoreoRepository(
             programExtId = programaExtId,
             headerExtId = headerExtId
         )
+    }
+
+    /**
+     * Si el backend creó o reutilizó un Programa sin título visible, se corrige
+     * inmediatamente con PATCH. Así no vuelve a aparecer en Django como Title "-".
+     */
+    private suspend fun asegurarProgramaRemotoConDatosVisibles(
+        programa: FieldTaskApiItem,
+        tituloPrograma: String,
+        codigoPrograma: String,
+        ciclo: String,
+        fechaInicioIso: String,
+        fechaFinIso: String
+    ): ResultadoProgramaVisible {
+        val tituloActual = programa.title?.trim().orEmpty()
+        val cicloActual = programa.cycle?.trim().orEmpty()
+        val inicioActual = programa.estStartDate?.trim().orEmpty()
+        val finActual = programa.estFinishDate?.trim().orEmpty()
+
+        val necesitaTitulo = tituloActual.isBlank() || tituloActual == "-"
+        val necesitaCiclo = cicloActual.isBlank()
+        val necesitaFechas = inicioActual.isBlank() || finActual.isBlank()
+
+        if (!necesitaTitulo && !necesitaCiclo && !necesitaFechas) {
+            return ResultadoProgramaVisible.Exito(programa)
+        }
+
+        val patchPrincipal = FieldTaskPatchRequest(
+            title = if (necesitaTitulo) tituloPrograma else null,
+            cycle = if (necesitaCiclo) ciclo else null,
+            status = programa.status?.takeIf { it.isNotBlank() } ?: "pending",
+            estStartDate = if (necesitaFechas) fechaInicioIso else null,
+            estFinishDate = if (necesitaFechas) fechaFinIso else null
+        )
+
+        val actualizado = when (
+            val resultado = fieldOpsRepository.actualizarProgramaCampo(
+                id = programa.id.trim(),
+                body = patchPrincipal
+            )
+        ) {
+            is ResultadoCrearFieldTaskApi.Exito -> resultado.programa
+            is ResultadoCrearFieldTaskApi.Error -> return ResultadoProgramaVisible.Error(
+                "El programa remoto existe, pero estaba sin título visible y no se pudo corregir. ${resultado.mensaje}"
+            )
+        }
+
+        /*
+         * Code/voucher_code es visual en el admin. Se intenta reparar solo después
+         * de guardar el título. Si el backend no permite editarlo, no se bloquea
+         * el monitoreo porque lo crítico es que Title/Cycle queden correctos.
+         */
+        if (actualizado.voucherCode.isNullOrBlank() || actualizado.voucherCode.trim() == "-") {
+            runCatching {
+                fieldOpsRepository.actualizarProgramaCampo(
+                    id = actualizado.id.trim(),
+                    body = FieldTaskPatchRequest(voucherCode = codigoPrograma)
+                )
+            }
+        }
+
+        val tituloFinal = actualizado.title?.trim().orEmpty()
+        if (tituloFinal.isBlank() || tituloFinal == "-") {
+            return ResultadoProgramaVisible.Error(
+                "El backend respondió creado, pero no guardó el título del programa. Revisa el serializer de FieldTask para aceptar el campo title."
+            )
+        }
+
+        return ResultadoProgramaVisible.Exito(actualizado)
+    }
+
+    private fun crearTituloProgramaVisible(
+        ciclo: String,
+        parcela: LocalPlotEntity,
+        cultivo: LocalCropCatalogEntity
+    ): String {
+        val parcelaTexto = parcela.code
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: parcela.name.trim()
+
+        return listOf(
+            "Monitoreo",
+            ciclo.trim(),
+            parcelaTexto,
+            cultivo.name.trim()
+        )
+            .filter { it.isNotBlank() }
+            .joinToString(" - ")
+            .take(120)
+    }
+
+    private fun crearCodigoProgramaVisible(
+        ciclo: String,
+        parcela: LocalPlotEntity,
+        fechaInicio: String
+    ): String {
+        val parcelaTexto = parcela.code
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: parcela.name.trim()
+
+        val base = listOf(
+            "MON",
+            limpiarCodigoPrograma(parcelaTexto),
+            limpiarCodigoPrograma(ciclo),
+            fechaInicio.replace("-", "")
+        )
+            .filter { it.isNotBlank() }
+            .joinToString("-")
+            .replace(Regex("-+"), "-")
+            .trim('-')
+
+        return base.take(48).ifBlank { "MON-${System.currentTimeMillis().toString().takeLast(8)}" }
+    }
+
+    private fun limpiarCodigoPrograma(valor: String): String {
+        return valor
+            .trim()
+            .uppercase(Locale.US)
+            .replace(Regex("[^A-Z0-9]+"), "-")
+            .trim('-')
     }
 
     private suspend fun guardarProgramaLocal(
@@ -475,6 +622,11 @@ class AdminMonitoreoRepository(
     private companion object {
         const val RADIO_TOLERANCIA_METROS = 15
     }
+}
+
+private sealed class ResultadoProgramaVisible {
+    data class Exito(val programa: FieldTaskApiItem) : ResultadoProgramaVisible()
+    data class Error(val mensaje: String) : ResultadoProgramaVisible()
 }
 
 sealed class ResultadoCrearMonitoreoAdmin {

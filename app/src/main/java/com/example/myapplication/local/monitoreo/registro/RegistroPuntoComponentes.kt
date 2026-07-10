@@ -418,7 +418,7 @@ internal fun EvidenciaFotograficaCard(
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = "Una foto por punto. Acepta JPG, PNG, WEBP, HEIC/HEIF, BMP y GIF; se guarda como JPG de máximo 340 KB.",
+                text = "Una foto por punto.",
                 fontSize = 12.sp,
                 color = Color(0xFF6E7580)
             )
@@ -484,7 +484,7 @@ internal fun EvidenciaFotograficaCard(
                             color = Color(0xFF1D2430)
                         )
 
-                        Spacer(modifier = Modifier.height(3.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
                         Text(
                             text = "Se convertirá a JPG correctamente orientado (máximo 340 KB) y se asociará a este punto.",

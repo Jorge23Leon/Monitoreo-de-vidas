@@ -39,7 +39,6 @@ internal fun TablaReporteCapturasUi(
                 .padding(vertical = 8.dp)
         ) {
             CeldaHeaderReporteUi("Punto", 70)
-            CeldaHeaderReporteUi("Coordenadas", 190)
             CeldaHeaderReporteUi("Plaga / Enfermedad", 180)
             CeldaHeaderReporteUi("Tipo", 110)
             CeldaHeaderReporteUi("Fase", 120)
@@ -68,7 +67,6 @@ internal fun TablaReporteCapturasUi(
                         .padding(vertical = 7.dp)
                 ) {
                     CeldaTextoReporteUi(fila.numeroPunto.toString(), 70)
-                    CeldaTextoReporteUi(fila.coordenadas, 190)
                     CeldaTextoReporteUi(fila.plagaEnfermedad, 180)
                     CeldaTextoReporteUi(fila.tipo, 110)
                     CeldaTextoReporteUi(fila.fase, 120)

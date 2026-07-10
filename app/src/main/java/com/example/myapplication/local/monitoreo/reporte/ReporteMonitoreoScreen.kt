@@ -4,7 +4,9 @@ import android.widget.Toast
 import java.io.File
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,6 +32,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -65,12 +68,93 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import android.content.Context
+import java.security.MessageDigest
+
 
 private object EstadoSincronizacionReporte {
     const val PENDIENTE = "PENDIENTE"
     const val SINCRONIZANDO = "SINCRONIZANDO"
     const val SINCRONIZADO = "SINCRONIZADO"
     const val ERROR = "ERROR"
+}
+private const val PREFS_SYNC_REPORTES =
+    "estado_sincronizacion_reportes"
+
+private fun claveFirmaReporte(idHeader: Long): String {
+    return "firma_reporte_$idHeader"
+}
+
+private fun claveMensajeReporte(idHeader: Long): String {
+    return "mensaje_reporte_$idHeader"
+}
+
+private fun crearFirmaContenidoReporte(
+    puntos: List<LocalPhytomonitoringTargetPointEntity>,
+    checkpoints: List<LocalPhytomonitoringCheckpointEntity>
+): String {
+    val puntosPorId = puntos.associateBy { it.idTargetPoint }
+
+    val contenido = buildString {
+        puntos
+            .sortedWith(
+                compareBy<LocalPhytomonitoringTargetPointEntity> {
+                    it.lat
+                }.thenBy {
+                    it.lon
+                }.thenBy {
+                    it.idTargetPoint
+                }
+            )
+            .forEach { punto ->
+                append("P|")
+                append(punto.lat)
+                append('|')
+                append(punto.lon)
+                append('|')
+                append(punto.radiusM)
+                append('|')
+                append(punto.status.trim().lowercase())
+                appendLine()
+            }
+
+        checkpoints
+            .map { checkpoint ->
+                val punto = puntosPorId[checkpoint.idTargetPoint]
+
+                val tieneFoto =
+                    !checkpoint.photoRef.isNullOrBlank() ||
+                            !checkpoint.photoUrl.isNullOrBlank() ||
+                            !checkpoint.photoLocalPath.isNullOrBlank()
+
+                listOf(
+                    "C",
+                    punto?.lat?.toString().orEmpty(),
+                    punto?.lon?.toString().orEmpty(),
+                    checkpoint.idPhytosanitary?.toString().orEmpty(),
+                    checkpoint.stage?.trim().orEmpty(),
+                    checkpoint.presenceStatus?.toString().orEmpty(),
+                    checkpoint.qty?.toString().orEmpty(),
+                    checkpoint.notes?.trim().orEmpty(),
+                    checkpoint.capturedAt?.toString().orEmpty(),
+                    tieneFoto.toString()
+                ).joinToString("|")
+            }
+            .sorted()
+            .forEach { fila ->
+                appendLine(fila)
+            }
+    }
+
+    val bytes = MessageDigest
+        .getInstance("SHA-256")
+        .digest(contenido.toByteArray(Charsets.UTF_8))
+
+    return bytes.joinToString("") { byte ->
+        "%02x".format(byte.toInt() and 0xFF)
+    }
 }
 @Suppress("UNUSED_PARAMETER")
 @Composable
@@ -93,6 +177,13 @@ fun ReporteMonitoreoScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+
+    val preferenciasSync = remember(context.applicationContext) {
+        context.applicationContext.getSharedPreferences(
+            PREFS_SYNC_REPORTES,
+            Context.MODE_PRIVATE
+        )
+    }
     // CAMBIO CSV: solicita permiso una vez para poder mostrar notificaciones.
     val permisoNotificacionesLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -112,8 +203,9 @@ fun ReporteMonitoreoScreen(
         mutableStateOf(EstadoSincronizacionReporte.PENDIENTE)
     }
 
-    var ultimoMensajeSync by rememberSaveable(header.idHeader) {
-        mutableStateOf("Aún no se ha sincronizado este reporte.")
+    var ultimoMensajeSync by rememberSaveable(header.idHeader) {mutableStateOf(
+        "Este reporte todavía no se ha enviado. Toca Sincronizar cuando tengas conexión a Internet."
+    )
     }
 
     var descargandoCsv by remember { mutableStateOf(false) }
@@ -130,6 +222,7 @@ fun ReporteMonitoreoScreen(
     var descargandoFotoRemota by remember { mutableStateOf(false) }
     var errorFotoDetalle by remember { mutableStateOf<String?>(null) }
     var comentarioDetalle by remember { mutableStateOf<String?>(null) }
+    var mostrarMapaPantallaCompleta by remember { mutableStateOf(false) }
 
     suspend fun cargarReporteDesdeRoom(): ReporteDataUi {
         return withContext(Dispatchers.IO) {
@@ -179,6 +272,78 @@ fun ReporteMonitoreoScreen(
                 ultimoMensajeSync = mensaje
             }
     }
+    fun mensajeSincronizacionUsuario(
+        mensajeTecnico: String?
+    ): String {
+        val mensaje = mensajeTecnico.orEmpty()
+
+        return when {
+            mensaje.contains("Unable to resolve host", ignoreCase = true) ||
+                    mensaje.contains(
+                        "No address associated with hostname",
+                        ignoreCase = true
+                    ) ||
+                    mensaje.contains("UnknownHostException", ignoreCase = true) ||
+                    mensaje.contains("Network is unreachable", ignoreCase = true) ||
+                    mensaje.contains("Failed to connect", ignoreCase = true) -> {
+                "No se pudo conectar con el servidor. Verifica que tengas conexión a Internet y vuelve a intentarlo."
+            }
+
+            mensaje.contains("timeout", ignoreCase = true) ||
+                    mensaje.contains("timed out", ignoreCase = true) ||
+                    mensaje.contains("SocketTimeoutException", ignoreCase = true) -> {
+                "La conexión está tardando demasiado. Revisa tu Internet y vuelve a intentarlo."
+            }
+
+            mensaje.contains("401", ignoreCase = true) ||
+                    mensaje.contains("403", ignoreCase = true) ||
+                    mensaje.contains("sesión", ignoreCase = true) &&
+                    mensaje.contains("venc", ignoreCase = true) -> {
+                "Tu sesión venció. Cierra sesión, vuelve a ingresar e intenta sincronizar nuevamente."
+            }
+
+            else -> {
+                "No se pudo sincronizar el reporte. Revisa tu conexión a Internet y vuelve a intentarlo."
+            }
+        }
+    }
+    fun mensajeExitoParaUsuario(
+        mensajeTecnico: String?,
+        fotosPendientes: Boolean
+    ): String {
+        if (fotosPendientes) {
+            return "La información se guardó, pero algunas fotos todavía están pendientes. Revisa tu conexión a Internet y toca Reintentar."
+        }
+
+        val mensaje = mensajeTecnico.orEmpty()
+
+        return when {
+            mensaje.contains(
+                "Capturas y targets sincronizados correctamente",
+                ignoreCase = true
+            ) -> {
+                "¡Listo! La información del monitoreo se guardó correctamente."
+            }
+
+            mensaje.contains(
+                "No había capturas nuevas",
+                ignoreCase = true
+            ) -> {
+                "Todo está al día. No había información nueva por enviar."
+            }
+
+            mensaje.contains(
+                "no habia capturas nuevas",
+                ignoreCase = true
+            ) -> {
+                "Todo está al día. No había información nueva por enviar."
+            }
+
+            else -> {
+                "¡Listo! El reporte se sincronizó correctamente."
+            }
+        }
+    }
 
     fun sincronizarReporteManual() {
         val puedeIniciarSincronizacion =
@@ -188,7 +353,8 @@ fun ReporteMonitoreoScreen(
         if (!puedeIniciarSincronizacion || cargando) return
 
         estadoSincronizacion = EstadoSincronizacionReporte.SINCRONIZANDO
-        ultimoMensajeSync = "Sincronizando información..."
+        ultimoMensajeSync =
+            "Estamos guardando la información del monitoreo. Espera un momento..."
         error = null
 
         coroutineScope.launch {
@@ -209,7 +375,7 @@ fun ReporteMonitoreoScreen(
                     null -> {
                         estadoSincronizacion = EstadoSincronizacionReporte.ERROR
                         ultimoMensajeSync =
-                            "La sincronización tardó demasiado. Revisa internet e intenta nuevamente."
+                            "La conexión está tardando más de lo normal. Revisa tu Internet y vuelve a intentarlo."
                     }
 
                     is ResultadoCheckpointSync.Exito -> {
@@ -218,54 +384,120 @@ fun ReporteMonitoreoScreen(
 
                         val hayPendientesDeFoto = resultadoSync.fotosPendientes
 
+                        val mensajeUsuario = mensajeExitoParaUsuario(
+                            mensajeTecnico = resultadoSync.mensaje,
+                            fotosPendientes = hayPendientesDeFoto
+                        )
+
                         estadoSincronizacion = if (hayPendientesDeFoto) {
                             EstadoSincronizacionReporte.ERROR
                         } else {
                             EstadoSincronizacionReporte.SINCRONIZADO
                         }
-                        ultimoMensajeSync = resultadoSync.mensaje
 
+                        ultimoMensajeSync = mensajeUsuario
+
+
+                        if (!hayPendientesDeFoto) {
+                            val firmaSincronizada = crearFirmaContenidoReporte(
+                                puntos = dataActualizada.puntos,
+                                checkpoints = dataActualizada.checkpoints
+                            )
+
+                            preferenciasSync
+                                .edit()
+                                .putString(
+                                    claveFirmaReporte(header.idHeader),
+                                    firmaSincronizada
+                                )
+                                .putString(
+                                    claveMensajeReporte(header.idHeader),
+                                    mensajeUsuario
+                                )
+                                .apply()
+                        } else {
+                            preferenciasSync
+                                .edit()
+                                .remove(claveFirmaReporte(header.idHeader))
+                                .remove(claveMensajeReporte(header.idHeader))
+                                .apply()
+                        }
                         Toast.makeText(
                             context,
-                            resultadoSync.mensaje,
+                            mensajeUsuario,
                             Toast.LENGTH_LONG
                         ).show()
                     }
 
                     is ResultadoCheckpointSync.Error -> {
                         estadoSincronizacion = EstadoSincronizacionReporte.ERROR
-                        ultimoMensajeSync = resultadoSync.mensaje
+
+                        ultimoMensajeSync = mensajeSincronizacionUsuario(
+                            resultadoSync.mensaje
+                        )
                     }
                 }
             } catch (e: Exception) {
                 estadoSincronizacion = EstadoSincronizacionReporte.ERROR
-                ultimoMensajeSync =
-                    "No se pudo sincronizar: ${e.message ?: e.javaClass.simpleName}"
+
+                ultimoMensajeSync = mensajeSincronizacionUsuario(
+                    e.message
+                )
             }
         }
     }
 
-    fun abrirFotoDetalle(fila: FilaReporteCapturaUi) {
-        val rutaLocal = fila.rutaFotoLocal
+    fun rutaArchivoLocalValida(ruta: String?): String? {
+        return ruta
             ?.trim()
-            ?.takeIf { ruta ->
+            ?.takeIf { it.isNotBlank() }
+            ?.takeIf { rutaLimpia ->
                 runCatching {
-                    !ruta.startsWith("http://", ignoreCase = true) &&
-                            !ruta.startsWith("https://", ignoreCase = true) &&
-                            File(ruta).exists() &&
-                            File(ruta).length() > 0L
+                    !rutaLimpia.startsWith("http://", ignoreCase = true) &&
+                            !rutaLimpia.startsWith("https://", ignoreCase = true) &&
+                            File(rutaLimpia).exists() &&
+                            File(rutaLimpia).length() > 0L
                 }.getOrDefault(false)
             }
+    }
+
+    fun abrirFotoDetalle(fila: FilaReporteCapturaUi) {
+        val rutaLocalDirecta = rutaArchivoLocalValida(fila.rutaFotoLocal)
+
+        val rutaLocalPorReferencia = fila.photoRef
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { photoRef ->
+                PhytoMediaStorage.buscarFotoLocalPorNombre(
+                    context = context.applicationContext,
+                    idHeader = fila.idHeader,
+                    fileName = photoRef
+                )?.absolutePath
+            }
+            ?.let { rutaArchivoLocalValida(it) }
+
+        val rutaLocalPorFecha = PhytoMediaStorage.buscarFotoLocal(
+            context = context.applicationContext,
+            idHeader = fila.idHeader,
+            idTargetPoint = fila.idTargetPoint,
+            capturedAt = fila.capturedAtMillis
+        )?.absolutePath
+            ?.let { rutaArchivoLocalValida(it) }
+
+        val rutaLocal = rutaLocalDirecta
+            ?: rutaLocalPorReferencia
+            ?: rutaLocalPorFecha
 
         val urlRemota = fila.photoUrl
             ?.trim()
             ?.takeIf { it.isNotBlank() }
+            ?.takeIf { it.startsWith("http://", true) || it.startsWith("https://", true) || it.startsWith("/") }
 
         if (rutaLocal == null && urlRemota == null) {
             Toast.makeText(
                 context,
-                "Esta captura no tiene evidencia fotográfica disponible.",
-                Toast.LENGTH_SHORT
+                "Esta captura no tiene evidencia fotográfica disponible en el teléfono ni en el servidor.",
+                Toast.LENGTH_LONG
             ).show()
             return
         }
@@ -274,8 +506,23 @@ fun ReporteMonitoreoScreen(
         rutaFotoDetalle = rutaLocal
         mostrarFotoDetalle = true
 
-        // Ya está en el teléfono: nunca intentes abrirla otra vez desde URL.
-        if (rutaLocal != null) return
+        // Si la evidencia existe en el teléfono, se abre directo y nunca se intenta bajar.
+        if (rutaLocal != null) {
+            if (!fila.photoRef.isNullOrBlank() && rutaLocal != fila.rutaFotoLocal) {
+                coroutineScope.launch {
+                    withContext(Dispatchers.IO) {
+                        database.localphytomonitoringcheckpointDao()
+                            .actualizarRutaLocalFotoPorReferencia(
+                                idHeader = fila.idHeader,
+                                photoRef = fila.photoRef.trim(),
+                                photoLocalPath = rutaLocal
+                            )
+                    }
+                    aplicarDataReporte(cargarReporteDesdeRoom())
+                }
+            }
+            return
+        }
 
         if (descargandoFotoRemota) return
 
@@ -309,8 +556,15 @@ fun ReporteMonitoreoScreen(
                 aplicarDataReporte(cargarReporteDesdeRoom())
             } catch (e: Exception) {
                 rutaFotoDetalle = null
-                errorFotoDetalle =
-                    "No se pudo descargar la evidencia: ${e.message ?: "error desconocido"}"
+                val mensaje = e.message.orEmpty()
+                errorFotoDetalle = when {
+                    mensaje.contains("HTTP 404", ignoreCase = true) ->
+                        "La evidencia ya no está disponible en el servidor (HTTP 404). Si la foto fue tomada en este teléfono, vuelve a sincronizar o revisa que no se haya borrado la carpeta local de la app. Si no está en el teléfono, hay que revisar el volumen/media del backend."
+                    mensaje.contains("HTTP 401", ignoreCase = true) || mensaje.contains("HTTP 403", ignoreCase = true) ->
+                        "El servidor no permitió abrir la evidencia. Cierra sesión, vuelve a entrar y reintenta."
+                    else ->
+                        "No se pudo abrir la evidencia: ${e.message ?: "error desconocido"}"
+                }
             } finally {
                 descargandoFotoRemota = false
             }
@@ -338,9 +592,41 @@ fun ReporteMonitoreoScreen(
         try {
             val data = cargarReporteDesdeRoom()
             aplicarDataReporte(data)
+
+            val firmaActual = crearFirmaContenidoReporte(
+                puntos = data.puntos,
+                checkpoints = data.checkpoints
+            )
+
+            val firmaGuardada = preferenciasSync.getString(
+                claveFirmaReporte(header.idHeader),
+                null
+            )
+
+            val reporteSigueSinCambios =
+                firmaGuardada != null &&
+                        firmaGuardada == firmaActual
+
+            if (reporteSigueSinCambios) {
+                estadoSincronizacion =
+                    EstadoSincronizacionReporte.SINCRONIZADO
+
+                ultimoMensajeSync = preferenciasSync.getString(
+                    claveMensajeReporte(header.idHeader),
+                    null
+                ) ?: "Todo está al día. Este reporte ya fue enviado correctamente."
+            } else {
+                estadoSincronizacion =
+                    EstadoSincronizacionReporte.PENDIENTE
+
+                ultimoMensajeSync =
+                    "Este reporte tiene información pendiente de enviar."
+            }
         } catch (e: Exception) {
             e.printStackTrace()
-            error = "Error al cargar reporte: ${e.javaClass.simpleName} - ${e.message}"
+
+            error =
+                "Error al cargar reporte: ${e.javaClass.simpleName} - ${e.message}"
         } finally {
             cargando = false
         }
@@ -435,6 +721,23 @@ fun ReporteMonitoreoScreen(
                         }.getOrDefault(false)
                     }
 
+                val rutaLocalPorReferencia = checkpoint.photoRef
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { photoRef ->
+                        PhytoMediaStorage.buscarFotoLocalPorNombre(
+                            context = context.applicationContext,
+                            idHeader = checkpoint.idHeader,
+                            fileName = photoRef
+                        )?.absolutePath
+                    }
+                    ?.takeIf { ruta ->
+                        runCatching {
+                            val archivo = File(ruta)
+                            archivo.exists() && archivo.length() > 0L
+                        }.getOrDefault(false)
+                    }
+
                 val rutaLocalDetectada = PhytoMediaStorage.buscarFotoLocal(
                     context = context.applicationContext,
                     idHeader = checkpoint.idHeader,
@@ -446,7 +749,6 @@ fun ReporteMonitoreoScreen(
                     numeroPunto = numeroPunto,
                     lat = punto?.lat,
                     lon = punto?.lon,
-                    coordenadas = formatearCoordenadasReporteUi(punto?.lat, punto?.lon),
                     plagaEnfermedad = if (esSinPlaga) "Sin plaga" else item?.name ?: "Sin identificar",
                     tipo = if (esSinPlaga) "-" else textoTipoCatalogo(item?.type),
                     fase = textoPresenciaFaseReporte(
@@ -458,7 +760,7 @@ fun ReporteMonitoreoScreen(
                     colorSeveridadHex = nivelPunto?.colorHex ?: "#16A34A",
                     fechaCaptura = formatearFechaOpcionalReporteUi(checkpoint.capturedAt),
                     notas = limpiarMetadataRangosSeveridad(checkpoint.notes),
-                    rutaFotoLocal = rutaGuardada ?: rutaLocalDetectada ?: checkpoint.photoUrl,
+                    rutaFotoLocal = rutaGuardada ?: rutaLocalPorReferencia ?: rutaLocalDetectada ?: checkpoint.photoUrl,
                     photoRef = checkpoint.photoRef,
                     photoUrl = checkpoint.photoUrl,
                     idHeader = checkpoint.idHeader,
@@ -473,8 +775,88 @@ fun ReporteMonitoreoScreen(
             vertices = vertices,
             puntos = puntos,
             checkpoints = checkpoints,
-            catalogo = catalogo
+            catalogo = catalogo,
+            pantallaCompleta = false
         )
+    }
+
+    val htmlMapaPantallaCompleta = remember(vertices, puntos, checkpoints, catalogo) {
+        crearHtmlMapaReporteUi(
+            vertices = vertices,
+            puntos = puntos,
+            checkpoints = checkpoints,
+            catalogo = catalogo,
+            pantallaCompleta = true
+        )
+    }
+
+
+    if (mostrarMapaPantallaCompleta) {
+        Dialog(
+            onDismissRequest = { mostrarMapaPantallaCompleta = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.White)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White)
+                        .padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TextButton(
+                        onClick = { mostrarMapaPantallaCompleta = false }
+                    ) {
+                        Text(
+                            text = "←",
+                            color = Color(0xFF123D1F),
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                    }
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Mapa del monitoreo",
+                            color = Color(0xFF123D1F),
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                        Text(
+                            text = "Vista satelital completa",
+                            color = Color(0xFF5F6F64),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    ChipEstadoReporte(
+                        texto = "${vertices.size} vértices",
+                        colorFondo = Color(0xFFE8F5E9),
+                        colorTexto = Color(0xFF1B5E20)
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .background(Color(0xFFEAF5E8))
+                ) {
+                    key(htmlMapaPantallaCompleta) {
+                        MapaReporteWebViewUi(
+                            htmlMapa = htmlMapaPantallaCompleta,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            }
+        }
     }
 
     if (mostrarFotoDetalle) {
@@ -643,11 +1025,20 @@ fun ReporteMonitoreoScreen(
                     }
 
                     val textoEstadoSincronizacion = when (estadoSincronizacion) {
-                        EstadoSincronizacionReporte.PENDIENTE -> "Pendiente de sincronizar"
-                        EstadoSincronizacionReporte.SINCRONIZANDO -> "Sincronizando..."
-                        EstadoSincronizacionReporte.SINCRONIZADO -> "Sincronizado"
-                        EstadoSincronizacionReporte.ERROR -> "Error de sincronización"
-                        else -> "Pendiente de sincronizar"
+                        EstadoSincronizacionReporte.PENDIENTE ->
+                            "Pendiente de enviar"
+
+                        EstadoSincronizacionReporte.SINCRONIZANDO ->
+                            "Guardando información"
+
+                        EstadoSincronizacionReporte.SINCRONIZADO ->
+                            "Todo listo"
+
+                        EstadoSincronizacionReporte.ERROR ->
+                            "No se pudo enviar"
+
+                        else ->
+                            "Estado del reporte"
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -713,17 +1104,36 @@ fun ReporteMonitoreoScreen(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            MapaReporteWebViewUi(
-                                htmlMapa = htmlMapa,
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(320.dp)
+                                    .height(460.dp)
                                     .border(
                                         width = 1.dp,
                                         color = Color(0xFFDDE8D6),
                                         shape = RoundedCornerShape(18.dp)
                                     )
-                            )
+                            ) {
+                                MapaReporteWebViewUi(
+                                    htmlMapa = htmlMapa,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            TextButton(
+                                onClick = { mostrarMapaPantallaCompleta = true },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "⛶ Ver mapa en pantalla completa y tocar puntos para detalle",
+                                    color = Color(0xFF1B5E20),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Black,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
                         }
                     }
 

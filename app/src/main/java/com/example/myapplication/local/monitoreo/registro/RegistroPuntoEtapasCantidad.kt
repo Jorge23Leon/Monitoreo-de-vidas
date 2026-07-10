@@ -411,11 +411,7 @@ internal fun SemaforoSeveridadCard(
 
                     Spacer(modifier = Modifier.height(3.dp))
 
-                    Text(
-                        text = "Captura la severidad mayor. Se conserva para los siguientes puntos de este monitoreo.",
-                        fontSize = 12.sp,
-                        color = Color(0xFF6E7580)
-                    )
+
                 }
 
                 Text(
@@ -433,7 +429,7 @@ internal fun SemaforoSeveridadCard(
 
             CampoNumeroSeveridad(
                 value = mayorTexto,
-                label = "Severidad mayor del monitoreo",
+                label = "Umbral técnico",
                 onValueChange = onMayorChange,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -443,7 +439,7 @@ internal fun SemaforoSeveridadCard(
             val textoResumen = if (mayor != null && menorAutomatico != null && inicioMayor != null && inicioRojo != null) {
                 "Total del punto: $totalSeleccionado  •  Verde: 0  •  Menor: 1-$menorAutomatico  •  Mayor: $inicioMayor-$mayor  •  Rojo: $inicioRojo+"
             } else {
-                "Captura la severidad mayor para calcular el semáforo."
+                ""
             }
 
             Text(

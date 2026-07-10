@@ -201,7 +201,7 @@ internal fun CameraEvidenciaTraseraDialog(
                 )
 
                 Text(
-                    text = "Cámara trasera · Captura en alta calidad y guarda JPG de máximo 340 KB",
+                    text = "Cámara trasera",
                     color = Color(0xFFE2E8F0),
                     fontSize = 12.sp
                 )

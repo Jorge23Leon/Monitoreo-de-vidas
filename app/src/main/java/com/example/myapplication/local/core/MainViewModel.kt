@@ -1,5 +1,7 @@
 package com.example.myapplication.local.core
 
+
+
 import android.app.Application
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -1265,6 +1267,11 @@ class MainViewModel(
                                 )
                             }
 
+                            /*
+                             * El backend normalmente regresa access + refresh en login.
+                             * Si por alguna razón access viene vacío, usamos refresh para
+                             * pedir un access nuevo antes de consultar /users/me/.
+                             */
                             var access = loginApi.access
 
                             if (access.isNullOrBlank()) {
@@ -1279,8 +1286,17 @@ class MainViewModel(
                                 }
                             }
 
+                            val accessSeguro = access?.takeIf { it.isNotBlank() }
+                                ?: return@withContext MainLoginServidorTemp.Error(
+                                    "El servidor validó el login, pero no se pudo obtener access token"
+                                )
+
+                            /*
+                             * A partir de aquí todas las consultas protegidas usan:
+                             * Authorization: Bearer <accessSeguro>
+                             */
                             tokenStorage.guardarTokens(
-                                access = access,
+                                access = accessSeguro,
                                 refresh = refresh
                             )
 
@@ -1331,7 +1347,7 @@ class MainViewModel(
 
                             MainLoginServidorTemp.Exito(
                                 datos = datosLogin,
-                                access = access,
+                                access = accessSeguro,
                                 refresh = refresh,
                                 mensajeSync = mensajeSync
                             )

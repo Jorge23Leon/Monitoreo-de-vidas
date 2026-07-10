@@ -31,12 +31,26 @@ fun MapaPoligonoParcela(
         factory = { context ->
             try {
                 WebView(context).apply {
-                    webViewClient = WebViewClient()
-                    setBackgroundColor(AndroidColor.WHITE)
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            super.onPageFinished(view, url)
+                            view?.postDelayed({
+                                view.evaluateJavascript(
+                                    "if (window.ajustarMapaPoligono) { window.ajustarMapaPoligono(); } else if (window.mapaPoligono) { window.mapaPoligono.invalidateSize(true); }",
+                                    null
+                                )
+                            }, 350)
+                        }
+                    }
+                    setBackgroundColor(AndroidColor.TRANSPARENT)
+                    isVerticalScrollBarEnabled = false
+                    isHorizontalScrollBarEnabled = false
 
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
                     settings.loadsImagesAutomatically = true
+                    settings.useWideViewPort = true
+                    settings.loadWithOverviewMode = false
                     settings.allowFileAccess = true
                     settings.allowContentAccess = true
                     settings.cacheMode = WebSettings.LOAD_DEFAULT
@@ -64,15 +78,24 @@ fun MapaPoligonoParcela(
             }
         },
         update = { view ->
-            if (view is WebView && view.tag != html) {
-                view.tag = html
-                view.loadDataWithBaseURL(
-                    "file:///android_asset/",
-                    html,
-                    "text/html",
-                    "UTF-8",
-                    null
-                )
+            if (view is WebView) {
+                if (view.tag != html) {
+                    view.tag = html
+                    view.loadDataWithBaseURL(
+                        "file:///android_asset/",
+                        html,
+                        "text/html",
+                        "UTF-8",
+                        null
+                    )
+                } else {
+                    view.postDelayed({
+                        view.evaluateJavascript(
+                            "if (window.ajustarMapaPoligono) { window.ajustarMapaPoligono(); } else if (window.mapaPoligono) { window.mapaPoligono.invalidateSize(true); }",
+                            null
+                        )
+                    }, 350)
+                }
             }
         }
     )
@@ -100,18 +123,29 @@ private fun crearHtmlMapaPoligonoParcela(
                 html, body {
                     width: 100%;
                     height: 100%;
+                    min-height: 260px;
                     margin: 0;
                     padding: 0;
+                    overflow: hidden;
                     background: #ffffff;
                     font-family: Arial, sans-serif;
                 }
 
                 #map {
-                    width: 100vw;
-                    height: 100vh;
+                    display: block;
+                    position: relative;
+                    width: 100%;
+                    height: 100%;
                     min-height: 260px;
                     border-radius: 16px;
                     overflow: hidden;
+                    background: #eef5ec;
+                }
+
+                .leaflet-container {
+                    width: 100% !important;
+                    height: 100% !important;
+                    min-height: 260px !important;
                     background: #eef5ec;
                 }
 
@@ -165,6 +199,22 @@ private fun crearHtmlMapaPoligonoParcela(
                             zoomControl: true,
                             preferCanvas: true
                         });
+                        window.mapaParcela = map;
+                        window.mapaPoligono = map;
+                        let boundsPoligono = null;
+
+                        function ajustarMapaPoligono() {
+                            if (!window.mapaPoligono) return;
+                            window.mapaPoligono.invalidateSize(true);
+                            if (boundsPoligono) {
+                                window.mapaPoligono.fitBounds(boundsPoligono, {
+                                    padding: [26, 26],
+                                    maxZoom: 19
+                                });
+                            }
+                        }
+
+                        window.ajustarMapaPoligono = ajustarMapaPoligono;
 
                         L.tileLayer(
                             'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -209,25 +259,16 @@ private fun crearHtmlMapaPoligonoParcela(
                                 }).addTo(map);
                             });
 
-                            map.fitBounds(polygon.getBounds(), {
-                                padding: [26, 26],
-                                maxZoom: 19
-                            });
+                            boundsPoligono = polygon.getBounds();
+                            ajustarMapaPoligono();
                         } else {
                             map.setView([20.6767, -101.3563], 14);
                         }
 
 
-                        setTimeout(function () {
-                            map.invalidateSize();
-
-                            if (polygonLatLng.length > 0) {
-                                map.fitBounds(L.latLngBounds(polygonLatLng), {
-                                    padding: [26, 26],
-                                    maxZoom: 19
-                                });
-                            }
-                        }, 500);
+                        [150, 350, 700, 1200, 2000].forEach(function(ms) {
+                            setTimeout(ajustarMapaPoligono, ms);
+                        });
                     }
                 } catch (e) {
                     mostrarError(e.message);

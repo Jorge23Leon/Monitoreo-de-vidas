@@ -25,6 +25,13 @@ data class FieldTaskCreateRequest(
     @SerializedName("crop_id")
     val cropId: Int,
 
+    /**
+     * En el admin de Django esta columna suele mostrarse como Code.
+     * Si el backend lo ignora, no afecta; si lo acepta, evita registros con Code "-".
+     */
+    @SerializedName("voucher_code")
+    val voucherCode: String? = null,
+
     val title: String? = null,
     val cycle: String? = null,
     val status: String = "pending",
@@ -34,6 +41,27 @@ data class FieldTaskCreateRequest(
 
     @SerializedName("est_finish_date")
     val estFinishDate: String? = null
+)
+
+/**
+ * Cuerpo para PATCH /api/v1/field_ops/tasks/{id}/.
+ * Se usa para reparar Programas que el backend creó/reutilizó sin título visible.
+ */
+data class FieldTaskPatchRequest(
+    val title: String? = null,
+
+    val cycle: String? = null,
+
+    val status: String? = null,
+
+    @SerializedName("est_start_date")
+    val estStartDate: String? = null,
+
+    @SerializedName("est_finish_date")
+    val estFinishDate: String? = null,
+
+    @SerializedName("voucher_code")
+    val voucherCode: String? = null
 )
 
 data class FieldTaskApiItem(

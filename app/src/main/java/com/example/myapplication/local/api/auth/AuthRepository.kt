@@ -3,6 +3,8 @@ package com.example.myapplication.local.api.auth
 import android.content.Context
 import com.example.myapplication.local.api.core.RetrofitClient
 
+
+// se manda la peticion
 class AuthRepository(
     context: Context? = null,
     private val authApiServicePublico: AuthApiService = RetrofitClient.authApiService

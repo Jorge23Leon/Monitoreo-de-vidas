@@ -93,6 +93,46 @@ class FieldOpsRepository(
         }
     }
 
+    /**
+     * Corrige un Programa remoto que fue creado o reutilizado sin título visible.
+     * Esto evita que en el admin de Django aparezca con Title "-".
+     */
+    suspend fun actualizarProgramaCampo(
+        id: String,
+        body: FieldTaskPatchRequest
+    ): ResultadoCrearFieldTaskApi {
+        return try {
+            val response = api.actualizarProgramaCampo(
+                id = id,
+                body = body
+            )
+
+            if (!response.isSuccessful) {
+                val error = response.errorBody()?.string()
+                return ResultadoCrearFieldTaskApi.Error(
+                    "Error actualizando programa remoto: ${response.code()} ${error ?: response.message()}"
+                )
+            }
+
+            val programa = response.body()
+                ?: return ResultadoCrearFieldTaskApi.Error(
+                    "El servidor actualizó el programa, pero respondió sin información."
+                )
+
+            if (programa.id.isBlank()) {
+                return ResultadoCrearFieldTaskApi.Error(
+                    "El servidor respondió un programa actualizado sin UUID."
+                )
+            }
+
+            ResultadoCrearFieldTaskApi.Exito(programa)
+        } catch (e: Exception) {
+            ResultadoCrearFieldTaskApi.Error(
+                "No se pudo actualizar el programa remoto: ${e.message ?: e.javaClass.simpleName}"
+            )
+        }
+    }
+
     suspend fun obtenerTodosLosProgramasMaestros(
         datacentral: String? = null,
         agroUnit: String? = null,

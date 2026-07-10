@@ -332,14 +332,14 @@ internal fun crearHtmlMapaMonitoreo(
                     new MapaLocal({
                         tileSize: 256,
                         minZoom: 0,
-                        maxZoom: 22,
+                        maxZoom: 28,
                         attribution: 'Mapa local'
                     }).addTo(map);
 
                     L.tileLayer(
                         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                         {
-                            maxZoom: 18,
+                            maxZoom: 28,
                             maxNativeZoom: 18,
                             attribution: internetDisponible ? 'Tiles © Esri' : 'Mapa en cache',
                             opacity: 1,
@@ -606,7 +606,7 @@ internal fun crearHtmlMapaMonitoreo(
                         zoomSnap: 0.25,
                         zoomDelta: 0.5,
                         minZoom: 3,
-                        maxZoom: 18,
+                        maxZoom: 28,
                         bounceAtZoomLimits: false
                     });
 

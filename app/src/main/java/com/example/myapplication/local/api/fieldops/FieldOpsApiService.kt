@@ -4,6 +4,7 @@ import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.PATCH
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -28,6 +29,12 @@ interface FieldOpsApiService {
     @POST("api/v1/field_ops/tasks/create/")
     suspend fun crearProgramaCampo(
         @Body body: FieldTaskCreateRequest
+    ): Response<FieldTaskApiItem>
+
+    @PATCH("api/v1/field_ops/tasks/{id}/")
+    suspend fun actualizarProgramaCampo(
+        @Path("id") id: String,
+        @Body body: FieldTaskPatchRequest
     ): Response<FieldTaskApiItem>
 
     @GET("api/v1/field_ops/master-programs/{id}/tree/")
