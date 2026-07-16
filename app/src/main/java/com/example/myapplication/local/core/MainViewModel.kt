@@ -1,5 +1,7 @@
 package com.example.myapplication.local.core
 
+
+
 import android.app.Application
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,7 +20,10 @@ import com.example.myapplication.local.entities.LocalRoleEntity
 import com.example.myapplication.local.entities.LocalRanchEntity
 import com.example.myapplication.local.entities.UserEntity
 import com.example.myapplication.local.models.UsuarioSesion
+import com.example.myapplication.local.api.sync.AgroSyncRepository
+import com.example.myapplication.local.api.sync.ResultadoAgroSync
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -37,6 +42,23 @@ import com.example.myapplication.local.api.organizations.CiaPadreApiItem
 import com.example.myapplication.local.api.organizations.OrganizationRepository
 import com.example.myapplication.local.api.organizations.ResultadoCiasApi
 import com.example.myapplication.local.entities.UserLocalParentCiaCrossRef
+import com.example.myapplication.local.entities.UserLocalCiaCrossRef
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.util.Log
+import com.example.myapplication.local.api.monitoreosync.MonitoreoSyncRepository
+import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
+import com.example.myapplication.local.api.monitoreosync.ResultadoMonitoreoSync
+import com.example.myapplication.local.api.phytomonitoring.PhytoMonitoringRepository
+import com.example.myapplication.local.api.phytomonitoring.ResultadoActualizarHeaderApi
+
+
+
 
 private data class MainSesionRestauradaTemp(
     val sesion: UsuarioSesion,
@@ -66,7 +88,8 @@ private sealed class MainLoginServidorTemp {
     data class Exito(
         val datos: MainLoginTemp,
         val access: String?,
-        val refresh: String
+        val refresh: String,
+        val mensajeSync: String? = null
     ) : MainLoginServidorTemp()
 
     data class Error(
@@ -85,10 +108,54 @@ class MainViewModel(
     private val userRepository = UserRepository(application.applicationContext)
     private val organizationRepository = OrganizationRepository(application.applicationContext)
 
+    private val agroSyncRepository = AgroSyncRepository(
+        context = application.applicationContext,
+        database = database
+    )
+    private val monitoreoSyncRepository = MonitoreoSyncRepository(
+        context = application.applicationContext,
+        database = database
+    )
+    private val phytoMonitoringRepository = PhytoMonitoringRepository(
+        context = application.applicationContext
+    )
+
+
+
     var uiState by mutableStateOf(MainUiState())
         private set
 
+    /*
+     * Credenciales mostradas únicamente en la pantalla de Login cuando
+     * la persona marcó “Recordar usuario y contraseña”.
+     */
+    var usernameRecordadoLogin by mutableStateOf("")
+        private set
+
+    var passwordRecordadaLogin by mutableStateOf("")
+        private set
+
+    var recordarCredencialesLogin by mutableStateOf(false)
+        private set
+
+    /*
+     * La pantalla siempre lee Room. Estas variables solo controlan el botón
+     * manual de actualización; no bloquean el login ni la navegación.
+     */
+    var sincronizandoMonitoreos by mutableStateOf(false)
+        private set
+
+    var ultimaSincronizacionMonitoreosMillis by mutableStateOf<Long?>(null)
+        private set
+
+    private var trabajoSincronizacionMonitoreos: Job? = null
+
     init {
+        ultimaSincronizacionMonitoreosMillis = obtenerPrefsSincronizacion()
+            .getLong("ultima_sync_monitoreos_global", 0L)
+            .takeIf { it > 0L }
+
+        cargarCredencialesRecordadasEnLogin()
         insertarDatosInicialesSeguros()
         cargarSesionGuardadaAlIniciar()
     }
@@ -96,16 +163,65 @@ class MainViewModel(
     private fun actualizarEstado(transform: (MainUiState) -> MainUiState) {
         uiState = transform(uiState)
     }
+    private fun hayConexionInternet(): Boolean {
+        val context = getApplication<Application>().applicationContext
+
+        val connectivityManager = context.getSystemService(
+            Context.CONNECTIVITY_SERVICE
+        ) as ConnectivityManager
+
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
 
 
     private fun mostrarMensaje(mensaje: String) {
-        actualizarEstado { it.copy(mensaje = mensaje) }
+        val context = getApplication<Application>().applicationContext
+
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(
+                context,
+                mensaje,
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+
+            actualizarEstado { it.copy(mensaje = mensaje) }
+        }
     }
     private fun obtenerPrefsSesion() =
         getApplication<Application>().getSharedPreferences(
             "sesion_app",
             android.content.Context.MODE_PRIVATE
         )
+
+    private fun obtenerPrefsSincronizacion() =
+        getApplication<Application>().getSharedPreferences(
+            "cache_sincronizacion_monitoreos",
+            Context.MODE_PRIVATE
+        )
+
+    val textoUltimaSincronizacionMonitoreos: String?
+        get() = ultimaSincronizacionMonitoreosMillis?.let { millis ->
+            val formato = java.text.SimpleDateFormat(
+                "dd MMM, HH:mm",
+                Locale("es", "MX")
+            )
+            "Actualizado: ${formato.format(java.util.Date(millis))}"
+        }
+
+    private fun marcarUltimaSincronizacionMonitoreos() {
+        val ahora = System.currentTimeMillis()
+
+        ultimaSincronizacionMonitoreosMillis = ahora
+
+        obtenerPrefsSincronizacion()
+            .edit()
+            .putLong("ultima_sync_monitoreos_global", ahora)
+            .apply()
+    }
 
     private fun guardarSesionBasica(idUser: Long) {
         obtenerPrefsSesion()
@@ -125,7 +241,6 @@ class MainViewModel(
             .remove("id_parcela")
             .apply()
     }
-
     private fun guardarCiaSesion(
         idParentCia: Long?,
         idLocalCia: Long
@@ -161,6 +276,7 @@ class MainViewModel(
             )
         }
     }
+
     fun volverDesdePerfil() {
         val pantallaDestino = uiState.pantallaAntesPerfil
         val pantallaFallback = when {
@@ -235,6 +351,38 @@ class MainViewModel(
             .clear()
             .apply()
     }
+
+    private fun cargarCredencialesRecordadasEnLogin() {
+        val credenciales = tokenStorage.obtenerCredencialesRecordadas()
+
+        usernameRecordadoLogin = credenciales?.username.orEmpty()
+        passwordRecordadaLogin = credenciales?.password.orEmpty()
+        recordarCredencialesLogin = credenciales != null
+    }
+
+    private fun guardarOClearCredencialesRecordadas(
+        username: String,
+        password: String,
+        recordarCredenciales: Boolean
+    ) {
+        if (recordarCredenciales) {
+            val seGuardaron = tokenStorage.guardarCredencialesRecordadas(
+                username = username,
+                password = password
+            )
+
+            if (!seGuardaron) {
+                mostrarMensaje(
+                    "No se pudieron guardar las credenciales en este dispositivo."
+                )
+            }
+        } else {
+            tokenStorage.limpiarCredencialesRecordadas()
+        }
+
+        cargarCredencialesRecordadasEnLogin()
+    }
+
     private fun cargarSesionGuardadaAlIniciar() {
         viewModelScope.launch {
             try {
@@ -268,24 +416,12 @@ class MainViewModel(
                         if (sesion == null) {
                             null
                         } else {
-                            val parentCias = if (sesion.esAdmin) {
-                                database.localParentCiaDao().getAllParentCiasActivas()
-                            } else {
-                                database.userLocalParentCiaDao().getParentCiasByUser(sesion.idUser)
-                            }
+                            val parentCias = database.userLocalCiaDao()
+                                .getParentCiasByUser(sesion.idUser)
 
-                            val ciasHijasUsuario = if (sesion.esSupervisor || sesion.esTecnico) {
-                                database.userLocalParentCiaDao().getCiasHijasByUser(sesion.idUser)
-                            } else {
-                                emptyList()
-                            }
+                            val ciasHijasUsuario = database.userLocalCiaDao()
+                                .getCiasByUser(sesion.idUser)
 
-                            /*
-                             * Restauración de CIA:
-                             * - Supervisor: usa sus CIAS hijas asignadas directamente.
-                             * - Admin/Gerente: usa CIA padre guardada y busca sus CIAS hijas.
-                             * - Técnico/Invitado: no necesitan CIA guardada, entran directo a monitoreos.
-                             */
                             val parentCiaGuardada = if (
                                 idParentCiaGuardada > 0L &&
                                 !sesion.esSupervisor &&
@@ -305,8 +441,11 @@ class MainViewModel(
                                 }
 
                                 parentCiaGuardada != null -> {
-                                    database.localCiaDao()
-                                        .getCiasByParentCia(parentCiaGuardada.idParentCia)
+                                    database.userLocalCiaDao()
+                                        .getCiasByUserAndParent(
+                                            idUser = sesion.idUser,
+                                            idParentCia = parentCiaGuardada.idParentCia
+                                        )
                                 }
 
                                 else -> {
@@ -336,6 +475,7 @@ class MainViewModel(
 
                 if (resultado == null) {
                     borrarSesionGuardada()
+                    tokenStorage.limpiarTokens()
 
                     actualizarEstado {
                         it.copy(
@@ -402,7 +542,6 @@ class MainViewModel(
                             idProductorRestaurar = obtenerProductorSesion()
                         )
 
-                        mostrarMensaje("Sesión restaurada: ${sesion.firstName} - CIA: ${resultado.ciaGuardada.nombre}")
                     }
 
                     else -> {
@@ -412,7 +551,6 @@ class MainViewModel(
                             )
                         }
 
-                        mostrarMensaje("Sesión restaurada: ${sesion.firstName}. Selecciona una CIA")
                     }
                 }
 
@@ -420,6 +558,7 @@ class MainViewModel(
                 e.printStackTrace()
 
                 borrarSesionGuardada()
+                tokenStorage.limpiarTokens()
 
                 actualizarEstado {
                     it.copy(
@@ -454,6 +593,69 @@ class MainViewModel(
 
     fun irA(pantalla: PantallaActual) {
         actualizarEstado { it.copy(pantallaActual = pantalla) }
+    }
+    fun solicitarRecuperacionPassword(emailInput: String) {
+        val email = emailInput.trim()
+
+        if (
+            email.isBlank() ||
+            !android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()
+        ) {
+            mostrarMensaje("Ingresa un correo electrónico válido")
+            return
+        }
+
+        val asunto = "Solicitud de recuperación de contraseña"
+
+        val cuerpo = """
+        Hola, solicito recuperar mi contraseña de Tierra Inteligente.
+
+        Correo registrado: $email
+        Usuario (si lo recuerda):
+        Nombre completo:
+        Teléfono de contacto:
+
+        No incluyo mi contraseña anterior por seguridad.
+    """.trimIndent()
+
+        val context = getApplication<Application>().applicationContext
+
+        val correoIntent = Intent(Intent.ACTION_SENDTO).apply {
+            data = Uri.parse("mailto:tierrainteligente2@gmail.com")
+            putExtra(Intent.EXTRA_SUBJECT, asunto)
+            putExtra(Intent.EXTRA_TEXT, cuerpo)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        try {
+            val selector = Intent.createChooser(
+                correoIntent,
+                "Enviar solicitud de recuperación"
+            ).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            context.startActivity(selector)
+
+            mostrarMensaje(
+                "Selecciona Gmail o tu aplicación de correo para enviar la solicitud."
+            )
+        } catch (e: ActivityNotFoundException) {
+            val clipboard = context.getSystemService(
+                Context.CLIPBOARD_SERVICE
+            ) as ClipboardManager
+
+            clipboard.setPrimaryClip(
+                ClipData.newPlainText(
+                    "Correo de soporte",
+                    "tierrainteligente2@gmail.com"
+                )
+            )
+
+            mostrarMensaje(
+                "No hay una app de correo instalada. Se copió el correo de soporte."
+            )
+        }
     }
     fun volverAConsultaMonitoreos() {
         val sesion = uiState.usuarioSesion
@@ -618,6 +820,9 @@ class MainViewModel(
     ): UserEntity {
         insertarRolesInicialesSiNoExisten()
 
+        val extIdServidor = perfilApi?.id
+            ?.takeIf { it.isNotBlank() }
+
         val usernameServidor = perfilApi?.username
             ?.takeIf { it.isNotBlank() }
             ?: username
@@ -650,13 +855,17 @@ class MainViewModel(
             ?: database.localRoleDao().getRoleByName("SUPER ADMIN")
             ?: throw IllegalStateException("No existe el rol local $nombreRolLocal")
 
-        val usuarioExistente = database.userDao().getUserByUsername(usernameServidor)
+        val usuarioExistente = extIdServidor?.let { extId ->
+            database.userDao().getUserByExtId(extId)
+        }
+            ?: database.userDao().getUserByUsername(usernameServidor)
             ?: database.userDao().getUserByUsername(username)
             ?: database.userDao().getUserByEmail(emailServidor)
 
         if (usuarioExistente != null) {
             database.userDao().updateUser(
                 usuarioExistente.copy(
+                    extId = extIdServidor ?: usuarioExistente.extId,
                     firstName = nombreBase,
                     lastName = lastNameApi,
                     username = usernameServidor,
@@ -672,6 +881,7 @@ class MainViewModel(
 
         val idNuevoUsuario = database.userDao().insertUser(
             UserEntity(
+                extId = extIdServidor,
                 firstName = nombreBase,
                 lastName = lastNameApi,
                 username = usernameServidor,
@@ -684,42 +894,173 @@ class MainViewModel(
         return database.userDao().getUserById(idNuevoUsuario)
             ?: throw IllegalStateException("No se pudo crear usuario local")
     }
-    private suspend fun sincronizarCiasDesdeApi(idUserLocal: Long): String? {
+
+
+    private suspend fun intentarLoginLocalSinInternet(
+        username: String,
+        password: String
+    ): MainLoginServidorTemp? {
+        if (hayConexionInternet()) {
+            return null
+        }
+
+        val usuarioLocal = database.userDao().getUserByUsername(username)
+            ?: database.userDao().getUserByEmail(username)
+            ?: return MainLoginServidorTemp.Error(
+                "Sin internet y no existe una sesión local guardada para este usuario. Conéctate una vez para preparar la cache."
+            )
+
+        val passwordCorrecto = PasswordHasher.verificarPassword(
+            passwordIngresado = password,
+            passwordGuardado = usuarioLocal.password
+        )
+
+        if (!passwordCorrecto) {
+            return MainLoginServidorTemp.Error(
+                "Sin internet y la contraseña local no coincide."
+            )
+        }
+
+        val datosLogin = prepararLoginDesdeUsuarioLocal(usuarioLocal)
+            ?: return MainLoginServidorTemp.Error(
+                "Sin internet. El usuario existe localmente, pero no se pudo preparar la sesión."
+            )
+
+        return MainLoginServidorTemp.Exito(
+            datos = datosLogin,
+            access = null,
+            refresh = "",
+            mensajeSync = "Sin internet. Entraste usando la cache local guardada."
+        )
+    }
+
+    private suspend fun sincronizarDatosOfflineInicialDeUsuario(
+        idUserLocal: Long
+    ): String? {
+        if (!hayConexionInternet()) {
+            return "Sin internet. Se usarán los datos locales guardados en este equipo."
+        }
+
+        val ciasUsuario = database.userLocalCiaDao()
+            .getCiasByUser(idUserLocal)
+
+        val errores = mutableListOf<String>()
+
+        if (ciasUsuario.isEmpty()) {
+            // Nunca hacemos una descarga global con idLocalCia = null.
+            // Sin una CIA permitida no hay una forma segura de decidir qué datos guardar.
+            return "Login correcto. No tienes CIAS asignadas; no se descargaron datos de campo."
+        } else {
+            ciasUsuario.forEach { cia ->
+                when (
+                    val resultadoAgro = kotlinx.coroutines.withTimeoutOrNull(120000L) {
+                        agroSyncRepository.sincronizarProductoresRanchosParcelas(
+                            idLocalCia = cia.idLocalCia
+                        )
+                    }
+                ) {
+                    null -> errores.add("La actualización de productores/ranchos/parcelas tardó demasiado para ${cia.nombre}")
+                    is ResultadoAgroSync.Error -> errores.add(resultadoAgro.mensaje)
+                    is ResultadoAgroSync.Exito -> Unit
+                }
+
+                when (
+                    val resultadoMonitoreo = kotlinx.coroutines.withTimeoutOrNull(120000L) {
+                        monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
+                            idLocalCia = cia.idLocalCia
+                        )
+                    }
+                ) {
+                    null -> errores.add("La actualización de monitoreos tardó demasiado para ${cia.nombre}")
+                    is ResultadoMonitoreoSync.Error -> errores.add(resultadoMonitoreo.mensaje)
+                    is ResultadoMonitoreoSync.Exito -> Unit
+                }
+            }
+        }
+
+        return errores
+            .distinct()
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString(separator = " | ") { it }
+            ?.let { "Login correcto, pero la cache quedó parcial: $it" }
+    }
+
+    private suspend fun sincronizarCiasDesdeApi(
+        idUserLocal: Long,
+        perfilApi: UsuarioMeResponse
+    ): String? {
         return when (val resultado = organizationRepository.obtenerCiasPadreEHijas()) {
             is ResultadoCiasApi.Error -> {
+                // No bloqueamos el login si falla la carga de CIAS.
                 resultado.mensaje
             }
 
             is ResultadoCiasApi.Exito -> {
-                val ciasHijas = resultado.ciasHijas
+                val nombreRol = perfilApi.userRole?.name.orEmpty()
+                val nivelRol = perfilApi.userRole?.level ?: 0
 
-                if (ciasHijas.isEmpty()) {
-                    return "El servidor no regresó CIAS para este usuario"
+                val esSuperAdmin = nivelRol >= 5 ||
+                        normalizarRolParaDb(nombreRol) == "admin"
+
+                val datacentralIdsPermitidos = perfilApi.datacentrals
+                    ?.mapNotNull { datacentral ->
+                        datacentral.id?.takeIf { it.isNotBlank() }
+                    }
+                    ?.toSet()
+                    .orEmpty()
+
+                // Primero limpiamos lo anterior para que no se queden CIAS viejas.
+                database.userLocalParentCiaDao()
+                    .quitarTodasLasParentCiasDelUsuario(idUserLocal)
+
+                database.userLocalCiaDao()
+                    .quitarTodasLasCiasDelUsuario(idUserLocal)
+
+                val ciasHijasPermitidas = if (esSuperAdmin) {
+                    resultado.ciasHijas
+                } else {
+                    resultado.ciasHijas.filter { ciaHija ->
+                        ciaHija.extId in datacentralIdsPermitidos
+                    }
                 }
 
-                val padresInsertados = mutableMapOf<String, Long>()
+                // Aquí está la regla nueva:
+                // si no tiene CIAS, NO es error. Se loguea y la lista queda vacía.
+                if (ciasHijasPermitidas.isEmpty()) {
+                    return "Login correcto. No tienes CIAS asignadas."
+                }
 
-                ciasHijas.forEach { ciaHijaApi ->
-                    val idParentLocal = padresInsertados[ciaHijaApi.parent.extId]
-                        ?: guardarCiaPadreDesdeApi(ciaHijaApi.parent)
+                val refsParent = mutableListOf<UserLocalParentCiaCrossRef>()
+                val refsCias = mutableListOf<UserLocalCiaCrossRef>()
 
-                    padresInsertados[ciaHijaApi.parent.extId] = idParentLocal
+                ciasHijasPermitidas.forEach { ciaHijaApi ->
+                    val idParentLocal = guardarCiaPadreDesdeApi(ciaHijaApi.parent)
 
-                    guardarCiaHijaDesdeApi(
+                    val idCiaLocal = guardarCiaHijaDesdeApi(
                         ciaHijaApi = ciaHijaApi,
                         idParentCiaLocal = idParentLocal
                     )
-                }
 
-                val refs = padresInsertados.values.distinct().map { idParentCia ->
-                    UserLocalParentCiaCrossRef(
-                        idUser = idUserLocal,
-                        idParentCia = idParentCia
+                    refsParent.add(
+                        UserLocalParentCiaCrossRef(
+                            idUser = idUserLocal,
+                            idParentCia = idParentLocal
+                        )
+                    )
+
+                    refsCias.add(
+                        UserLocalCiaCrossRef(
+                            idUser = idUserLocal,
+                            idLocalCia = idCiaLocal
+                        )
                     )
                 }
 
                 database.userLocalParentCiaDao()
-                    .asignarParentCiasAUsuario(refs)
+                    .asignarParentCiasAUsuario(refsParent.distinct())
+
+                database.userLocalCiaDao()
+                    .asignarCiasAUsuario(refsCias.distinct())
 
                 null
             }
@@ -827,17 +1168,11 @@ class MainViewModel(
             .getSesionByIdUser(usuario.idUser)
             ?: return null
 
-        val parentCias = if (sesion.esAdmin) {
-            database.localParentCiaDao().getAllParentCiasActivas()
-        } else {
-            database.userLocalParentCiaDao().getParentCiasByUser(sesion.idUser)
-        }
+        val parentCias = database.userLocalCiaDao()
+            .getParentCiasByUser(sesion.idUser)
 
-        val ciasHijasUsuario = if (sesion.esSupervisor || sesion.esTecnico) {
-            database.userLocalParentCiaDao().getCiasHijasByUser(sesion.idUser)
-        } else {
-            emptyList()
-        }
+        val ciasHijasUsuario = database.userLocalCiaDao()
+            .getCiasByUser(sesion.idUser)
 
         val idCiaPreferente = obtenerCiaPreferente(sesion.idUser)
         var parentCiaPreferente: LocalParentCiaEntity? = null
@@ -856,8 +1191,11 @@ class MainViewModel(
                 var ciaEncontrada: LocalCiaEntity? = null
 
                 for (parentCia in parentCias) {
-                    val hijas = database.localCiaDao()
-                        .getCiasByParentCia(parentCia.idParentCia)
+                    val hijas = database.userLocalCiaDao()
+                        .getCiasByUserAndParent(
+                            idUser = sesion.idUser,
+                            idParentCia = parentCia.idParentCia
+                        )
 
                     val candidata = hijas.firstOrNull { cia ->
                         cia.idLocalCia == idCiaPreferente
@@ -889,10 +1227,11 @@ class MainViewModel(
 
     fun onLoginClick(
         usernameInput: String,
-        passwordInput: String
+        passwordInput: String,
+        recordarCredenciales: Boolean
     ) {
         val username = usernameInput.trim()
-        val password = passwordInput.trim()
+        val password = passwordInput
 
         if (username.isBlank() || password.isBlank()) {
             mostrarMensaje("Ingresa usuario y contraseña")
@@ -906,9 +1245,17 @@ class MainViewModel(
         viewModelScope.launch {
             try {
                 val resultadoServidor = withContext(Dispatchers.IO) {
+                    intentarLoginLocalSinInternet(
+                        username = username,
+                        password = password
+                    )?.let { return@withContext it }
+
                     when (val loginApi = authRepository.login(username, password)) {
                         is ResultadoLoginApi.Error -> {
-                            MainLoginServidorTemp.Error(loginApi.mensaje)
+                            intentarLoginLocalSinInternet(
+                                username = username,
+                                password = password
+                            ) ?: MainLoginServidorTemp.Error(loginApi.mensaje)
                         }
 
                         is ResultadoLoginApi.Exito -> {
@@ -920,6 +1267,11 @@ class MainViewModel(
                                 )
                             }
 
+                            /*
+                             * El backend normalmente regresa access + refresh en login.
+                             * Si por alguna razón access viene vacío, usamos refresh para
+                             * pedir un access nuevo antes de consultar /users/me/.
+                             */
                             var access = loginApi.access
 
                             if (access.isNullOrBlank()) {
@@ -934,8 +1286,17 @@ class MainViewModel(
                                 }
                             }
 
+                            val accessSeguro = access?.takeIf { it.isNotBlank() }
+                                ?: return@withContext MainLoginServidorTemp.Error(
+                                    "El servidor validó el login, pero no se pudo obtener access token"
+                                )
+
+                            /*
+                             * A partir de aquí todas las consultas protegidas usan:
+                             * Authorization: Bearer <accessSeguro>
+                             */
                             tokenStorage.guardarTokens(
-                                access = access,
+                                access = accessSeguro,
                                 refresh = refresh
                             )
 
@@ -957,11 +1318,27 @@ class MainViewModel(
                                 perfilApi = perfilServidor
                             )
 
-                            val errorCias = sincronizarCiasDesdeApi(usuarioLocal.idUser)
+                            val mensajeCias = sincronizarCiasDesdeApi(
+                                idUserLocal = usuarioLocal.idUser,
+                                perfilApi = perfilServidor
+                            )
 
-                            if (errorCias != null) {
-                                return@withContext MainLoginServidorTemp.Error(errorCias)
-                            }
+                            /*
+                             * El login no descarga productores, ranchos, parcelas ni monitoreos.
+                             * Esa sincronización se hace al tocar ⟳ Sincronizar o cuando la
+                             * cache local está vacía, ya con la pantalla visible.
+                             */
+                            val mensajeSyncInicial: String? = null
+
+                            val mensajeSync = listOfNotNull(
+                                mensajeCias,
+                                mensajeSyncInicial
+                            )
+                                .map { it.trim() }
+                                .filter { it.isNotBlank() }
+                                .distinct()
+                                .joinToString(separator = "\n")
+                                .takeIf { it.isNotBlank() }
 
                             val datosLogin = prepararLoginDesdeUsuarioLocal(usuarioLocal)
                                 ?: return@withContext MainLoginServidorTemp.Error(
@@ -970,8 +1347,9 @@ class MainViewModel(
 
                             MainLoginServidorTemp.Exito(
                                 datos = datosLogin,
-                                access = access,
-                                refresh = refresh
+                                access = accessSeguro,
+                                refresh = refresh,
+                                mensajeSync = mensajeSync
                             )
                         }
                     }
@@ -988,7 +1366,17 @@ class MainViewModel(
                         val parentCias = resultado.parentCias
                         val ciasHijasUsuario = resultado.ciasHijasUsuario
 
+                        /*
+                         * La casilla ahora solo controla si se recuerdan usuario y contraseña.
+                         * La sesión activa se conserva mientras no se use “Cerrar sesión”.
+                         */
                         guardarSesionBasica(sesion.idUser)
+
+                        guardarOClearCredencialesRecordadas(
+                            username = username,
+                            password = password,
+                            recordarCredenciales = recordarCredenciales
+                        )
 
                         actualizarEstado {
                             it.copy(
@@ -1031,8 +1419,11 @@ class MainViewModel(
                             )
                         }
 
+                        resultadoServidor.mensajeSync
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { mostrarMensaje(it) }
+
                         if (sesion.esTecnico || sesion.esInvitado) {
-                            mostrarMensaje("Login API correcto. Cargando tus monitoreos")
                             cargarMonitoreosDirectoPorUsuario(sesion)
                         } else {
                             when {
@@ -1041,11 +1432,9 @@ class MainViewModel(
                                 }
 
                                 resultado.ciaPreferente != null -> {
-                                    mostrarMensaje("Login API correcto. CIA preferente cargada: ${resultado.ciaPreferente.nombre}")
                                 }
 
                                 sesion.esSupervisor -> {
-                                    mostrarMensaje("Login API correcto. Selecciona una CIA hija")
                                 }
 
                                 parentCias.isEmpty() -> {
@@ -1053,7 +1442,6 @@ class MainViewModel(
                                 }
 
                                 else -> {
-                                    mostrarMensaje("Login API correcto - Rol local: ${sesion.roleName}")
                                 }
                             }
                         }
@@ -1241,8 +1629,11 @@ class MainViewModel(
         viewModelScope.launch {
             try {
                 val ciasHijas = withContext(Dispatchers.IO) {
-                    database.localCiaDao()
-                        .getCiasByParentCia(parentCia.idParentCia)
+                    database.userLocalCiaDao()
+                        .getCiasByUserAndParent(
+                            idUser = sesion.idUser,
+                            idParentCia = parentCia.idParentCia
+                        )
                 }
 
                 val idCiaPreferente = obtenerCiaPreferente(sesion.idUser)
@@ -1335,12 +1726,17 @@ class MainViewModel(
         cia: LocalCiaEntity,
         idProductorRestaurar: Long? = null
     ) {
+        /*
+         * Primero mostramos Room. No hay solicitudes de red al entrar a filtros:
+         * así seleccionar CIA, volver de mapa y abrir la app es inmediato.
+         */
         limpiarFiltros()
 
         actualizarEstado {
             it.copy(
                 ciaSeleccionada = cia,
-                pantallaActual = PantallaActual.FILTROS_MONITOREO
+                pantallaActual = PantallaActual.FILTROS_MONITOREO,
+                cargando = false
             )
         }
 
@@ -1348,44 +1744,125 @@ class MainViewModel(
             idLocalCia = cia.idLocalCia,
             idProductorRestaurar = idProductorRestaurar
         )
+
+        /*
+         * Primera vez: si no hay programas locales para esta CIA, arrancamos una
+         * sola actualización en segundo plano. La pantalla no espera.
+         */
+        solicitarSincronizacionInicialSiCacheVacia(cia)
+    }
+
+    private fun solicitarSincronizacionInicialSiCacheVacia(cia: LocalCiaEntity) {
+        if (!hayConexionInternet() || sincronizandoMonitoreos) return
+
+        viewModelScope.launch {
+            val cacheVacia = withContext(Dispatchers.IO) {
+                database.localprogramDao()
+                    .getProgramasByCia(cia.idLocalCia)
+                    .isEmpty()
+            }
+
+            if (cacheVacia) {
+                sincronizarInformacionActual(mostrarMensajeFinal = false)
+            }
+        }
     }
 
     fun seleccionarCiaActual() {
-        val estado = uiState
-        val cia = estado.ciaSeleccionada
+        try {
+            val estado = uiState
+            val cia = estado.ciaSeleccionada
 
-        if (cia == null) {
-            mostrarMensaje("Este usuario no tiene CIAS hijas asignadas")
-            return
-        }
+            if (cia == null) {
+                mostrarMensaje("Este usuario no tiene CIAS hijas asignadas")
+                return
+            }
 
-        if (estado.seleccionarPreferente) {
-            guardarCiaPreferente(
-                idUser = estado.idUsuarioActual,
+            if (estado.seleccionarPreferente) {
+                guardarCiaPreferente(
+                    idUser = estado.idUsuarioActual,
+                    idLocalCia = cia.idLocalCia
+                )
+            }
+
+            guardarCiaSesion(
+                idParentCia = estado.parentCiaSeleccionada?.idParentCia,
                 idLocalCia = cia.idLocalCia
             )
+
+            abrirFiltrosMonitoreoConCia(cia)
+        } catch (t: Throwable) {
+            mostrarMensaje(
+                "No se pudo seleccionar la CIA: ${t.message ?: "detalle no disponible"}"
+            )
         }
-
-        /*
-         * Guardamos siempre la CIA seleccionada para restaurarla
-         * después si el usuario no cierra sesión.
-         */
-        guardarCiaSesion(
-            idParentCia = estado.parentCiaSeleccionada?.idParentCia,
-            idLocalCia = cia.idLocalCia
-        )
-
-        abrirFiltrosMonitoreoConCia(cia)
-
-        val extraPreferente = if (estado.seleccionarPreferente) {
-            " como preferente"
-        } else {
-            ""
-        }
-
-        mostrarMensaje("CIA seleccionada$extraPreferente: ${cia.nombre}")
     }
 
+    private suspend fun obtenerRanchosDisponiblesParaCiaYProductor(
+        idLocalCia: Long,
+        idProductor: Long
+    ): List<LocalRanchEntity> {
+        /*
+         * El productor sí debe pertenecer a la CIA seleccionada, pero sus ranchos
+         * no necesitan tener un programa para mostrarse en el catálogo.
+         */
+        val productorPerteneceACia = database.localCiaAgroUnitDao()
+            .getProductoresByCia(idLocalCia)
+            .any { productor ->
+                productor.idLocalAgroUnit == idProductor
+            }
+
+        if (!productorPerteneceACia) {
+            return emptyList()
+        }
+
+        return database.localRanchDao()
+            .getRanchosByProductor(idProductor)
+            .distinctBy { rancho ->
+                rancho.idLocalRanch
+            }
+            .sortedBy { rancho ->
+                rancho.name.trim().lowercase(Locale.getDefault())
+            }
+    }
+
+    private suspend fun obtenerParcelasDisponiblesParaCiaYRancho(
+        idLocalCia: Long,
+        idRancho: Long
+    ): List<LocalPlotEntity> {
+        /*
+         * Verificamos que el rancho pertenezca a un productor de la CIA.
+         * Después mostramos todas sus parcelas, aunque aún no tengan programa.
+         */
+        val idsProductoresCia = database.localCiaAgroUnitDao()
+            .getProductoresByCia(idLocalCia)
+            .map { productor ->
+                productor.idLocalAgroUnit
+            }
+            .toSet()
+
+        val ranchoPerteneceACia = database.localRanchDao()
+            .getAllRanches()
+            .any { rancho ->
+                rancho.idLocalRanch == idRancho &&
+                        rancho.idLocalAgroUnit in idsProductoresCia
+            }
+
+        if (!ranchoPerteneceACia) {
+            return emptyList()
+        }
+
+        return database.localPlotDao()
+            .getParcelasByRancho(idRancho)
+            .distinctBy { parcela ->
+                parcela.idLocalPlot
+            }
+            .sortedBy { parcela ->
+                parcela.code?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: parcela.name.trim()
+            }
+    }
     fun cargarProductores(
         idLocalCia: Long,
         idProductorRestaurar: Long? = null
@@ -1395,6 +1872,7 @@ class MainViewModel(
                 val resultado = withContext(Dispatchers.IO) {
                     val productoresCia = database.localCiaAgroUnitDao()
                         .getProductoresByCia(idLocalCia)
+                        .sortedBy { it.commercial_name }
 
                     val productorRestaurado = idProductorRestaurar
                         ?.takeIf { id -> id > 0L }
@@ -1404,48 +1882,20 @@ class MainViewModel(
                             }
                         }
 
-                    val programasCia = database.localprogramDao()
-                        .getProgramasByCia(idLocalCia)
-
-                    val programasBase = if (productorRestaurado != null) {
-                        programasCia.filter { programa ->
-                            programa.idLocalAgroUnit == productorRestaurado.idLocalAgroUnit
-                        }
+                    val ranchosFiltro = if (productorRestaurado != null) {
+                        obtenerRanchosDisponiblesParaCiaYProductor(
+                            idLocalCia = idLocalCia,
+                            idProductor = productorRestaurado.idLocalAgroUnit
+                        )
                     } else {
-                        programasCia
-                    }
-
-                    val idsRanchos = programasBase
-                        .map { programa -> programa.idLocalRanch }
-                        .distinct()
-
-                    val idsParcelas = programasBase
-                        .map { programa -> programa.idLocalPlot }
-                        .distinct()
-
-                    val ranchosFiltro = if (idsRanchos.isEmpty()) {
                         emptyList()
-                    } else {
-                        database.localRanchDao()
-                            .getRanchosByIds(idsRanchos)
-                            .sortedBy { rancho -> rancho.name }
-                    }
-
-                    val parcelasFiltro = if (idsParcelas.isEmpty()) {
-                        emptyList()
-                    } else {
-                        database.localPlotDao()
-                            .getParcelasByIds(idsParcelas)
-                            .sortedBy { parcela ->
-                                parcela.code?.takeIf { it.isNotBlank() } ?: parcela.name
-                            }
                     }
 
                     MainCatalogosFiltrosTemp(
                         productores = productoresCia,
                         productorRestaurado = productorRestaurado,
                         ranchos = ranchosFiltro,
-                        parcelas = parcelasFiltro
+                        parcelas = emptyList()
                     )
                 }
 
@@ -1457,7 +1907,7 @@ class MainViewModel(
                         ranchos = resultado.ranchos,
                         ranchoSeleccionado = null,
 
-                        parcelas = resultado.parcelas,
+                        parcelas = emptyList(),
                         parcelaSeleccionada = null,
 
                         ciclos = emptyList(),
@@ -1477,6 +1927,7 @@ class MainViewModel(
         }
     }
 
+
     fun onProductorChange(productor: LocalAgroUnitEntity?) {
         if (productor == null) {
             obtenerPrefsSesion()
@@ -1489,14 +1940,18 @@ class MainViewModel(
             actualizarEstado {
                 it.copy(
                     productorSeleccionado = null,
+
+                    ranchos = emptyList(),
                     ranchoSeleccionado = null,
+
+                    parcelas = emptyList(),
                     parcelaSeleccionada = null,
+
                     cicloSeleccionado = null,
                     ciclos = emptyList()
                 )
             }
 
-            cargarRanchosYParcelasParaFiltros(productor = null)
             cargarMonitoreosPorFiltrosProgresivos()
             return
         }
@@ -1506,14 +1961,19 @@ class MainViewModel(
         actualizarEstado {
             it.copy(
                 productorSeleccionado = productor,
+
+                ranchos = emptyList(),
                 ranchoSeleccionado = null,
+
+                parcelas = emptyList(),
                 parcelaSeleccionada = null,
+
                 cicloSeleccionado = null,
                 ciclos = emptyList()
             )
         }
 
-        cargarRanchosYParcelasParaFiltros(productor = productor)
+        cargarRanchos(productor.idLocalAgroUnit)
         cargarMonitoreosPorFiltrosProgresivos()
     }
 
@@ -1524,42 +1984,34 @@ class MainViewModel(
         viewModelScope.launch {
             try {
                 val resultado = withContext(Dispatchers.IO) {
-                    val programasCia = database.localprogramDao()
-                        .getProgramasByCia(cia.idLocalCia)
+                    val productoresCia = database.localCiaAgroUnitDao()
+                        .getProductoresByCia(cia.idLocalCia)
 
-                    val programasBase = if (idProductorEsperado != null) {
-                        programasCia.filter { programa ->
-                            programa.idLocalAgroUnit == idProductorEsperado
+                    val idsProductoresBase = if (idProductorEsperado != null) {
+                        setOf(idProductorEsperado)
+                    } else {
+                        productoresCia.map { it.idLocalAgroUnit }.toSet()
+                    }
+
+                    val ranchosFiltro = database.localRanchDao()
+                        .getAllRanches()
+                        .filter { rancho ->
+                            rancho.idLocalAgroUnit in idsProductoresBase
                         }
-                    } else {
-                        programasCia
-                    }
+                        .sortedBy { it.name }
 
-                    val idsRanchos = programasBase
-                        .map { programa -> programa.idLocalRanch }
-                        .distinct()
+                    val idsRanchos = ranchosFiltro
+                        .map { it.idLocalRanch }
+                        .toSet()
 
-                    val idsParcelas = programasBase
-                        .map { programa -> programa.idLocalPlot }
-                        .distinct()
-
-                    val ranchosFiltro = if (idsRanchos.isEmpty()) {
-                        emptyList()
-                    } else {
-                        database.localRanchDao()
-                            .getRanchosByIds(idsRanchos)
-                            .sortedBy { rancho -> rancho.name }
-                    }
-
-                    val parcelasFiltro = if (idsParcelas.isEmpty()) {
-                        emptyList()
-                    } else {
-                        database.localPlotDao()
-                            .getParcelasByIds(idsParcelas)
-                            .sortedBy { parcela ->
-                                parcela.code?.takeIf { it.isNotBlank() } ?: parcela.name
-                            }
-                    }
+                    val parcelasFiltro = database.localPlotDao()
+                        .getAllPlots()
+                        .filter { parcela ->
+                            parcela.idLocalRanch in idsRanchos
+                        }
+                        .sortedBy { parcela ->
+                            parcela.code?.takeIf { it.isNotBlank() } ?: parcela.name
+                        }
 
                     ranchosFiltro to parcelasFiltro
                 }
@@ -1567,14 +2019,19 @@ class MainViewModel(
                 actualizarEstado { estadoActual ->
                     val productorActual = estadoActual.productorSeleccionado?.idLocalAgroUnit
 
-                    if (estadoActual.ciaSeleccionada?.idLocalCia != cia.idLocalCia ||
+                    if (
+                        estadoActual.ciaSeleccionada?.idLocalCia != cia.idLocalCia ||
                         productorActual != idProductorEsperado
                     ) {
                         estadoActual
                     } else {
                         estadoActual.copy(
                             ranchos = resultado.first,
-                            parcelas = resultado.second
+                            parcelas = resultado.second,
+                            ranchoSeleccionado = null,
+                            parcelaSeleccionada = null,
+                            ciclos = emptyList(),
+                            cicloSeleccionado = null
                         )
                     }
                 }
@@ -1586,11 +2043,20 @@ class MainViewModel(
     }
 
     fun cargarRanchos(idProductor: Long) {
+        val cia = uiState.ciaSeleccionada
+
+        if (cia == null) {
+            mostrarMensaje("Selecciona una CIA antes de cargar ranchos")
+            return
+        }
+
         viewModelScope.launch {
             try {
                 val lista = withContext(Dispatchers.IO) {
-                    database.localRanchDao()
-                        .getRanchosByProductor(idProductor)
+                    obtenerRanchosDisponiblesParaCiaYProductor(
+                        idLocalCia = cia.idLocalCia,
+                        idProductor = idProductor
+                    )
                 }
 
                 actualizarEstado {
@@ -1605,31 +2071,47 @@ class MainViewModel(
                 }
 
                 if (lista.isEmpty()) {
-                    mostrarMensaje("El productor seleccionado no tiene ranchos registrados")
+                    mostrarMensaje(
+                        "El productor seleccionado no tiene ranchos registrados en esta CIA"
+                    )
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e("MAIN_VM", "Error al cargar ranchos", e)
                 mostrarMensaje("Error al cargar ranchos: ${e.message}")
             }
         }
     }
 
     fun onRanchoChange(rancho: LocalRanchEntity?) {
-        guardarRanchoSesion(rancho?.idLocalRanch)
+        val productorActual = uiState.productorSeleccionado
 
-        if (rancho == null) {
-            val productorActual = uiState.productorSeleccionado
-
+        if (productorActual == null) {
+            mostrarMensaje("Primero selecciona un productor")
             actualizarEstado {
                 it.copy(
                     ranchoSeleccionado = null,
+                    parcelas = emptyList(),
+                    parcelaSeleccionada = null,
+                    ciclos = emptyList(),
+                    cicloSeleccionado = null
+                )
+            }
+            return
+        }
+
+        guardarRanchoSesion(rancho?.idLocalRanch)
+
+        if (rancho == null) {
+            actualizarEstado {
+                it.copy(
+                    ranchoSeleccionado = null,
+                    parcelas = emptyList(),
                     parcelaSeleccionada = null,
                     cicloSeleccionado = null,
                     ciclos = emptyList()
                 )
             }
 
-            cargarRanchosYParcelasParaFiltros(productor = productorActual)
             cargarMonitoreosPorFiltrosProgresivos()
             return
         }
@@ -1637,9 +2119,9 @@ class MainViewModel(
         actualizarEstado {
             it.copy(
                 ranchoSeleccionado = rancho,
+                parcelas = emptyList(),
                 parcelaSeleccionada = null,
                 cicloSeleccionado = null,
-                parcelas = emptyList(),
                 ciclos = emptyList()
             )
         }
@@ -1649,20 +2131,26 @@ class MainViewModel(
     }
 
     fun cargarParcelas(idRanch: Long) {
+        val cia = uiState.ciaSeleccionada
         viewModelScope.launch {
             try {
                 val sesion = uiState.usuarioSesion
 
                 val lista = withContext(Dispatchers.IO) {
-                    if (sesion != null && (sesion.esTecnico || sesion.esInvitado)) {
-                        database.localPlotDao()
-                            .getParcelasByRanchoAndUser(
+                    when {
+                        sesion != null && (sesion.esTecnico || sesion.esInvitado) -> {
+                            database.localPlotDao().getParcelasByRanchoAndUser(
                                 idRanch = idRanch,
                                 idUser = sesion.idUser
                             )
-                    } else {
-                        database.localPlotDao()
-                            .getParcelasByRancho(idRanch)
+                        }
+                        cia != null -> {
+                            obtenerParcelasDisponiblesParaCiaYRancho(
+                                idLocalCia = cia.idLocalCia,
+                                idRancho = idRanch
+                            )
+                        }
+                        else -> emptyList()
                     }
                 }
 
@@ -1684,16 +2172,42 @@ class MainViewModel(
                     mostrarMensaje(mensaje)
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e("MAIN_VM", "Error al cargar parcelas", e)
                 mostrarMensaje("Error al cargar parcelas: ${e.message}")
             }
         }
     }
 
-    fun onParcelaChange(parcela: LocalPlotEntity?) {
-        guardarParcelaSesion(parcela?.idLocalPlot)
 
+    fun onParcelaChange(parcela: LocalPlotEntity?) {
         val productor = uiState.productorSeleccionado
+        val rancho = uiState.ranchoSeleccionado
+
+        if (productor == null) {
+            mostrarMensaje("Primero selecciona un productor")
+            actualizarEstado {
+                it.copy(
+                    parcelaSeleccionada = null,
+                    ciclos = emptyList(),
+                    cicloSeleccionado = null
+                )
+            }
+            return
+        }
+
+        if (rancho == null) {
+            mostrarMensaje("Primero selecciona un rancho")
+            actualizarEstado {
+                it.copy(
+                    parcelaSeleccionada = null,
+                    ciclos = emptyList(),
+                    cicloSeleccionado = null
+                )
+            }
+            return
+        }
+
+        guardarParcelaSesion(parcela?.idLocalPlot)
 
         if (parcela == null) {
             actualizarEstado {
@@ -1703,6 +2217,7 @@ class MainViewModel(
                     ciclos = emptyList()
                 )
             }
+
             cargarMonitoreosPorFiltrosProgresivos()
             return
         }
@@ -1715,8 +2230,10 @@ class MainViewModel(
             )
         }
 
-        if (productor != null) {
+        val cia = uiState.ciaSeleccionada
+        if (cia != null) {
             cargarCiclos(
+                idLocalCia = cia.idLocalCia,
                 idProductor = productor.idLocalAgroUnit,
                 idPlot = parcela.idLocalPlot
             )
@@ -1725,29 +2242,31 @@ class MainViewModel(
         cargarMonitoreosPorFiltrosProgresivos()
     }
 
-    fun cargarCiclos(idProductor: Long, idPlot: Long) {
+    fun cargarCiclos(
+        idLocalCia: Long,
+        idProductor: Long,
+        idPlot: Long
+    ) {
         viewModelScope.launch {
             try {
                 val lista = withContext(Dispatchers.IO) {
-                    database.localprogramDao()
-                        .getCiclosByProductorAndParcela(
-                            idProductor = idProductor,
-                            idPlot = idPlot
-                        )
+                    database.localprogramDao().getCiclosByProductorAndParcela(
+                        idLocalCia = idLocalCia,
+                        idProductor = idProductor,
+                        idPlot = idPlot
+                    )
                 }
 
                 actualizarEstado {
-                    it.copy(
-                        ciclos = lista,
-                        cicloSeleccionado = null
-                    )
+                    it.copy(ciclos = lista, cicloSeleccionado = null)
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e("MAIN_VM", "Error al cargar ciclos", e)
                 mostrarMensaje("Error al cargar ciclos: ${e.message}")
             }
         }
     }
+
 
     private fun filtrosCompletos(): Boolean {
         val estado = uiState
@@ -1793,8 +2312,10 @@ class MainViewModel(
                     val estadoActual = uiState
                     val sesion = estadoActual.usuarioSesion
 
+                    // Buscar solo filtra Room. La sincronización se realiza una vez al abrir la CIA.
                     val programasCia = database.localprogramDao()
                         .getProgramasByCia(cia.idLocalCia)
+                        .distinctBy { programa -> programa.idProgram }
 
                     var programasFiltrados = programasCia
 
@@ -2022,8 +2543,10 @@ class MainViewModel(
                     val ranchoActual = estadoActual.ranchoSeleccionado
                     val parcelaActual = estadoActual.parcelaSeleccionada
 
+                    // Los cambios de filtros no hacen peticiones de red.
                     val programasCia = database.localprogramDao()
                         .getProgramasByCia(cia.idLocalCia)
+                        .distinctBy { programa -> programa.idProgram }
 
                     var programasFiltrados = programasCia
 
@@ -2156,7 +2679,10 @@ class MainViewModel(
         }
     }
 
-    private fun cargarMonitoreosDirectoPorUsuario(sesion: UsuarioSesion) {
+    private fun cargarMonitoreosDirectoPorUsuario(
+        sesion: UsuarioSesion,
+        intentarSincronizacionInicial: Boolean = true
+    ) {
         viewModelScope.launch {
             try {
                 actualizarEstado {
@@ -2179,8 +2705,17 @@ class MainViewModel(
                 }
 
                 val resultado = withContext(Dispatchers.IO) {
+                    val ciasPermitidasUsuario = database.userLocalCiaDao()
+                        .getCiasByUser(sesion.idUser)
+
+                    /*
+                     * Técnico e invitado siempre abren desde Room.
+                     * La red se usa únicamente con el botón ⟳ Sincronizar
+                     * (o una sola vez cuando no existe cache local).
+                     */
+
                     val ciasPermitidasTecnico = if (sesion.esTecnico) {
-                        database.userLocalParentCiaDao().getCiasHijasByUser(sesion.idUser)
+                        ciasPermitidasUsuario
                     } else {
                         emptyList()
                     }
@@ -2343,7 +2878,21 @@ class MainViewModel(
                     )
                 }
 
-                if (resultado.headers.isEmpty()) {
+                val debeIniciarSincronizacionInicial =
+                    intentarSincronizacionInicial &&
+                            resultado.headers.isEmpty() &&
+                            hayConexionInternet() &&
+                            !sincronizandoMonitoreos
+
+                if (debeIniciarSincronizacionInicial) {
+                    /*
+                     * Usuario nuevo: la lista aparece de inmediato (vacía) y la
+                     * primera descarga corre en segundo plano, sin retrasar login.
+                     */
+                    sincronizarInformacionActual(mostrarMensajeFinal = false)
+                }
+
+                if (resultado.headers.isEmpty() && !debeIniciarSincronizacionInicial) {
                     val mensaje = if (sesion.esTecnico) {
                         "No tienes monitoreos asignados dentro de tus CIAS cargadas"
                     } else {
@@ -2360,7 +2909,196 @@ class MainViewModel(
         }
     }
 
+    /**
+     * Acción única para el botón ⟳ Sincronizar.
+     *
+     * No se ejecuta al login, al cambiar filtros ni al regresar de otra pantalla.
+     * Admin/gerente/supervisor actualizan solo su CIA actual; técnico/invitado
+     * actualizan únicamente las CIAs que el servidor les asignó.
+     */
+    fun sincronizarInformacionActual(
+        mostrarMensajeFinal: Boolean = true
+    ) {
+        if (sincronizandoMonitoreos) return
+
+        val sesion = uiState.usuarioSesion
+        if (sesion == null) {
+            mostrarMensaje("No hay sesión activa")
+            return
+        }
+
+        if (!hayConexionInternet()) {
+            mostrarMensaje("Sin internet. Se muestran los datos guardados.")
+            return
+        }
+
+        trabajoSincronizacionMonitoreos?.cancel()
+
+        trabajoSincronizacionMonitoreos = viewModelScope.launch {
+            sincronizandoMonitoreos = true
+
+            try {
+                val ciasObjetivo = withContext(Dispatchers.IO) {
+                    when {
+                        sesion.esAdmin || sesion.esGerente || sesion.esSupervisor -> {
+                            uiState.ciaSeleccionada?.let { listOf(it) }.orEmpty()
+                        }
+
+                        else -> {
+                            database.userLocalCiaDao()
+                                .getCiasByUser(sesion.idUser)
+                                .distinctBy { it.idLocalCia }
+                        }
+                    }
+                }
+
+                if (ciasObjetivo.isEmpty()) {
+                    if (mostrarMensajeFinal) {
+                        mostrarMensaje("No hay una CIA asignada para actualizar.")
+                    }
+                    return@launch
+                }
+
+                val errores = mutableListOf<String>()
+                var actualizacionesCorrectas = 0
+
+                ciasObjetivo.forEachIndexed { indiceCia, cia ->
+                    /*
+                     * Solo la CIA objetivo. Nunca se descarga información global de
+                     * todas las CIAs del usuario al tocar el botón.
+                     */
+                    val resultadoAgro = withContext(Dispatchers.IO) {
+                        agroSyncRepository.sincronizarProductoresRanchosParcelas(
+                            idLocalCia = cia.idLocalCia
+                        )
+                    }
+
+                    if (resultadoAgro is ResultadoAgroSync.Error) {
+                        errores += "${cia.nombre}: ${resultadoAgro.mensaje}"
+                        return@forEachIndexed
+                    }
+
+                    val resultadoMonitoreos = withContext(Dispatchers.IO) {
+                        monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
+                            idLocalCia = cia.idLocalCia,
+                            /*
+                             * Los catálogos son globales: se revisan una sola vez,
+                             * aunque el usuario tenga varias CIAs asignadas.
+                             */
+                            actualizarCatalogos = indiceCia == 0
+                        )
+                    }
+
+                    when (resultadoMonitoreos) {
+                        is ResultadoMonitoreoSync.Exito -> {
+                            actualizacionesCorrectas++
+
+                            if (resultadoMonitoreos.advertencias.isNotEmpty()) {
+                                errores += resultadoMonitoreos.advertencias.take(2)
+                            }
+                        }
+
+                        is ResultadoMonitoreoSync.Error -> {
+                            errores += "${cia.nombre}: ${resultadoMonitoreos.mensaje}"
+                        }
+                    }
+                }
+
+                if (actualizacionesCorrectas > 0) {
+                    marcarUltimaSincronizacionMonitoreos()
+                }
+
+                /*
+                 * Releer Room una sola vez al terminar. Los filtros no vuelven a
+                 * tocar API y conservan la selección que ya tenía el usuario.
+                 */
+                if (sesion.esAdmin || sesion.esGerente || sesion.esSupervisor) {
+                    val cia = uiState.ciaSeleccionada
+                    if (cia != null) {
+                        cargarProductores(
+                            idLocalCia = cia.idLocalCia,
+                            idProductorRestaurar = uiState.productorSeleccionado?.idLocalAgroUnit
+                        )
+                    }
+                } else {
+                    cargarMonitoreosDirectoPorUsuario(
+                        sesion = sesion,
+                        intentarSincronizacionInicial = false
+                    )
+                }
+
+                if (mostrarMensajeFinal) {
+                    when {
+                        actualizacionesCorrectas <= 0 && errores.isNotEmpty() -> {
+                            mostrarMensaje(
+                                "No se pudo actualizar. ${errores.distinct().joinToString(" | ")}"
+                            )
+                        }
+
+                        errores.isEmpty() -> {
+                            mostrarMensaje("Información actualizada correctamente.")
+                        }
+
+                        else -> {
+                            mostrarMensaje(
+                                "Actualización parcial. ${errores.distinct().joinToString(" | ")}"
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MAIN_VM", "Error actualizando información", e)
+
+                if (mostrarMensajeFinal) {
+                    mostrarMensaje(
+                        "No se pudo actualizar la información: ${e.message ?: "detalle no disponible"}"
+                    )
+                }
+            } finally {
+                sincronizandoMonitoreos = false
+            }
+        }
+    }
+
+    private fun headerPermitidoEnListaActual(header: LocalPhytomonitoringHeaderEntity): Boolean {
+        val sesion = uiState.usuarioSesion ?: return false
+
+        return when {
+            sesion.esAdmin || sesion.esGerente || sesion.esSupervisor -> {
+                uiState.ciaSeleccionada != null &&
+                        uiState.monitoreosEncontrados.any { permitido ->
+                            permitido.idHeader == header.idHeader &&
+                                    permitido.idProgram == header.idProgram &&
+                                    permitido.idLocalPlot == header.idLocalPlot
+                        }
+            }
+
+            sesion.esTecnico || sesion.esInvitado -> {
+                uiState.monitoreosEncontrados.any { permitido ->
+                    permitido.idHeader == header.idHeader &&
+                            permitido.idProgram == header.idProgram &&
+                            permitido.idLocalPlot == header.idLocalPlot
+                }
+            }
+
+            else -> false
+        }
+    }
+
+    private fun bloquearHeaderSinPermiso(header: LocalPhytomonitoringHeaderEntity): Boolean {
+        if (headerPermitidoEnListaActual(header)) {
+            return false
+        }
+
+        mostrarMensaje("No tienes permiso para abrir este monitoreo con la CIA/filtros actuales")
+        return true
+    }
+
     fun abrirReporte(header: LocalPhytomonitoringHeaderEntity) {
+        if (bloquearHeaderSinPermiso(header)) {
+            return
+        }
+
         if (esEstadoCanceladoVm(header.status)) {
             mostrarMensaje("Este monitoreo está cancelado. No se puede ver la información.")
             return
@@ -2454,24 +3192,13 @@ class MainViewModel(
                  */
                 val headerActualizado = obtenerHeaderFrescoSeguro(header)
                 actualizarHeaderEnLista(headerActualizado)
+
+                if (bloquearHeaderSinPermiso(headerActualizado)) {
+                    return@launch
+                }
+
                 if (esEstadoCanceladoVm(headerActualizado.status)) {
                     mostrarMensaje("Este monitoreo está cancelado. No se puede abrir ni consultar información.")
-                    return@launch
-                }
-
-                if (esEstadoCerradoVm(headerActualizado.status)) {
-                    mandarAReportePorMonitoreoCerrado(
-                        header = headerActualizado,
-                        mensaje = "Este monitoreo ya está cerrado. Solo puedes ver el reporte."
-                    )
-                    return@launch
-                }
-
-                if (sesion.esGerente || sesion.esSupervisor) {
-                    mandarAReportePorMonitoreoCerrado(
-                        header = headerActualizado,
-                        mensaje = "Tu rol solo puede consultar la información del monitoreo."
-                    )
                     return@launch
                 }
 
@@ -2514,22 +3241,18 @@ class MainViewModel(
             try {
                 actualizarEstado { it.copy(cargando = true) }
 
-
                 val headerActualizado = obtenerHeaderFrescoSeguro(headerActual)
                 actualizarHeaderEnLista(headerActualizado)
+
+                if (esEstadoCanceladoVm(headerActualizado.status)) {
+                    mostrarMensaje("Este monitoreo está cancelado. No se pueden registrar puntos.")
+                    return@launch
+                }
 
                 if (esEstadoCerradoVm(headerActualizado.status)) {
                     mandarAReportePorMonitoreoCerrado(
                         header = headerActualizado,
                         mensaje = "Este monitoreo ya está cerrado. No se pueden registrar más puntos."
-                    )
-                    return@launch
-                }
-
-                if (sesion.esGerente || sesion.esSupervisor) {
-                    mandarAReportePorMonitoreoCerrado(
-                        header = headerActualizado,
-                        mensaje = "Tu rol solo puede consultar monitoreos."
                     )
                     return@launch
                 }
@@ -2579,40 +3302,82 @@ class MainViewModel(
 
     fun onMonitoreoActualizado(nuevoEstado: String) {
         val esCompletado = esEstadoFinalizadoVm(nuevoEstado)
-
-        mostrarMensaje(
-            if (esCompletado) {
-                "Monitoreo terminado correctamente"
-            } else {
-                "Monitoreo guardado en proceso"
-            }
-        )
-
+        val headerMapa = uiState.monitoreoSeleccionadoParaMapa
         val sesion = uiState.usuarioSesion
 
-        actualizarEstado {
-            it.copy(
-                monitoreoSeleccionadoParaMapa = null,
-                puntoSeleccionadoParaRegistro = null,
+        viewModelScope.launch {
+            try {
+                val headerFresco = withContext(Dispatchers.IO) {
+                    headerMapa?.let { header ->
+                        database.localphytomonitoringheaderDao()
+                            .getHeaderById(header.idHeader)
+                            ?: header.copy(status = nuevoEstado)
+                    }
+                }
 
-                /*
-                 * Si se terminó un monitoreo, activamos finalizados para que
-                 * no desaparezca al regresar a la lista.
-                 */
-                finalizadosChecked = if (esCompletado) true else it.finalizadosChecked
-            )
-        }
+                if (headerFresco != null) {
+                    actualizarHeaderEnLista(headerFresco)
+                }
 
-        if (sesion != null && (sesion.esTecnico || sesion.esInvitado)) {
-            cargarMonitoreosDirectoPorUsuario(sesion)
-        } else {
-            actualizarEstado {
-                it.copy(
-                    pantallaActual = PantallaActual.FILTROS_MONITOREO
+                if (esCompletado && headerFresco != null) {
+                    actualizarEstado { estado ->
+                        estado.copy(
+                            monitoreoSeleccionadoParaReporte = headerFresco,
+                            monitoreoSeleccionadoParaMapa = null,
+                            puntoSeleccionadoParaRegistro = null,
+                            finalizadosChecked = true,
+                            pantallaActual = PantallaActual.REPORTE_MONITOREO
+                        )
+                    }
+
+                    mostrarMensaje(
+                        "Monitoreo finalizado. Si no había conexión, el estado se reenviará en la siguiente sincronización."
+                    )
+
+                    return@launch
+                }
+
+                actualizarEstado {
+                    it.copy(
+                        monitoreoSeleccionadoParaMapa = null,
+                        puntoSeleccionadoParaRegistro = null,
+                        finalizadosChecked = if (esCompletado) true else it.finalizadosChecked
+                    )
+                }
+
+                mostrarMensaje(
+                    if (
+                        headerFresco?.additionalNotes
+                            ?.trim()
+                            ?.startsWith("PAUSADO", ignoreCase = true) == true
+                    ) {
+                        "Monitoreo pausado correctamente"
+                    } else {
+                        "Monitoreo guardado en proceso"
+                    }
                 )
-            }
 
-            cargarMonitoreosPorFiltrosProgresivos()
+                if (sesion != null && (sesion.esTecnico || sesion.esInvitado)) {
+                    // Al pausar no descargamos de API inmediatamente,
+                    // porque puede sobrescribir additionalNotes = "PAUSADO".
+                    actualizarEstado {
+                        it.copy(
+                            pantallaActual = PantallaActual.LISTA_MONITOREOS
+                        )
+                    }
+                } else {
+                    actualizarEstado {
+                        it.copy(
+                            pantallaActual = PantallaActual.FILTROS_MONITOREO
+                        )
+                    }
+
+                    cargarMonitoreosPorFiltrosProgresivos()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                mostrarMensaje("Error al cerrar monitoreo: ${e.message}")
+            }
         }
     }
 
@@ -2631,14 +3396,46 @@ class MainViewModel(
 
         if (uiState.cargando) return
 
+        if (!hayConexionInternet()) {
+            mostrarMensaje(
+                "Conecta a internet para cancelar el monitoreo en el servidor."
+            )
+            return
+        }
+
         viewModelScope.launch {
             try {
                 actualizarEstado { it.copy(cargando = true) }
 
-                val headerActualizado = withContext(Dispatchers.IO) {
-                    val fechaCancelacion = System.currentTimeMillis()
-                    val notaCancelacion = "Cancelado: $motivoLimpio"
+                val fechaCancelacion = System.currentTimeMillis()
+                val notaCancelacion = "Cancelado: $motivoLimpio"
 
+                val resultadoServidor = withContext(Dispatchers.IO) {
+                    val headerExtId = header.extId
+                        ?.trim()
+                        ?.takeIf { it.isNotBlank() }
+
+                    if (headerExtId == null) {
+                        ResultadoActualizarHeaderApi.Error(
+                            "El monitoreo no tiene identificador del servidor."
+                        )
+                    } else {
+                        phytoMonitoringRepository.actualizarHeaderServidor(
+                            idHeaderExt = headerExtId,
+                            status = "cancelled",
+                            additionalNotes = notaCancelacion
+                        )
+                    }
+                }
+
+                if (resultadoServidor is ResultadoActualizarHeaderApi.Error) {
+                    mostrarMensaje(
+                        "No se pudo cancelar en el servidor. Verifica internet e intenta nuevamente."
+                    )
+                    return@launch
+                }
+
+                val headerActualizado = withContext(Dispatchers.IO) {
                     database.localphytomonitoringheaderDao()
                         .cancelarMonitoreoConMotivo(
                             idHeader = header.idHeader,
@@ -2646,20 +3443,31 @@ class MainViewModel(
                             motivoCancelacion = notaCancelacion
                         )
 
-                    database.localphytomonitoringheaderDao()
+                    val actualizado = database.localphytomonitoringheaderDao()
                         .getHeaderById(header.idHeader)
                         ?: header.copy(
                             status = "Cancelado",
                             finishedAt = fechaCancelacion,
                             additionalNotes = notaCancelacion
                         )
+
+                    database.localprogramDao()
+                        .recalcularEstadoDesdeHeaders(actualizado.idProgram)
+
+                    actualizado
                 }
 
                 actualizarHeaderEnLista(headerActualizado)
-                mostrarMensaje("Monitoreo cancelado correctamente")
+
+                mostrarMensaje(
+                    "Monitoreo cancelado y enviado correctamente al servidor."
+                )
             } catch (e: Exception) {
                 e.printStackTrace()
-                mostrarMensaje("Error al cancelar monitoreo: ${e.message}")
+
+                mostrarMensaje(
+                    "No se pudo cancelar en el servidor. Verifica internet e intenta nuevamente."
+                )
             } finally {
                 actualizarEstado { it.copy(cargando = false) }
             }
@@ -2767,6 +3575,10 @@ class MainViewModel(
     }
 
     fun onPerfilActualizado(usuario: UserEntity) {
+        // Si se modificó la contraseña desde Perfil, relee la credencial cifrada
+        // para que al cerrar sesión aparezca la contraseña nueva.
+        cargarCredencialesRecordadasEnLogin()
+
         actualizarEstado {
             it.copy(
                 idUsuarioActual = usuario.idUser,
@@ -2896,6 +3708,7 @@ class MainViewModel(
     fun manejarBack() {
         when (uiState.pantallaActual) {
             PantallaActual.REGISTRO,
+            PantallaActual.RECUPERAR_PASSWORD,
             PantallaActual.INFORMACION,
             PantallaActual.CONTACTO -> {
                 irA(PantallaActual.LOGIN)

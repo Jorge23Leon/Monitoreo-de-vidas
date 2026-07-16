@@ -10,7 +10,6 @@ import com.example.myapplication.local.entities.LocalRanchEntity
 
 @Dao
 interface LocalRanchDao {
-
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertRanch(ranch: LocalRanchEntity): Long
 
@@ -41,18 +40,41 @@ interface LocalRanchDao {
     @Query("DELETE FROM local_ranches")
     suspend fun deleteAllRanches()
 
-    @Query("""
-    SELECT *
-    FROM local_ranches
-    WHERE idLocalAgroUnit = :idProductor
-    ORDER BY name ASC
-""")
+    @Query("SELECT * FROM local_ranches WHERE idLocalAgroUnit = :idProductor ORDER BY name ASC")
     suspend fun getRanchosByProductor(idProductor: Long): List<LocalRanchEntity>
 
-    @Query("""
-    SELECT *
-    FROM local_ranches
-    WHERE idLocalRanch IN (:ids)
-""")
+    /** Solo ranchos que tienen al menos un programa de la CIA seleccionada. */
+    @Query(
+        """
+        SELECT DISTINCT r.*
+        FROM local_ranches r
+        INNER JOIN local_programs p ON p.idLocalRanch = r.idLocalRanch
+        WHERE p.idLocalCia = :idLocalCia
+          AND p.idLocalAgroUnit = :idProductor
+        ORDER BY r.name ASC
+        """
+    )
+    suspend fun getRanchosByCiaAndProductor(
+        idLocalCia: Long,
+        idProductor: Long
+    ): List<LocalRanchEntity>
+
+    @Query("SELECT * FROM local_ranches WHERE idLocalRanch IN (:ids)")
     suspend fun getRanchosByIds(ids: List<Long>): List<LocalRanchEntity>
+
+    @Query("SELECT * FROM local_ranches WHERE ext_id = :extId LIMIT 1")
+    suspend fun getRanchByExtId(extId: String): LocalRanchEntity?
+
+    @Query(
+        """
+        SELECT * FROM local_ranches
+        WHERE idLocalAgroUnit = :idLocalAgroUnit
+          AND code = :code
+        LIMIT 1
+        """
+    )
+    suspend fun getRanchByCodeAndAgroUnit(
+        idLocalAgroUnit: Long,
+        code: String
+    ): LocalRanchEntity?
 }

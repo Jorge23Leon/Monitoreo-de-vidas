@@ -1,5 +1,8 @@
 package com.example.myapplication.local.entities
 
+// CAMBIO PUNTOS/CSV: se agrega label para conservar la etiqueta exacta recibida
+// de la API, por ejemplo: "Punto 2" o "Punto 17".
+
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
@@ -36,6 +39,9 @@ data class LocalPhytomonitoringTargetPointEntity(
     @ColumnInfo(name = "ext_id")
     val extId: String? = null,
 
+    @ColumnInfo(name = "label", defaultValue = "''")
+    val label: String = "",
+
     @ColumnInfo(name = "radius_m")
     val radiusM: Int,
 
@@ -43,10 +49,6 @@ data class LocalPhytomonitoringTargetPointEntity(
 
     val lon: Double,
 
-    /**
-     * Valores esperados:
-     * "Pendiente", "En proceso", "Cancelado", "Completado"
-     */
     val status: String = "Pendiente",
 
     val idHeader: Long,

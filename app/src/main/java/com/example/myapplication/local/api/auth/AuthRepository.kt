@@ -3,6 +3,8 @@ package com.example.myapplication.local.api.auth
 import android.content.Context
 import com.example.myapplication.local.api.core.RetrofitClient
 
+
+// se manda la peticion
 class AuthRepository(
     context: Context? = null,
     private val authApiServicePublico: AuthApiService = RetrofitClient.authApiService
@@ -11,7 +13,7 @@ class AuthRepository(
     private val authApiServiceAutenticado: AuthApiService =
         if (context != null) {
             RetrofitClient.crearServicioAutenticado(
-                context = context,
+                context = context.applicationContext,
                 serviceClass = AuthApiService::class.java
             )
         } else {
@@ -68,8 +70,10 @@ class AuthRepository(
             if (response.isSuccessful) {
                 val body = response.body()
 
-                if (body == null) {
-                    ResultadoLoginApi.Error("El servidor respondió vacío")
+                if (body == null || body.access.isNullOrBlank() || body.refresh.isNullOrBlank()) {
+                    ResultadoLoginApi.Error(
+                        "No se pudo iniciar sesión. Intenta nuevamente."
+                    )
                 } else {
                     ResultadoLoginApi.Exito(
                         access = body.access,
@@ -77,14 +81,23 @@ class AuthRepository(
                     )
                 }
             } else {
-                val error = response.errorBody()?.string()
-                ResultadoLoginApi.Error(
-                    "Login falló: ${response.code()} ${error ?: response.message()}"
-                )
+                when (response.code()) {
+                    400, 401, 403 -> {
+                        ResultadoLoginApi.Error(
+                            "Usuario o contraseña incorrectos."
+                        )
+                    }
+
+                    else -> {
+                        ResultadoLoginApi.Error(
+                            "No se pudo iniciar sesión. Intenta nuevamente."
+                        )
+                    }
+                }
             }
         } catch (e: Exception) {
             ResultadoLoginApi.Error(
-                "No se pudo conectar al servidor: ${e.message}"
+                "No se pudo conectar al servidor. Revisa tu conexión e inténtalo nuevamente."
             )
         }
     }
@@ -140,6 +153,46 @@ class AuthRepository(
             )
         }
     }
+
+    suspend fun cambiarPassword(
+        oldPassword: String,
+        newPassword: String
+    ): ResultadoCambiarPasswordApi {
+        return try {
+            val response = authApiServiceAutenticado.changePassword(
+                ChangePasswordRequest(
+                    old_password = oldPassword,
+                    new_password = newPassword
+                )
+            )
+
+            if (response.isSuccessful) {
+                ResultadoCambiarPasswordApi.Exito(
+                    mensaje = response.body()?.detail
+                        ?.takeIf { it.isNotBlank() }
+                        ?: "Contraseña actualizada correctamente."
+                )
+            } else {
+                when (response.code()) {
+                    400 -> ResultadoCambiarPasswordApi.Error(
+                        "La contraseña actual no es correcta."
+                    )
+
+                    401, 403 -> ResultadoCambiarPasswordApi.Error(
+                        "Tu sesión venció. Inicia sesión nuevamente."
+                    )
+
+                    else -> ResultadoCambiarPasswordApi.Error(
+                        "No se pudo actualizar la contraseña. Intenta nuevamente."
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            ResultadoCambiarPasswordApi.Error(
+                "No se pudo conectar al servidor. Revisa tu conexión e inténtalo nuevamente."
+            )
+        }
+    }
 }
 
 sealed class ResultadoLoginApi {
@@ -179,4 +232,14 @@ sealed class ResultadoSignupApi {
     data class Error(
         val mensaje: String
     ) : ResultadoSignupApi()
+}
+
+sealed class ResultadoCambiarPasswordApi {
+    data class Exito(
+        val mensaje: String
+    ) : ResultadoCambiarPasswordApi()
+
+    data class Error(
+        val mensaje: String
+    ) : ResultadoCambiarPasswordApi()
 }

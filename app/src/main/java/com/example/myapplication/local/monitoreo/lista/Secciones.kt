@@ -175,6 +175,10 @@ internal fun TarjetaMonitoreoUsuario(
     val monitoreoCancelado = estadoNormalizado == "cancelado" ||
             estadoNormalizado == "cancelled" ||
             estadoNormalizado == "canceled"
+    val monitoreoPausado = esMonitoreoPausadoLista(
+        status = status,
+        additionalNotes = additionalNotes
+    )
 
     var menuAbierto by remember {
         mutableStateOf(false)
@@ -371,13 +375,20 @@ internal fun TarjetaMonitoreoUsuario(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(42.dp),
-                            shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF0B6B20)
+                                containerColor = if (monitoreoPausado) {
+                                    Color(0xFFE69500)
+                                } else {
+                                    Color(0xFF0B6B20)
+                                }
                             )
                         ) {
                             Text(
-                                text = "Abrir monitoreo",
+                                text = if (monitoreoPausado) {
+                                    "▶ Monitoreo pausado"
+                                } else {
+                                    "Abrir monitoreo"
+                                },
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp

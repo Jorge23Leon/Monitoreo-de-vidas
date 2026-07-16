@@ -94,23 +94,44 @@ internal fun crearHtmlMapaMonitoreo(
                 .error-box {
                     color: #b00020;
                 }
-
-                .legend {
-                    background: rgba(255, 255, 255, 0.94);
-                    padding: 8px 10px;
-                    border-radius: 12px;
-                    box-shadow: 0 3px 12px rgba(0,0,0,0.22);
-                    font-size: 11px;
-                    line-height: 18px;
+                .legend-fija {
+                    margin: 0;
+                    background: rgba(255, 255, 255, 0.95);
+                    padding: 7px 8px;
+                    border: 1px solid rgba(18,61,31,0.16);
+                    border-radius: 11px;
+                    box-shadow: 0 3px 10px rgba(0,0,0,0.22);
+                    font-size: 10.5px;
+                    line-height: 14px;
                     color: #222;
-                    margin-bottom: 28px;
+                    min-width: 126px;
+                    max-width: 148px;
+                    box-sizing: border-box;
                 }
 
-                .legend-title {
+                .legend-fija .legend-title {
+                    color: #123D1F;
+                    font-size: 11px;
                     font-weight: bold;
                     margin-bottom: 4px;
-                    color: #0B3D16;
+                    white-space: nowrap;
                 }
+
+                .legend-row {
+                    display: flex;
+                    align-items: center;
+                    gap: 5px;
+                    white-space: nowrap;
+                }
+
+                .legend-fija .dot {
+                    width: 9px;
+                    height: 9px;
+                    flex: 0 0 9px;
+                    margin-right: 0;
+                }
+
+
 
                 .dot {
                     height: 10px;
@@ -130,6 +151,68 @@ internal fun crearHtmlMapaMonitoreo(
                     font-size: 12px;
                     font-weight: bold;
                     max-width: 260px;
+                }
+                .marcador-pe-wrapper {
+                    background: transparent !important;
+                    border: none !important;
+                }
+
+                .marcador-pe {
+                    position: relative;
+                    width: 44px;
+                    height: 48px;
+                    user-select: none;
+                    -webkit-user-select: none;
+                }
+
+                .marcador-pe-letras {
+                    position: absolute;
+                    top: 0;
+                    left: 4px;
+                    width: 36px;
+                    display: flex;
+                    justify-content: space-around;
+                    align-items: center;
+                    color: #FFFFFF;
+                    font-size: 11px;
+                    line-height: 13px;
+                    font-weight: 900;
+                    text-shadow:
+                        -1px -1px 2px #1A1A1A,
+                         1px -1px 2px #1A1A1A,
+                        -1px  1px 2px #1A1A1A,
+                         1px  1px 2px #1A1A1A;
+                }
+
+                .marcador-pe-circulo {
+                    position: absolute;
+                    top: 14px;
+                    left: 5px;
+                    display: flex;
+                    width: 34px;
+                    height: 34px;
+                    overflow: hidden;
+                    border: 2.5px solid #17211B;
+                    border-radius: 50%;
+                    box-sizing: border-box;
+                    background: #16A34A;
+                    box-shadow:
+                        0 2px 6px rgba(0, 0, 0, 0.42),
+                        0 0 0 2px rgba(255, 255, 255, 0.76);
+                }
+
+                .marcador-pe-mitad {
+                    width: 50%;
+                    height: 100%;
+                    box-sizing: border-box;
+                }
+
+                .marcador-pe-plaga {
+                    border-right: 1.5px solid #17211B;
+                }
+
+                .marcador-pe-enfermedad {
+                    border-left: 1.5px solid #17211B;
                 }
 
                 .leaflet-control-attribution {
@@ -187,12 +270,78 @@ internal fun crearHtmlMapaMonitoreo(
                         lat: Number(p.lat),
                         lon: Number(p.lon),
                         radius: Number(p.radius || p.radiusM || 4),
-                        status: (p.status || 'pending').toLowerCase(),
+                        status: String(p.status || 'pending').toLowerCase(),
+
+                        // Campos anteriores conservados por compatibilidad.
                         totalCantidadPunto: Number(p.totalCantidadPunto || 0),
-                        severityStatus: p.severityStatus || p.severityLabel || 'Pendiente',
-                        severityColor: p.severityColor || '#D98A00',
-                        severityLevel: Number(p.severityLevel || 0)
+                        severityStatus:
+                            p.severityStatus ||
+                            p.severityLabel ||
+                            'Pendiente',
+                        severityColor:
+                            p.severityColor ||
+                            '#D98A00',
+                        severityLevel:
+                            Number(p.severityLevel || 0),
+
+                        // Mitad izquierda: plagas.
+                        plagaColor:
+                            p.plagaColor ||
+                            '#16A34A',
+                        plagaTexto:
+                            p.plagaTexto ||
+                            'Sin evaluar',
+                        plagaNivel:
+                            Number(p.plagaNivel || 0),
+                        totalCantidadPlaga:
+                            Number(p.totalCantidadPlaga || 0),
+
+                        // Mitad derecha: enfermedades.
+                        enfermedadColor:
+                            p.enfermedadColor ||
+                            '#16A34A',
+                        enfermedadTexto:
+                            p.enfermedadTexto ||
+                            'Sin evaluar',
+                        enfermedadNivel:
+                            Number(p.enfermedadNivel || 0)
                     };
+                }
+
+                function crearIconoPuntoDividido(p) {
+                    const colorPlaga =
+                        p.plagaColor ||
+                        '#16A34A';
+
+                    const colorEnfermedad =
+                        p.enfermedadColor ||
+                        '#16A34A';
+
+                    const html =
+                        '<div class="marcador-pe">' +
+                            '<div class="marcador-pe-letras">' +
+                                '<span>P</span>' +
+                                '<span>E</span>' +
+                            '</div>' +
+                            '<div class="marcador-pe-circulo">' +
+                                '<div ' +
+                                    'class="marcador-pe-mitad marcador-pe-plaga" ' +
+                                    'style="background:' + colorPlaga + '">' +
+                                '</div>' +
+                                '<div ' +
+                                    'class="marcador-pe-mitad marcador-pe-enfermedad" ' +
+                                    'style="background:' + colorEnfermedad + '">' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>';
+
+                    return L.divIcon({
+                        className: 'marcador-pe-wrapper',
+                        html: html,
+                        iconSize: [44, 48],
+                        iconAnchor: [22, 31],
+                        tooltipAnchor: [0, -22]
+                    });
                 }
 
                 function puntoEstaCompletado(p) {
@@ -230,12 +379,13 @@ internal fun crearHtmlMapaMonitoreo(
                         return 'Punto pendiente';
                     }
 
-                    const total = Number(p.totalCantidadPunto || 0);
-                    const severidad = p.severityStatus || 'Sin plaga';
-
-                    return 'Punto monitoreado<br>' +
-                        'Severidad: ' + escapeHtml(severidad) + '<br>' +
-                        'Total del punto: ' + total;
+                    return '' +
+                        '<b>Punto monitoreado</b><br>' +
+                        '<b>P · Plaga:</b> ' +
+                        escapeHtml(p.plagaTexto || 'Sin evaluar') +
+                        '<br>' +
+                        '<b>E · Enfermedad:</b> ' +
+                        escapeHtml(p.enfermedadTexto || 'Sin evaluar');
                 }
 
                 function mostrarError(mensaje) {
@@ -248,26 +398,97 @@ internal fun crearHtmlMapaMonitoreo(
                 }
 
                 function agregarCapaBase() {
-                    if (internetDisponible) {
-                        L.tileLayer(
-                            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                            {
-                                maxZoom: 19,
-                                maxNativeZoom: 19,
-                                attribution: 'Tiles © Esri'
+                    /*
+                     * Primero se dibuja un fondo local bonito.
+                     * Después se agrega la capa satelital de Esri.
+                     *
+                     * En Android, WebMapa.kt intercepta estos tiles:
+                     * - con internet: los descarga y los guarda en filesDir/map_tiles
+                     * - sin internet: sirve los tiles guardados
+                     *
+                     * Si no existe el tile en cache, se queda visible este fondo local.
+                     */
+                    const MapaLocal = L.GridLayer.extend({
+                        createTile: function(coords) {
+                            const tile = document.createElement('canvas');
+                            const size = this.getTileSize();
+
+                            tile.width = size.x;
+                            tile.height = size.y;
+
+                            const ctx = tile.getContext('2d');
+
+                            ctx.fillStyle = '#E7F0DC';
+                            ctx.fillRect(0, 0, size.x, size.y);
+
+                            const grad = ctx.createLinearGradient(0, 0, size.x, size.y);
+                            grad.addColorStop(0, 'rgba(139, 195, 74, 0.20)');
+                            grad.addColorStop(0.45, 'rgba(255, 255, 255, 0.18)');
+                            grad.addColorStop(1, 'rgba(76, 175, 80, 0.18)');
+                            ctx.fillStyle = grad;
+                            ctx.fillRect(0, 0, size.x, size.y);
+
+                            ctx.strokeStyle = 'rgba(27, 94, 32, 0.10)';
+                            ctx.lineWidth = 1;
+
+                            for (let x = -size.x; x < size.x * 2; x += 44) {
+                                ctx.beginPath();
+                                ctx.moveTo(x, 0);
+                                ctx.lineTo(x + size.x, size.y);
+                                ctx.stroke();
                             }
-                        ).addTo(map);
-                    } else {
-                        L.tileLayer(
-                            'file:///android_asset/leaflet/tiles/{z}/{x}/{y}.png',
-                            {
-                                minZoom: 0,
-                                maxZoom: 19,
-                                maxNativeZoom: 19,
-                                attribution: 'Mapa local'
+
+                            ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+                            ctx.lineWidth = 1;
+
+                            for (let x = 0; x <= size.x; x += 64) {
+                                ctx.beginPath();
+                                ctx.moveTo(x, 0);
+                                ctx.lineTo(x, size.y);
+                                ctx.stroke();
                             }
-                        ).addTo(map);
-                    }
+
+                            for (let y = 0; y <= size.y; y += 64) {
+                                ctx.beginPath();
+                                ctx.moveTo(0, y);
+                                ctx.lineTo(size.x, y);
+                                ctx.stroke();
+                            }
+
+                            ctx.strokeStyle = 'rgba(27, 94, 32, 0.08)';
+                            ctx.lineWidth = 3;
+
+                            ctx.beginPath();
+                            ctx.moveTo(0, size.y * 0.35);
+                            ctx.lineTo(size.x, size.y * 0.25);
+                            ctx.stroke();
+
+                            ctx.beginPath();
+                            ctx.moveTo(0, size.y * 0.72);
+                            ctx.lineTo(size.x, size.y * 0.62);
+                            ctx.stroke();
+
+                            return tile;
+                        }
+                    });
+
+                    new MapaLocal({
+                        tileSize: 256,
+                        minZoom: 0,
+                        maxZoom: 28,
+                        attribution: 'Mapa local'
+                    }).addTo(map);
+
+                    L.tileLayer(
+                        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                        {
+                            maxZoom: 28,
+                            maxNativeZoom: 18,
+                            attribution: internetDisponible ? 'Tiles © Esri' : 'Mapa en cache',
+                            opacity: 1,
+                            errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lCjQ9wAAAABJRU5ErkJggg=='
+                        }
+                    ).addTo(map);
                 }
 
                 function puntoDentroPoligono(lat, lon) {
@@ -336,16 +557,34 @@ internal fun crearHtmlMapaMonitoreo(
                 window.setSelectedFreePoint = setSelectedFreePoint;
                 window.clearSelectedFreePoint = clearSelectedFreePoint;
 
-                function seleccionarDesdeMapa(lat, lon) {
-                    if (!puntoDentroPoligono(lat, lon)) {
-                        alert('Selecciona un punto dentro de la parcela.');
+                /*
+                 * El toque al mapa NO define las coordenadas del punto.
+                 * Solamente confirma que la persona desea capturar un punto.
+                 * La posición usada es siempre currentUserLocation, recibida del GPS de Android.
+                 */
+                function seleccionarDesdeMapa() {
+                    if (currentUserLocation == null) {
+                        alert('Aún no se obtiene tu ubicación GPS. Espera unos segundos e inténtalo de nuevo.');
                         return;
                     }
 
-                    setSelectedFreePoint(lat, lon);
+                    const latGps = Number(currentUserLocation.lat);
+                    const lonGps = Number(currentUserLocation.lon);
+
+                    if (isNaN(latGps) || isNaN(lonGps)) {
+                        alert('La ubicación GPS no es válida todavía. Inténtalo nuevamente.');
+                        return;
+                    }
+
+                    if (!puntoDentroPoligono(latGps, lonGps)) {
+                        alert('Tu ubicación GPS actual está fuera de la parcela. Acércate al área verde para registrar el punto.');
+                        return;
+                    }
+
+                    setSelectedFreePoint(latGps, lonGps);
 
                     if (window.Android && Android.onPuntoLibreSeleccionado) {
-                        Android.onPuntoLibreSeleccionado(String(lat), String(lon));
+                        Android.onPuntoLibreSeleccionado(String(latGps), String(lonGps));
                     }
                 }
 
@@ -399,7 +638,7 @@ internal fun crearHtmlMapaMonitoreo(
 
                     control.onAdd = function() {
                         const div = L.DomUtil.create('div', 'map-title-box');
-                        div.innerHTML = 'Toca el mapa donde estás parado';
+                        div.innerHTML = 'Toca el mapa para confirmar tu ubicación GPS';
                         return div;
                     };
 
@@ -413,24 +652,50 @@ internal fun crearHtmlMapaMonitoreo(
                     map.options.maxBoundsViscosity = 0.85;
                 }
 
+               
                 function agregarLeyenda() {
-                    const control = L.control({ position: 'bottomleft' });
-                
-                    control.onAdd = function() {
-                        const div = L.DomUtil.create('div', 'legend');
+                    const controlPlagas = L.control({
+                        position: 'bottomleft'
+                    });
+
+                    controlPlagas.onAdd = function() {
+                        const div = L.DomUtil.create('div', 'legend-fija');
+
                         div.innerHTML =
-                            '<div class="legend-title">Semáforo</div>' +
-                            '<div><span class="dot" style="background:#16A34A"></span>Verde: sin plaga</div>' +
-                            '<div><span class="dot" style="background:#FACC15"></span>Amarillo: severidad menor</div>' +
-                            '<div><span class="dot" style="background:#F97316"></span>Naranja: severidad mayor</div>' +
-                            '<div><span class="dot" style="background:#DC2626"></span>Rojo: supera severidad mayor</div>' +
-                            '<div><span class="dot" style="background:#1E88E5"></span>Tu ubicación</div>' +
-                            '<div><span class="dot" style="background:#FFFFFF; border:2px solid #0B6B20; box-sizing:border-box"></span>Punto nuevo</div>';
+                            '<div class="legend-title">P · Plagas</div>' +
+                            '<div class="legend-row"><span class="dot" style="background:#16A34A"></span>Sin plaga</div>' +
+                            '<div class="legend-row"><span class="dot" style="background:#FACC15"></span>Severidad menor</div>' +
+                            '<div class="legend-row"><span class="dot" style="background:#F97316"></span>Severidad mayor</div>' +
+                            '<div class="legend-row"><span class="dot" style="background:#DC2626"></span>Severidad alta</div>';
+
+                        L.DomEvent.disableClickPropagation(div);
+                        L.DomEvent.disableScrollPropagation(div);
                         return div;
                     };
-                
-                    control.addTo(map);
-}
+
+                    controlPlagas.addTo(map);
+
+                    const controlEnfermedades = L.control({
+                        position: 'bottomright'
+                    });
+
+                    controlEnfermedades.onAdd = function() {
+                        const div = L.DomUtil.create('div', 'legend-fija');
+
+                        div.innerHTML =
+                            '<div class="legend-title">E · Enfermedades</div>' +
+                            '<div class="legend-row"><span class="dot" style="background:#16A34A"></span>Sin presencia</div>' +
+                            '<div class="legend-row"><span class="dot" style="background:#FACC15"></span>Baja</div>' +
+                            '<div class="legend-row"><span class="dot" style="background:#F97316"></span>Media</div>' +
+                            '<div class="legend-row"><span class="dot" style="background:#DC2626"></span>Alta</div>';
+
+                        L.DomEvent.disableClickPropagation(div);
+                        L.DomEvent.disableScrollPropagation(div);
+                        return div;
+                    };
+
+                    controlEnfermedades.addTo(map);
+                }
 
                 function renderFallback() {
                     const mapDiv = document.getElementById('map');
@@ -438,47 +703,78 @@ internal fun crearHtmlMapaMonitoreo(
                 }
 
                 function agregarPuntoMonitoreado(p, index) {
-                    const color = colorPunto(p);
-                    const radioPunto = puntoEstaCompletado(p) ? 13 : 11;
-
+                    /*
+                     * El radio queda neutral porque el marcador ahora representa
+                     * dos estados independientes: plaga y enfermedad.
+                     */
                     if (puntoEstaCompletado(p)) {
                         L.circle([p.lat, p.lon], {
                             radius: Math.max(3, p.radius || 4),
-                            color: color,
-                            weight: 2,
-                            opacity: 0.55,
-                            fillColor: color,
-                            fillOpacity: 0.16,
+                            color: '#334155',
+                            weight: 1,
+                            opacity: 0.35,
+                            fillColor: '#FFFFFF',
+                            fillOpacity: 0.06,
                             interactive: false
                         }).addTo(map);
                     }
 
-                    const marker = L.circleMarker([p.lat, p.lon], {
-                        radius: radioPunto,
-                        color: '#FFFFFF',
-                        weight: 3,
-                        fillColor: color,
-                        fillOpacity: 0.98
-                    }).addTo(map);
+                    let marker;
+
+                    if (puntoEstaCompletado(p)) {
+                        marker = L.marker(
+                            [p.lat, p.lon],
+                            {
+                                icon: crearIconoPuntoDividido(p),
+                                keyboard: false,
+                                riseOnHover: true,
+                                riseOffset: 500
+                            }
+                        ).addTo(map);
+                    } else {
+                        const colorEstado = puntoEstaCancelado(p)
+                            ? '#6B7280'
+                            : '#D98A00';
+
+                        marker = L.circleMarker(
+                            [p.lat, p.lon],
+                            {
+                                radius: 9,
+                                color: '#FFFFFF',
+                                weight: 3,
+                                fillColor: colorEstado,
+                                fillOpacity: 0.98
+                            }
+                        ).addTo(map);
+                    }
 
                     marker.bindTooltip(
-                        'Punto ' + (index + 1) + '<br>' + textoPunto(p),
+                        'Punto ' + (index + 1) +
+                        '<br>' +
+                        textoPunto(p),
                         {
                             permanent: false,
-                            direction: 'top'
+                            direction: 'top',
+                            opacity: 0.97
                         }
                     );
 
                     marker.on('click', function(e) {
                         if (e && e.originalEvent) {
-                            L.DomEvent.stopPropagation(e.originalEvent);
+                            L.DomEvent.stopPropagation(
+                                e.originalEvent
+                            );
                         }
 
                         if (puntoEstaCompletado(p)) {
                             alert(
-                                'Este punto ya fue capturado.\n\n' +
-                                'Total del punto: ' + Number(p.totalCantidadPunto || 0) + '\n' +
-                                'Severidad: ' + (p.severityStatus || 'Sin plaga')
+                                'Punto ' + (index + 1) +
+                                ' capturado.\\n\\n' +
+                                'Plaga (P): ' +
+                                (p.plagaTexto || 'Sin evaluar') +
+                                '\\n' +
+                                'Enfermedad (E): ' +
+                                (p.enfermedadTexto || 'Sin evaluar')
                             );
                             return;
                         }
@@ -501,12 +797,12 @@ internal fun crearHtmlMapaMonitoreo(
                     }
 
                     map = L.map('map', {
-                        zoomControl: true,
+                        zoomControl: false,
                         preferCanvas: true,
                         zoomSnap: 0.25,
                         zoomDelta: 0.5,
                         minZoom: 3,
-                        maxZoom: 19,
+                        maxZoom: 28,
                         bounceAtZoomLimits: false
                     });
 
@@ -530,11 +826,19 @@ internal fun crearHtmlMapaMonitoreo(
                             fillOpacity: internetDisponible ? 0.26 : 0.45
                         }).addTo(map);
 
-                        polygon.bindPopup(
-                            '<b>Parcela del monitoreo</b><br>' +
-                            escapeHtml(nombreMonitoreo) +
-                            '<br><br>Toca dentro de la parcela para crear un punto.'
-                        );
+                        /*
+                         * El polígono también debe aceptar toques. Antes tenía un
+                         * bindPopup(), por lo que el toque abría este globo y no
+                         * llegaba a la selección del punto. Aquí lo mandamos directo
+                         * al mismo flujo de confirmación que usa el mapa.
+                         */
+                        polygon.on('click', function(e) {
+                            if (e && e.originalEvent) {
+                                L.DomEvent.stopPropagation(e.originalEvent);
+                            }
+
+                            seleccionarDesdeMapa();
+                        });
 
                         const boundsParcela = polygon.getBounds();
                         aplicarLimitesDeParcela(boundsParcela);
@@ -544,7 +848,7 @@ internal fun crearHtmlMapaMonitoreo(
                         });
                     } else if (puntos.length > 0) {
                         const p0 = normalizarPunto(puntos[0]);
-                        map.setView([p0.lat, p0.lon], 19);
+                        map.setView([p0.lat, p0.lon], 18);
                     } else if (usuarioInicial != null) {
                         map.setView([usuarioInicial.lat, usuarioInicial.lon], 18);
                     }
@@ -554,7 +858,7 @@ internal fun crearHtmlMapaMonitoreo(
                     });
 
                     map.on('click', function(e) {
-                        seleccionarDesdeMapa(e.latlng.lat, e.latlng.lng);
+                        seleccionarDesdeMapa();
                     });
 
                     if (usuarioInicial != null) {
@@ -562,7 +866,6 @@ internal fun crearHtmlMapaMonitoreo(
                     }
 
                     agregarTituloMapa();
-                    agregarLeyenda();
 
                     setTimeout(function () {
                         if (map != null) {

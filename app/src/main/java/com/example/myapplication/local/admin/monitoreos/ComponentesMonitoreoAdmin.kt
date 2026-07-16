@@ -47,6 +47,7 @@ import com.example.myapplication.local.entities.LocalCropCatalogEntity
 import com.example.myapplication.local.entities.LocalPlotEntity
 import com.example.myapplication.local.entities.LocalPlotVertexEntity
 import com.example.myapplication.local.entities.LocalRanchEntity
+import com.example.myapplication.local.api.fieldops.MasterProgramApiItem
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -371,6 +372,7 @@ fun PolygonStatusCard(vertices: List<LocalPlotVertexEntity>) {
 @Composable
 fun AdminResumenMonitoreo(
     productor: LocalAgroUnitEntity?,
+    programaMaestro: MasterProgramApiItem?,
     rancho: LocalRanchEntity?,
     parcela: LocalPlotEntity?,
     cultivo: LocalCropCatalogEntity?,
@@ -397,18 +399,34 @@ fun AdminResumenMonitoreo(
             Spacer(modifier = Modifier.height(8.dp))
 
             ResumenRow("Productor", productor?.commercial_name ?: "Pendiente")
+            ResumenRow(
+                "Programa maestro",
+                programaMaestro?.let(::textoProgramaMaestroAdmin) ?: "Pendiente"
+            )
             ResumenRow("Rancho", rancho?.name ?: "Pendiente")
             ResumenRow("Parcela", parcela?.nombreMostrarAdmin() ?: "Pendiente")
             ResumenRow("Cultivo", cultivo?.name ?: "Pendiente")
             ResumenRow("Ciclo", ciclo.ifBlank { "Pendiente" })
-            ResumenRow("Fechas", "${fechaInicio.ifBlank { "Inicio" }} → ${fechaFin.ifBlank { "Fin" }}")
+            ResumenRow(
+                "Fechas",
+                "${fechaInicio.ifBlank { "Inicio" }} → ${fechaFin.ifBlank { "Fin" }}"
+            )
+            ResumenRow("Flujo API", "Programa → Sesión → Puntos GPS → Checkpoints")
             ResumenRow("Modo", "Monitoreo libre por punto")
-            ResumenRow("Puntos", "Se crearán en campo al tocar el mapa")
             ResumenRow("Vértices", "$totalVertices registrados")
 
-            AnimatedVisibility(visible = totalVertices < 3) {
+            AnimatedVisibility(
+                visible = programaMaestro == null || totalVertices < 3
+            ) {
                 Text(
-                    text = "No se podrá guardar hasta que la parcela tenga polígono completo.",
+                    text = when {
+                        programaMaestro == null -> {
+                            "Selecciona un programa maestro antes de crear el monitoreo."
+                        }
+                        else -> {
+                            "No se podrá guardar hasta que la parcela tenga polígono completo."
+                        }
+                    },
                     color = Color(0xFFE65100),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,

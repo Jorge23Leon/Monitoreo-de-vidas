@@ -10,6 +10,12 @@ import androidx.room.PrimaryKey
     tableName = "local_programs",
     foreignKeys = [
         ForeignKey(
+            entity = LocalCiaEntity::class,
+            parentColumns = ["idLocalCia"],
+            childColumns = ["idLocalCia"],
+            onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
             entity = LocalAgroUnitEntity::class,
             parentColumns = ["idLocalAgroUnit"],
             childColumns = ["idLocalAgroUnit"],
@@ -36,13 +42,15 @@ import androidx.room.PrimaryKey
     ],
     indices = [
         Index(value = ["ext_id"], unique = true),
+        Index(value = ["idLocalCia"]),
         Index(value = ["idLocalAgroUnit"]),
         Index(value = ["idLocalRanch"]),
         Index(value = ["idCrop"]),
         Index(value = ["idLocalPlot"]),
         Index(value = ["cycle"]),
         Index(value = ["status"]),
-        Index(value = ["idLocalAgroUnit", "idLocalRanch", "idLocalPlot", "idCrop", "cycle"])
+        Index(value = ["idLocalCia", "idLocalAgroUnit", "idLocalRanch", "idLocalPlot"]),
+        Index(value = ["idLocalCia", "idLocalAgroUnit", "idLocalRanch", "idLocalPlot", "idCrop", "cycle"])
     ]
 )
 data class LocalProgramEntity(
@@ -66,21 +74,14 @@ data class LocalProgramEntity(
     @ColumnInfo(name = "act_finish_date")
     val actFinishDate: Long? = null,
 
-    /**
-     * Valores esperados:
-     * "Pendiente", "En proceso", "Cancelado", "Completado"
-     */
+    /** Valores locales: Pendiente, En proceso, Cancelado o Completado. */
     val status: String,
 
-    // Productor
+    /** CIA hija/DataCentral a la que pertenece realmente el programa. */
+    val idLocalCia: Long,
+
     val idLocalAgroUnit: Long,
-
-    // Rancho
     val idLocalRanch: Long,
-
-    // Cultivo
     val idCrop: Long,
-
-    // Parcela
     val idLocalPlot: Long
 )

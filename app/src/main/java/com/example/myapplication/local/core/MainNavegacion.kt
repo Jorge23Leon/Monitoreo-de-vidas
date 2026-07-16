@@ -1,5 +1,8 @@
 package com.example.myapplication.local.core
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -14,6 +17,7 @@ import com.example.myapplication.local.admin.home.AdminHomeScreen
 import com.example.myapplication.local.admin.monitoreos.AdminMonitoreoScreen
 import com.example.myapplication.local.auth.LoginScreen
 import com.example.myapplication.local.auth.RegistroUsuarioScreen
+import com.example.myapplication.local.auth.RecuperarPasswordScreen
 import com.example.myapplication.local.cia.SeleccionCiaScreen
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.info.ContactoScreen
@@ -61,6 +65,43 @@ fun MainNavegacion(
     uiState: MainUiState
 ) {
     val context = LocalContext.current
+
+
+    fun abrirCorreoRecuperacion(correoUsuario: String) {
+        val asunto = "Solicitud de recuperación de contraseña"
+
+        val mensaje = """
+            Hola, solicito recuperar mi contraseña de Tierra Inteligente.
+
+            Correo registrado: $correoUsuario
+            Usuario (si lo recuerda):
+            Nombre completo:
+            Teléfono de contacto:
+
+            No incluyo mi contraseña anterior por seguridad.
+        """.trimIndent()
+
+        val correoIntent = Intent(Intent.ACTION_SENDTO).apply {
+            data = Uri.parse("mailto:tierrainteligente2@gmail.com")
+            putExtra(Intent.EXTRA_SUBJECT, asunto)
+            putExtra(Intent.EXTRA_TEXT, mensaje)
+        }
+
+        try {
+            context.startActivity(
+                Intent.createChooser(
+                    correoIntent,
+                    "Enviar solicitud de recuperación"
+                )
+            )
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(
+                context,
+                "Instala o configura Gmail para enviar la solicitud.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
 
     var accionMenuPendiente by remember {
         mutableStateOf<AccionMenuTrabajo?>(null)
@@ -169,21 +210,25 @@ fun MainNavegacion(
 
         PantallaActual.LOGIN -> {
             LoginScreen(
-                onLoginClick = { usernameInput, passwordInput ->
+                usernameRecordado = mainViewModel.usernameRecordadoLogin,
+                passwordRecordada = mainViewModel.passwordRecordadaLogin,
+                recordarCredencialesInicial = mainViewModel.recordarCredencialesLogin,
+                onLoginClick = {
+                        usernameInput,
+                        passwordInput,
+                        recordarCredenciales
+                    ->
                     mainViewModel.onLoginClick(
                         usernameInput = usernameInput,
-                        passwordInput = passwordInput
+                        passwordInput = passwordInput,
+                        recordarCredenciales = recordarCredenciales
                     )
                 },
                 onRegisterClick = {
                     mainViewModel.irA(PantallaActual.REGISTRO)
                 },
                 onForgotPasswordClick = {
-                    Toast.makeText(
-                        context,
-                        "Aquí irá la recuperación de contraseña",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    mainViewModel.irA(PantallaActual.RECUPERAR_PASSWORD)
                 },
                 onInformationClick = {
                     mainViewModel.irA(PantallaActual.INFORMACION)
@@ -208,6 +253,17 @@ fun MainNavegacion(
                     )
                 },
                 onBackToLoginClick = {
+                    mainViewModel.irA(PantallaActual.LOGIN)
+                }
+            )
+        }
+
+        PantallaActual.RECUPERAR_PASSWORD -> {
+            RecuperarPasswordScreen(
+                onEnviarSolicitudClick = { correo ->
+                    abrirCorreoRecuperacion(correo)
+                },
+                onVolverLoginClick = {
                     mainViewModel.irA(PantallaActual.LOGIN)
                 }
             )
@@ -305,6 +361,11 @@ fun MainNavegacion(
                 parcelasResultado = uiState.parcelasResultado,
                 programasResultado = uiState.programasResultado,
                 cultivosResultado = uiState.cultivosResultado,
+                sincronizando = mainViewModel.sincronizandoMonitoreos,
+                textoUltimaSincronizacion = mainViewModel.textoUltimaSincronizacionMonitoreos,
+                onSincronizarClick = {
+                    mainViewModel.sincronizarInformacionActual()
+                },
 
                 onProductorChange = { productor ->
                     mainViewModel.onProductorChange(productor)
@@ -345,6 +406,7 @@ fun MainNavegacion(
                 },
                 onCambiarCiaClick = cambiarCiaClick,
 
+
                 onCerrarSesionClick = cerrarSesionClick
             )
         }
@@ -361,6 +423,11 @@ fun MainNavegacion(
                 parcelas = uiState.parcelasResultado,
                 programas = uiState.programasResultado,
                 cultivos = uiState.cultivosResultado,
+                sincronizando = mainViewModel.sincronizandoMonitoreos,
+                textoUltimaSincronizacion = mainViewModel.textoUltimaSincronizacionMonitoreos,
+                onSincronizarClick = {
+                    mainViewModel.sincronizarInformacionActual()
+                },
 
                 onAbrirMapaClick = { header ->
                     val rolNormalizado = normalizarRolVm(uiState.rolUsuarioActual)
@@ -395,6 +462,7 @@ fun MainNavegacion(
                     solicitarAccionMenu(AccionMenuTrabajo.PANEL_ADMIN)
                 },
                 onCambiarCiaClick = cambiarCiaClick,
+
 
                 onCerrarSesionClick = cerrarSesionClick
             )
@@ -572,19 +640,47 @@ fun MainNavegacion(
                     rolUsuario = uiState.rolUsuarioActual,
                     nombreCia = uiState.ciaSeleccionada?.nombre ?: "Sin CIA",
                     puedeCrearMonitoreos = puedeCrearMonitoreosVm(uiState.rolUsuarioActual),
-                    puedeGestionCatalogos = puedeGestionCatalogosVm(uiState.rolUsuarioActual),
-                    puedeGestionAgricola = puedeGestionAgricolaVm(uiState.rolUsuarioActual),
+
+                    /*
+                     * TEMPORAL: se oculta la tarjeta de Administrador de catálogos.
+                     *
+                     * El módulo, sus pantallas y sus datos permanecen intactos.
+                     * Cuando se implementen las mejoras futuras, reemplaza `false` por:
+                     * puedeGestionCatalogosVm(uiState.rolUsuarioActual)
+                     */
+                    puedeGestionCatalogos = false,
+
+                    /*
+                     * TEMPORAL: se oculta la tarjeta de Gestión agrícola.
+                     *
+                     * El módulo, sus pantallas y sus datos permanecen intactos.
+                     * Cuando se implementen las mejoras futuras, reemplaza `false` por:
+                     * puedeGestionAgricolaVm(uiState.rolUsuarioActual)
+                     */
+                    puedeGestionAgricola = false,
 
                     onMonitoreosAdminClick = {
                         mainViewModel.irA(PantallaActual.ADMIN_MONITOREOS)
                     },
 
                     onCatalogosClick = {
-                        mainViewModel.irA(PantallaActual.ADMIN_CATALOGOS)
+                        /*
+                         * TEMPORALMENTE DESHABILITADO.
+                         * La tarjeta no se muestra porque `puedeGestionCatalogos = false`.
+                         *
+                         * Para habilitar la navegación nuevamente, descomenta esta línea:
+                         * mainViewModel.irA(PantallaActual.ADMIN_CATALOGOS)
+                         */
                     },
 
                     onGestionAgricolaClick = {
-                        mainViewModel.irA(PantallaActual.ADMIN_GESTION_AGRICOLA)
+                        /*
+                         * TEMPORALMENTE DESHABILITADO.
+                         * La tarjeta no se muestra porque `puedeGestionAgricola = false`.
+                         *
+                         * Para habilitar la navegación nuevamente, descomenta esta línea:
+                         * mainViewModel.irA(PantallaActual.ADMIN_GESTION_AGRICOLA)
+                         */
                     },
 
                     onPerfilClick = {

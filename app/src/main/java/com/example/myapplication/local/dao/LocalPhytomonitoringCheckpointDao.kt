@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import com.example.myapplication.local.entities.LocalPhytomonitoringCheckpointEntity
 
 @Dao
@@ -15,6 +16,39 @@ interface LocalPhytomonitoringCheckpointDao {
         checkpoint: LocalPhytomonitoringCheckpointEntity
     ): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertCheckpointFromApi(
+        checkpoint: LocalPhytomonitoringCheckpointEntity
+    ): Long
+
+    @Update
+    suspend fun updateCheckpoint(
+        checkpoint: LocalPhytomonitoringCheckpointEntity
+    )
+
+    @Query("""
+        SELECT *
+        FROM local_phytomonitoring_checkpoints
+        WHERE idHeader = :idHeader
+          AND idTargetPoint = :idTargetPoint
+          AND (
+                (:idPhytosanitary IS NULL AND idPhytosanitary IS NULL)
+                OR idPhytosanitary = :idPhytosanitary
+              )
+          AND COALESCE(stage, '') = COALESCE(:stage, '')
+          AND COALESCE(qty, -9999) = COALESCE(:qty, -9999)
+          AND COALESCE(captured_at, 0) = COALESCE(:capturedAt, 0)
+        LIMIT 1
+    """)
+    suspend fun buscarCheckpointLocalMismaCaptura(
+        idHeader: Long,
+        idTargetPoint: Long,
+        idPhytosanitary: Long?,
+        stage: String?,
+        qty: Int?,
+        capturedAt: Long?
+    ): LocalPhytomonitoringCheckpointEntity?
+
     @Query("""
         SELECT *
         FROM local_phytomonitoring_checkpoints
@@ -23,6 +57,16 @@ interface LocalPhytomonitoringCheckpointDao {
     """)
     suspend fun getCheckpointById(
         idCheckpoint: Long
+    ): LocalPhytomonitoringCheckpointEntity?
+
+    @Query("""
+        SELECT *
+        FROM local_phytomonitoring_checkpoints
+        WHERE ext_id = :extId
+        LIMIT 1
+    """)
+    suspend fun getCheckpointByExtId(
+        extId: String
     ): LocalPhytomonitoringCheckpointEntity?
 
     @Query("""
@@ -72,7 +116,9 @@ interface LocalPhytomonitoringCheckpointDao {
         WHERE captured_by_user_id = :idUser
         ORDER BY captured_at DESC
     """)
-    suspend fun getCheckpointsByUser(idUser: Long): List<LocalPhytomonitoringCheckpointEntity>
+    suspend fun getCheckpointsByUser(
+        idUser: Long
+    ): List<LocalPhytomonitoringCheckpointEntity>
 
     @Query("""
         SELECT COUNT(*)
@@ -83,6 +129,22 @@ interface LocalPhytomonitoringCheckpointDao {
     suspend fun countCheckpointsByHeaderAndUser(
         idHeader: Long,
         idUser: Long
+    ): Int
+
+    /**
+     * Después de mover una foto confirmada de pending a uploaded, conservamos
+     * en Room la nueva ruta para todas las etapas que comparten photo_ref.
+     */
+    @Query("""
+        UPDATE local_phytomonitoring_checkpoints
+        SET photo_local_path = :photoLocalPath
+        WHERE idHeader = :idHeader
+          AND photo_ref = :photoRef
+    """)
+    suspend fun actualizarRutaLocalFotoPorReferencia(
+        idHeader: Long,
+        photoRef: String,
+        photoLocalPath: String
     ): Int
 
     @Delete

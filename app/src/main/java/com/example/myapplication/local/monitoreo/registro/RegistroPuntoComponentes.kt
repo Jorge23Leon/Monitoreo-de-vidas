@@ -3,6 +3,7 @@ package com.example.myapplication.local.monitoreo.registro
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -114,8 +115,9 @@ internal fun RegistroPuntoSuperiorCard(
 
 @Composable
 internal fun ElementoSeleccionadoCard(
-    fito: LocalPhytosanitaryCatalogEntity?
-) {
+    fito: LocalPhytosanitaryCatalogEntity?,
+    fotoRepresentativa: String?
+){
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -151,7 +153,7 @@ internal fun ElementoSeleccionadoCard(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     ImageUriBox(
-                        photo = fito.photo,
+                        photo = fotoRepresentativa ?: fito.photo,
                         fallbackIcon = iconoTipoFitoRegistro(fito.type),
                         sizeDp = 72,
                         modifier = Modifier
@@ -368,6 +370,139 @@ internal fun BarraAccionesRegistro(
                     fontWeight = FontWeight.Black,
                     maxLines = 1
                 )
+            }
+        }
+    }
+}
+
+
+@Composable
+internal fun EvidenciaFotograficaCard(
+    photoUri: String?,
+    enabled: Boolean,
+    onTomarFoto: () -> Unit,
+    onElegirImagen: () -> Unit,
+    onEliminarFoto: () -> Unit
+) {
+    val hayFoto = !photoUri.isNullOrBlank()
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Evidencia fotográfica",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Color(0xFF1D2430)
+                )
+
+                Text(
+                    text = if (hayFoto) "1 / 1 foto" else "Opcional",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (hayFoto) Color(0xFF0B6B20) else Color(0xFF6E7580)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "Una foto por punto.",
+                fontSize = 12.sp,
+                color = Color(0xFF6E7580)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Button(
+                    onClick = onTomarFoto,
+                    enabled = enabled,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0B6B20))
+                ) {
+                    Text(
+                        text = "📷  Tomar foto",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onElegirImagen,
+                    enabled = enabled,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color(0xFF0B6B20))
+                ) {
+                    Text(
+                        text = "🖼️  Elegir imagen",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF0B6B20)
+                    )
+                }
+            }
+
+            if (hayFoto) {
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    ImageUriBox(
+                        photo = photoUri,
+                        fallbackIcon = "📷",
+                        sizeDp = 88,
+                        modifier = Modifier
+                            .size(88.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                    )
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Foto lista para guardar",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color(0xFF1D2430)
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "Se convertirá a JPG correctamente orientado (máximo 340 KB) y se asociará a este punto.",
+                            fontSize = 12.sp,
+                            color = Color(0xFF6E7580)
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "Eliminar foto",
+                            modifier = Modifier.clickable(enabled = enabled, onClick = onEliminarFoto),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (enabled) Color(0xFFB42318) else Color(0xFF9E9E9E)
+                        )
+                    }
+                }
             }
         }
     }

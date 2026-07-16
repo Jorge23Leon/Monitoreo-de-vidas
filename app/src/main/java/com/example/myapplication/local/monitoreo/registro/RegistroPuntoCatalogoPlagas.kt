@@ -36,6 +36,7 @@ import com.example.myapplication.local.entities.LocalPhytosanitaryCatalogEntity
 internal fun CatalogoPlagasHorizontal(
     catalogo: List<LocalPhytosanitaryCatalogEntity>,
     fitoSeleccionado: LocalPhytosanitaryCatalogEntity?,
+    fotosRepresentativas: Map<Long, String?>,
     onSelected: (LocalPhytosanitaryCatalogEntity) -> Unit
 ) {
     Card(
@@ -58,6 +59,7 @@ internal fun CatalogoPlagasHorizontal(
                 catalogo.forEach { item ->
                     FitoMiniCard(
                         item = item,
+                        fotoRepresentativa = fotosRepresentativas[item.idPhytosanitary],
                         seleccionado = fitoSeleccionado?.idPhytosanitary == item.idPhytosanitary,
                         onClick = { onSelected(item) }
                     )
@@ -70,6 +72,7 @@ internal fun CatalogoPlagasHorizontal(
 @Composable
 private fun FitoMiniCard(
     item: LocalPhytosanitaryCatalogEntity,
+    fotoRepresentativa: String?,
     seleccionado: Boolean,
     onClick: () -> Unit
 ) {
@@ -98,7 +101,7 @@ private fun FitoMiniCard(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     ImageUriBox(
-                        photo = item.photo,
+                        photo = fotoRepresentativa ?: item.photo,
                         fallbackIcon = iconoTipoFitoRegistro(item.type),
                         sizeDp = 58,
                         modifier = Modifier

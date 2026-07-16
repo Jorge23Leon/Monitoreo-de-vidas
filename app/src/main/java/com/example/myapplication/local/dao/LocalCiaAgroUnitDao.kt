@@ -13,6 +13,10 @@ interface LocalCiaAgroUnitDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun asignarProductorACia(asignacion: LocalCiaAgroUnitCrossRef)
+
+    @Query("DELETE FROM local_cia_agro_units WHERE idLocalCia = :idLocalCia")
+    suspend fun eliminarProductoresDeCia(idLocalCia: Long)
+
     @Query(
         """
         SELECT au.*

@@ -36,6 +36,13 @@ import com.example.myapplication.local.entities.LocalPlotEntity
 import com.example.myapplication.local.entities.LocalProgramEntity
 import com.example.myapplication.local.entities.LocalRanchEntity
 import java.util.Locale
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 
 @Composable
 fun MonitoreoFiltrosScreen(
@@ -61,6 +68,9 @@ fun MonitoreoFiltrosScreen(
     parcelasResultado: List<LocalPlotEntity> = emptyList(),
     programasResultado: List<LocalProgramEntity> = emptyList(),
     cultivosResultado: List<LocalCropCatalogEntity> = emptyList(),
+    sincronizando: Boolean = false,
+    textoUltimaSincronizacion: String? = null,
+    onSincronizarClick: () -> Unit = {},
 
     onProductorChange: (LocalAgroUnitEntity?) -> Unit,
     onRanchoChange: (LocalRanchEntity?) -> Unit,
@@ -97,7 +107,7 @@ fun MonitoreoFiltrosScreen(
     val esSupervisor = rolParaPermisos.contains("supervisor") ||
             rolParaPermisos.contains("supervision")
 
-    val soloConsulta = esGerente || esSupervisor
+    val soloConsulta = false
 
     val productoresMap = remember(productoresResultado) {
         productoresResultado.associateBy { it.idLocalAgroUnit }
@@ -468,12 +478,11 @@ fun MonitoreoFiltrosScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Text(
-                    text = "Monitoreos disponibles: ${monitoreosFiltrados.size}",
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF173B1A),
-                    modifier = Modifier.fillMaxWidth()
+                BarraActualizarMonitoreosFiltros(
+                    titulo = "Monitoreos disponibles: ${monitoreosFiltrados.size}",
+                    sincronizando = sincronizando,
+                    textoUltimaSincronizacion = textoUltimaSincronizacion,
+                    onSincronizarClick = onSincronizarClick
                 )
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -529,8 +538,8 @@ fun MonitoreoFiltrosScreen(
                             fotoCultivo = cultivo?.photo,
                             nombreCultivo = cultivo?.name,
 
-                            mostrarAbrir = esAdmin && !cerrado && !cancelado,
-                            mostrarReporte = (soloConsulta || esAdmin || cerrado) && !cancelado,
+                            mostrarAbrir = (esAdmin || esGerente || esSupervisor) && !cerrado && !cancelado,
+                            mostrarReporte = cerrado && !cancelado,
 
                             puedeCancelar = (esAdmin || esGerente || esSupervisor) &&
                                     estadoPendiente &&
@@ -545,7 +554,7 @@ fun MonitoreoFiltrosScreen(
                                     return@TarjetaMonitoreoConsulta
                                 }
 
-                                if (soloConsulta || cerrado) {
+                                if (cerrado) {
                                     onAbrirReporteClick(header)
                                 } else {
                                     onAbrirMapaClick(header)
@@ -575,6 +584,59 @@ fun MonitoreoFiltrosScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
             }
+        }
+    }
+}
+
+@Composable
+private fun BarraActualizarMonitoreosFiltros(
+    titulo: String,
+    sincronizando: Boolean,
+    textoUltimaSincronizacion: String?,
+    onSincronizarClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = titulo,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF173B1A)
+            )
+
+            Text(
+                text = textoUltimaSincronizacion ?: "Mostrando datos guardados",
+                fontSize = 12.sp,
+                color = Color.Gray
+            )
+        }
+
+        Button(
+            onClick = onSincronizarClick,
+            enabled = !sincronizando,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF0B6B20)
+            )
+        ) {
+            if (sincronizando) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp
+                )
+                Spacer(modifier = Modifier.width(7.dp))
+            }
+
+            Text(
+                text = if (sincronizando) "Actualizando..." else "⟳ Sincronizar",
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }

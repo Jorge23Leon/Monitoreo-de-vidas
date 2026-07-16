@@ -34,6 +34,13 @@ import com.example.myapplication.local.entities.LocalPlotEntity
 import com.example.myapplication.local.entities.LocalProgramEntity
 import com.example.myapplication.local.entities.LocalRanchEntity
 import java.util.Locale
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 
 @Suppress("UNUSED_PARAMETER")
 @Composable
@@ -48,6 +55,9 @@ fun MonitoreoListaScreen(
     onCerrarSesionClick: () -> Unit,
     programas: List<LocalProgramEntity>,
     cultivos: List<LocalCropCatalogEntity> = emptyList(),
+    sincronizando: Boolean = false,
+    textoUltimaSincronizacion: String? = null,
+    onSincronizarClick: () -> Unit = {},
     onAbrirMapaClick: (LocalPhytomonitoringHeaderEntity) -> Unit,
     onAbrirReporteClick: (LocalPhytomonitoringHeaderEntity) -> Unit,
     onCancelarMonitoreoClick: (LocalPhytomonitoringHeaderEntity, String) -> Unit = { _, _ -> },
@@ -79,7 +89,7 @@ fun MonitoreoListaScreen(
             rolParaPermisos.contains("supervision")
     val esTecnico = rolParaPermisos.contains("tecnico")
     val esInvitado = rolParaPermisos.contains("invitado")
-    val soloConsulta = esGerente || esSupervisor
+    val soloConsulta = false
 
     var monitoreoParaCancelar by remember {
         mutableStateOf<LocalPhytomonitoringHeaderEntity?>(null)
@@ -441,16 +451,15 @@ fun MonitoreoListaScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Text(
-                text = if (esInvitado) {
+            BarraActualizarMonitoreosLista(
+                titulo = if (esInvitado) {
                     "Monitoreos asignados: ${monitoreosFiltrados.size}"
                 } else {
                     "Monitoreos disponibles: ${monitoreosFiltrados.size}"
                 },
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF173B1A),
-                modifier = Modifier.fillMaxWidth()
+                sincronizando = sincronizando,
+                textoUltimaSincronizacion = textoUltimaSincronizacion,
+                onSincronizarClick = onSincronizarClick
             )
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -484,7 +493,11 @@ fun MonitoreoListaScreen(
 
                     val monitoreoYaIniciado = header.startAt != null ||
                             estadoNormalizado.contains("proceso") ||
-                            estadoNormalizado.contains("progress")
+                            estadoNormalizado.contains("progress") ||
+                            esMonitoreoPausadoLista(
+                                status = header.status,
+                                additionalNotes = header.additionalNotes
+                            )
 
 
                     TarjetaMonitoreoUsuario(
@@ -500,15 +513,15 @@ fun MonitoreoListaScreen(
                         additionalNotes = header.additionalNotes,
                         fechaInicio = header.estStartDate,
                         fechaFin = header.estFinishDate,
-                        puedeAbrir = (esAdmin || esTecnico || esInvitado) && !monitoreoCerrado,
+                        puedeAbrir = (esAdmin || esGerente || esSupervisor || esTecnico || esInvitado) && !monitoreoCerrado,
                         soloConsulta = soloConsulta,
-                        puedeCancelar = (esAdmin || esTecnico || esInvitado) &&
+                        puedeCancelar = (esAdmin || esGerente || esSupervisor || esTecnico || esInvitado) &&
                                 estadoPendiente &&
                                 !monitoreoYaIniciado &&
                                 !monitoreoCerrado &&
                                 !monitoreoCancelado,
                         onAbrirClick = {
-                            if (soloConsulta || monitoreoCerrado) {
+                            if (monitoreoCerrado) {
                                 onAbrirReporteClick(header)
                             } else {
                                 monitoreoParaIniciar = header
@@ -529,6 +542,59 @@ fun MonitoreoListaScreen(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun BarraActualizarMonitoreosLista(
+    titulo: String,
+    sincronizando: Boolean,
+    textoUltimaSincronizacion: String?,
+    onSincronizarClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = titulo,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF173B1A)
+            )
+
+            Text(
+                text = textoUltimaSincronizacion ?: "Mostrando datos guardados",
+                fontSize = 12.sp,
+                color = Color.Gray
+            )
+        }
+
+        Button(
+            onClick = onSincronizarClick,
+            enabled = !sincronizando,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF0B6B20)
+            )
+        ) {
+            if (sincronizando) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp
+                )
+                Spacer(modifier = Modifier.width(7.dp))
+            }
+
+            Text(
+                text = if (sincronizando) "Actualizando..." else "⟳ Sincronizar",
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }

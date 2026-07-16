@@ -5,6 +5,7 @@ import com.example.myapplication.local.api.core.RetrofitClient
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
+import retrofit2.Response
 
 class OrganizationRepository(
     context: Context
@@ -17,19 +18,9 @@ class OrganizationRepository(
 
     suspend fun obtenerCiasPadreEHijas(): ResultadoCiasApi {
         return try {
-            val response = organizationApiService.listarDataCentrals()
-
-            if (!response.isSuccessful) {
-                val error = response.errorBody()?.string()
-                return ResultadoCiasApi.Error(
-                    "No se pudieron cargar CIAS: ${response.code()} ${error ?: response.message()}"
-                )
+            val items = cargarTodasLasPaginasJson("datacentrals") { page ->
+                organizationApiService.listarDataCentrals(page = page)
             }
-
-            val root = response.body()
-                ?: return ResultadoCiasApi.Error("El servidor respondió vacío en datacentrals")
-
-            val items = extraerLista(root)
 
             val cias = items.mapNotNull { item ->
                 mapearDataCentral(item)
@@ -41,6 +32,51 @@ class OrganizationRepository(
                 "Error conectando CIAS: ${e.message}"
             )
         }
+    }
+
+    private suspend fun cargarTodasLasPaginasJson(
+        nombre: String,
+        request: suspend (Int) -> Response<JsonElement>
+    ): List<JsonObject> {
+        val todos = mutableListOf<JsonObject>()
+        var page = 1
+
+        while (true) {
+            val response = request(page)
+
+            if (!response.isSuccessful) {
+                val error = response.errorBody()?.string()
+                throw IllegalStateException(
+                    "No se pudieron cargar $nombre: ${response.code()} ${error ?: response.message()}"
+                )
+            }
+
+            val root = response.body()
+                ?: throw IllegalStateException("El servidor respondió vacío en $nombre")
+
+            todos.addAll(extraerLista(root))
+
+            if (!tienePaginaSiguiente(root)) {
+                break
+            }
+
+            page++
+
+            if (page > 200) {
+                throw IllegalStateException("Se detuvo $nombre porque superó 200 páginas")
+            }
+        }
+
+        return todos
+    }
+
+    private fun tienePaginaSiguiente(root: JsonElement?): Boolean {
+        if (root == null || !root.isJsonObject) return false
+
+        val next = root.asJsonObject.get("next")
+        if (next == null || next.isJsonNull || !next.isJsonPrimitive) return false
+
+        return runCatching { next.asString.trim().isNotBlank() }.getOrDefault(false)
     }
 
     private fun extraerLista(root: JsonElement): List<JsonObject> {

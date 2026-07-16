@@ -1,5 +1,8 @@
 package com.example.myapplication.local.api.core
 
+
+//Configuración global de la API.
 object ApiConfig {
-    const val BASE_URL = "http://10.108.247.206:8500/"
+    const val BASE_URL =
+        "https://geology-allocated-predictions-prince.trycloudflare.com/"
 }

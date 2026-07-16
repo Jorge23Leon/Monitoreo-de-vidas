@@ -1,14 +1,18 @@
 package com.example.myapplication.local.monitoreo.mapa
 
 import android.app.AlertDialog
+import android.content.Context
 import android.graphics.Color as AndroidColor
 import android.os.Handler
 import android.os.Looper
+import android.util.Base64
 import android.view.View
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.JsResult
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -16,6 +20,11 @@ import android.widget.TextView
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import java.io.ByteArrayInputStream
+import java.io.File
+import java.io.FileInputStream
+import java.net.HttpURLConnection
+import java.net.URL
 
 @Composable
 internal fun MapaMonitoreoWebViewSeguro(
@@ -32,7 +41,10 @@ internal fun MapaMonitoreoWebViewSeguro(
         factory = { ctx ->
             try {
                 WebView(ctx).apply {
-                    webViewClient = WebViewClient()
+                    webViewClient = MapaTileCacheWebViewClient(
+                        context = ctx,
+                        internetDisponible = internetDisponible
+                    )
 
                     addJavascriptInterface(
                         MapaBridge { lat, lon ->
@@ -82,6 +94,11 @@ internal fun MapaMonitoreoWebViewSeguro(
                     settings.setSupportZoom(true)
                     settings.builtInZoomControls = true
                     settings.displayZoomControls = false
+
+                    /*
+                     * Aunque el WebView tiene cache propia, no es confiable para trabajar offline.
+                     * Por eso interceptamos los tiles satelitales y los guardamos en filesDir/map_tiles.
+                     */
                     settings.cacheMode = WebSettings.LOAD_DEFAULT
                     settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                     settings.userAgentString = settings.userAgentString + " AndroidWebViewMonitoreo"
@@ -106,6 +123,16 @@ internal fun MapaMonitoreoWebViewSeguro(
         },
         update = { view ->
             if (view is WebView) {
+                /*
+                 * Se vuelve a asignar para que cuando cambie internetDisponible:
+                 * - con internet: descargue y guarde tiles
+                 * - sin internet: lea los tiles guardados
+                 */
+                view.webViewClient = MapaTileCacheWebViewClient(
+                    context = view.context,
+                    internetDisponible = internetDisponible
+                )
+
                 if (view.tag != htmlMapa) {
                     view.tag = htmlMapa
                     view.loadDataWithBaseURL(
@@ -147,6 +174,145 @@ internal fun MapaMonitoreoWebViewSeguro(
             }
         }
     )
+}
+
+/**
+ * Cache real para tiles satelitales del mapa.
+ *
+ * Qué hace:
+ * 1. Si el tile ya existe en filesDir/map_tiles, lo sirve desde local.
+ * 2. Si no existe y hay internet, lo descarga, lo guarda y lo entrega al WebView.
+ * 3. Si no existe y no hay internet, entrega un tile transparente.
+ *
+ * Así el mapa se ve satelital offline siempre que esa zona/zoom ya se haya visto antes con internet.
+ */
+private class MapaTileCacheWebViewClient(
+    private val context: Context,
+    private val internetDisponible: Boolean
+) : WebViewClient() {
+
+    override fun shouldInterceptRequest(
+        view: WebView?,
+        request: WebResourceRequest?
+    ): WebResourceResponse? {
+        val url = request?.url?.toString() ?: return super.shouldInterceptRequest(view, request)
+
+        if (!esTileSatelitalEsri(url)) {
+            return super.shouldInterceptRequest(view, request)
+        }
+
+        val archivoTile = archivoCacheParaTile(url)
+        val archivoMime = File(archivoTile.absolutePath + ".mime")
+
+        if (archivoTile.exists() && archivoTile.length() > 0L) {
+            val mime = archivoMime
+                .takeIf { it.exists() }
+                ?.readText()
+                ?.trim()
+                ?.takeIf { it.startsWith("image/") }
+                ?: "image/jpeg"
+
+            return WebResourceResponse(
+                mime,
+                null,
+                FileInputStream(archivoTile)
+            )
+        }
+
+        if (!internetDisponible) {
+            return tileTransparente()
+        }
+
+        return try {
+            descargarTile(url, archivoTile, archivoMime)
+        } catch (e: Throwable) {
+            android.util.Log.e("MapaTileCache", "No se pudo cachear tile: $url", e)
+            tileTransparente()
+        }
+    }
+
+    private fun esTileSatelitalEsri(url: String): Boolean {
+        return url.contains(
+            "server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/",
+            ignoreCase = true
+        )
+    }
+
+    private fun archivoCacheParaTile(url: String): File {
+        val despuesDeTile = url.substringAfter("/tile/", missingDelimiterValue = "")
+        val partes = despuesDeTile
+            .substringBefore("?")
+            .split("/")
+            .filter { it.isNotBlank() }
+
+        val z = partes.getOrNull(0)?.soloSeguro() ?: "z"
+        val y = partes.getOrNull(1)?.soloSeguro() ?: "y"
+        val x = partes.getOrNull(2)?.soloSeguro() ?: "x"
+
+        return File(context.filesDir, "map_tiles/esri/$z/$y/$x.tile")
+    }
+
+    private fun descargarTile(
+        url: String,
+        archivoTile: File,
+        archivoMime: File
+    ): WebResourceResponse {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 7000
+            readTimeout = 10000
+            instanceFollowRedirects = true
+            useCaches = false
+            setRequestProperty("User-Agent", "Android CIAgro Offline Tile Cache")
+        }
+
+        try {
+            val code = connection.responseCode
+            if (code !in 200..299) {
+                return tileTransparente()
+            }
+
+            val mime = connection.contentType
+                ?.substringBefore(";")
+                ?.trim()
+                ?.takeIf { it.startsWith("image/") }
+                ?: "image/jpeg"
+
+            archivoTile.parentFile?.mkdirs()
+
+            connection.inputStream.use { input ->
+                archivoTile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+
+            archivoMime.writeText(mime)
+
+            return WebResourceResponse(
+                mime,
+                null,
+                FileInputStream(archivoTile)
+            )
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun tileTransparente(): WebResourceResponse {
+        val bytes = Base64.decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lCjQ9wAAAABJRU5ErkJggg==",
+            Base64.DEFAULT
+        )
+
+        return WebResourceResponse(
+            "image/png",
+            null,
+            ByteArrayInputStream(bytes)
+        )
+    }
+
+    private fun String.soloSeguro(): String {
+        return replace(Regex("[^0-9A-Za-z_-]"), "_")
+    }
 }
 
 private class MapaBridge(

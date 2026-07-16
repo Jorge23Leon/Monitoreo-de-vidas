@@ -42,12 +42,12 @@ interface LocalPlotVertexDao {
     """)
     suspend fun countVerticesByPlot(idLocalPlot: Long): Int
 
-    @Query("""
-        DELETE FROM local_plot_vertexes
-        WHERE idLocalPlot = :idLocalPlot
-    """)
-    suspend fun deleteVerticesByPlot(idLocalPlot: Long)
 
     @Query("DELETE FROM local_plot_vertexes")
     suspend fun deleteAllPlotVertices()
+    @Query("DELETE FROM local_plot_vertexes WHERE idLocalPlot = :idLocalPlot")
+    suspend fun deleteVerticesByPlot(idLocalPlot: Long)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertVertices(vertices: List<LocalPlotVertexEntity>)
 }

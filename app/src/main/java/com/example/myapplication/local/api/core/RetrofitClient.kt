@@ -14,40 +14,95 @@ object RetrofitClient {
         level = HttpLoggingInterceptor.Level.BODY
     }
 
-    private val okHttpClientPublico = OkHttpClient.Builder()
-        .addInterceptor(loggingInterceptor)
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
-        .build()
-
-    private val retrofitPublico = Retrofit.Builder()
-        .baseUrl(ApiConfig.BASE_URL)
-        .client(okHttpClientPublico)
-        .addConverterFactory(GsonConverterFactory.create())
-        .build()
-
-    val authApiService: AuthApiService by lazy {
-        retrofitPublico.create(AuthApiService::class.java)
-    }
-
-    fun <T> crearServicioAutenticado(
-        context: Context,
-        serviceClass: Class<T>
-    ): T {
-        val tokenStorage = TokenStorage(context)
-
-        val okHttpClientPrivado = OkHttpClient.Builder()
-            .addInterceptor(AuthInterceptor(tokenStorage))
+    private val okHttpClientPublico: OkHttpClient by lazy {
+        OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .build()
+    }
 
+    private val retrofitPublico: Retrofit by lazy {
+        Retrofit.Builder()
+            .baseUrl(ApiConfig.BASE_URL)
+            .client(okHttpClientPublico)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+    }
+
+    /**
+     * Servicio público utilizado para login y renovación del access token.
+     */
+    val authApiService: AuthApiService by lazy {
+        retrofitPublico.create(AuthApiService::class.java)
+    }
+
+    /**
+     * Crea el mismo cliente autenticado para Retrofit y para descargas directas.
+     *
+     * Esto permite que las fotografías:
+     * - reciban Authorization: Bearer <token>;
+     * - renueven automáticamente el access token cuando el servidor responda 401;
+     * - sigan redirecciones y compartan los mismos tiempos de espera.
+     */
+    fun crearClienteAutenticado(context: Context): OkHttpClient {
+        val tokenStorage = TokenStorage(context.applicationContext)
+
+        return OkHttpClient.Builder()
+            .addInterceptor(AuthInterceptor(tokenStorage))
+            .authenticator(
+                TokenAuthenticator(
+                    tokenStorage = tokenStorage,
+                    authApiService = authApiService
+                )
+            )
+            .addInterceptor(loggingInterceptor)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(45, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .callTimeout(60, TimeUnit.SECONDS)
+            .build()
+    }
+
+    /**
+     * Cliente exclusivo para imágenes de catálogo.
+     *
+     * No usa BODY logging para evitar procesar archivos binarios completos en Logcat
+     * y limita el tiempo de cada URL para que una imagen rota no bloquee la sincronización.
+     */
+    fun crearClienteImagenesAutenticado(context: Context): OkHttpClient {
+        val tokenStorage = TokenStorage(context.applicationContext)
+
+        return OkHttpClient.Builder()
+            .addInterceptor(AuthInterceptor(tokenStorage))
+            .authenticator(
+                TokenAuthenticator(
+                    tokenStorage = tokenStorage,
+                    authApiService = authApiService
+                )
+            )
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
+            .callTimeout(20, TimeUnit.SECONDS)
+            .build()
+    }
+
+    /**
+     * Crea un servicio Retrofit protegido por JWT.
+     */
+    fun <T> crearServicioAutenticado(
+        context: Context,
+        serviceClass: Class<T>
+    ): T {
         val retrofitPrivado = Retrofit.Builder()
             .baseUrl(ApiConfig.BASE_URL)
-            .client(okHttpClientPrivado)
+            .client(crearClienteAutenticado(context.applicationContext))
             .addConverterFactory(GsonConverterFactory.create())
             .build()
 

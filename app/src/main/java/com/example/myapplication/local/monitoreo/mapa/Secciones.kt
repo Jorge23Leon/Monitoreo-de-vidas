@@ -50,9 +50,9 @@ internal fun esMonitoreoPausadoMapa(
     status: String,
     additionalNotes: String
 ): Boolean {
-    val estado = status.trim().lowercase(Locale.getDefault())
-
-    return (estado == "pendiente" || estado == "pending") &&
+    // Pausado conserva el ciclo real in_progress. Solo se identifica por la nota.
+    // Un monitoreo cerrado nunca se considera pausado.
+    return !esEstadoCerradoMapa(status) &&
             additionalNotes.trim().startsWith("PAUSADO", ignoreCase = true)
 }
 
@@ -113,9 +113,10 @@ internal fun textoTiempoRestanteMonitoreo(
     startAt: Long?,
     ahoraMs: Long
 ): String {
-    if (startAt == null) return "Inicia al abrir"
+    if (startAt == null) return "Inicia al confirmar el primer punto"
 
-    val cierreAutomaticoMs = obtenerCierreAutomaticoMs(startAt) ?: return "Inicia al abrir"
+    val cierreAutomaticoMs = obtenerCierreAutomaticoMs(startAt)
+        ?: return "Inicia al confirmar el primer punto"
     val restanteMs = cierreAutomaticoMs - ahoraMs
 
     if (restanteMs <= 0L) return "Tiempo agotado"
@@ -270,13 +271,13 @@ internal fun InstruccionMapaLibre(
     puntosCapturados: Int
 ) {
     val titulo = if (puntosCapturados <= 0) {
-        "Camina al lugar y toca el mapa"
+        "Toca cualquier parte de la parcela"
     } else {
         "Sigue caminando y toca el mapa"
     }
 
     val descripcion = if (puntosCapturados <= 0) {
-        "Aquí harás el primer monitoreo."
+        "Confirma el punto elegido para iniciar el monitoreo."
     } else {
         "El siguiente punto será el número ${puntosCapturados + 1}."
     }
@@ -359,12 +360,37 @@ internal fun ConfirmarPuntoLibreCard(
     onConfirmarClick: () -> Unit,
     onCancelarClick: () -> Unit
 ) {
+    val esPrimerPunto = numeroPunto <= 1
+
+    val titulo = if (esPrimerPunto) {
+        "¿Iniciar monitoreo aquí?"
+    } else {
+        "¿Registrar el punto $numeroPunto aquí?"
+    }
+
+    val descripcion = if (esPrimerPunto) {
+        "Al confirmar iniciará el monitoreo. La coordenada se guardará con tu ubicación GPS actual."
+    } else {
+        "Se registrará el punto $numeroPunto con tu ubicación GPS actual, no con el lugar que tocaste en el mapa."
+    }
+
+    val textoBoton = when {
+        creandoPunto -> "Preparando punto..."
+        esPrimerPunto -> "✓  Iniciar monitoreo"
+        else -> "✓  Registrar punto"
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .navigationBarsPadding()
             .padding(horizontal = 12.dp, vertical = 12.dp),
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
+        shape = RoundedCornerShape(
+            topStart = 24.dp,
+            topEnd = 24.dp,
+            bottomStart = 18.dp,
+            bottomEnd = 18.dp
+        ),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
@@ -383,7 +409,7 @@ internal fun ConfirmarPuntoLibreCard(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "¿Realizar monitoreo aquí?",
+                text = titulo,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Black,
                 color = Color(0xFF1D2430),
@@ -393,7 +419,7 @@ internal fun ConfirmarPuntoLibreCard(
             Spacer(modifier = Modifier.height(6.dp))
 
             Text(
-                text = "Se registrará el punto $numeroPunto en tu ubicación seleccionada.",
+                text = descripcion,
                 fontSize = 13.sp,
                 color = Color(0xFF6E7580),
                 textAlign = TextAlign.Center
@@ -414,11 +440,7 @@ internal fun ConfirmarPuntoLibreCard(
                 )
             ) {
                 Text(
-                    text = if (creandoPunto) {
-                        "Creando punto..."
-                    } else {
-                        "✓  Confirmar monitoreo"
-                    },
+                    text = textoBoton,
                     color = Color.White,
                     fontWeight = FontWeight.Black,
                     fontSize = 16.sp
@@ -449,7 +471,6 @@ internal fun ConfirmarPuntoLibreCard(
         }
     }
 }
-
 @Composable
 internal fun AccionesMapaMonitoreo(
     totalPuntos: Int,
@@ -460,7 +481,9 @@ internal fun AccionesMapaMonitoreo(
     onTerminarClick: () -> Unit,
     onContinuarClick: () -> Unit
 ) {
-    val puedeAccionar = puntosCapturados > 0
+
+    val puedePausar = true
+    val puedeTerminar = puntosCapturados > 0
 
     if (estaPausado) {
         Card(
@@ -518,7 +541,7 @@ internal fun AccionesMapaMonitoreo(
         ) {
             OutlinedButton(
                 onClick = onPausarClick,
-                enabled = !finalizandoMonitoreo && puedeAccionar,
+                enabled = !finalizandoMonitoreo && puedePausar,
                 modifier = Modifier
                     .weight(1f)
                     .height(48.dp),
@@ -538,7 +561,7 @@ internal fun AccionesMapaMonitoreo(
 
             Button(
                 onClick = onTerminarClick,
-                enabled = !finalizandoMonitoreo && puedeAccionar,
+                enabled = !finalizandoMonitoreo && puedeTerminar,
                 modifier = Modifier
                     .weight(1f)
                     .height(48.dp),
@@ -571,34 +594,48 @@ internal fun DialogoAccionMapa(
 ) {
     val sinCapturas = puntosCapturados <= 0
 
+    val esPausar = accion == AccionDialogoMapa.PAUSAR
     val esTerminar = accion == AccionDialogoMapa.TERMINAR ||
             accion == AccionDialogoMapa.REGRESAR
 
+    /*
+     * Antes cualquier acción con 0 puntos se bloqueaba con "Captura requerida".
+     * Eso impedía pausar un monitoreo recién abierto o pendiente.
+     *
+     * Ahora solo se bloquea terminar/regresar como cierre cuando no hay puntos.
+     * Pausar sí queda permitido aunque no existan capturas.
+     */
+    val bloqueadoPorSinCapturas = sinCapturas && !esPausar
+
     val titulo = when {
-        sinCapturas -> "Captura requerida"
+        bloqueadoPorSinCapturas -> "Captura requerida"
         esTerminar -> "Terminar monitoreo"
         else -> "Pausar monitoreo"
     }
 
     val colorPrincipal = when {
-        sinCapturas -> Color(0xFFB3261E)
+        bloqueadoPorSinCapturas -> Color(0xFFB3261E)
         esTerminar -> Color(0xFF1F6D2A)
         else -> Color(0xFFD96B00)
     }
 
     val icono = when {
-        sinCapturas -> "!"
+        bloqueadoPorSinCapturas -> "!"
         esTerminar -> "✓"
         else -> "Ⅱ"
     }
 
     val mensaje = when {
-        sinCapturas -> {
-            "Necesitas guardar mínimo 1 punto para pausar o terminar el monitoreo."
+        bloqueadoPorSinCapturas -> {
+            "Necesitas guardar mínimo 1 punto para terminar el monitoreo."
         }
 
         esTerminar -> {
             "Has guardado $puntosCapturados puntos. ¿Seguro que quieres terminar el monitoreo? Después ya no podrás agregar más puntos."
+        }
+
+        esPausar && sinCapturas -> {
+            "Todavía no has guardado puntos. ¿Quieres pausar este monitoreo? Quedará como pausado y podrás continuarlo después."
         }
 
         else -> {
@@ -645,7 +682,7 @@ internal fun DialogoAccionMapa(
             }
         },
         confirmButton = {
-            if (sinCapturas) {
+            if (bloqueadoPorSinCapturas) {
                 TextButton(onClick = onDismiss) {
                     Text(
                         text = "Aceptar",
@@ -679,7 +716,7 @@ internal fun DialogoAccionMapa(
             }
         },
         dismissButton = {
-            if (!sinCapturas) {
+            if (!bloqueadoPorSinCapturas) {
                 TextButton(
                     enabled = !finalizandoMonitoreo,
                     onClick = onDismiss

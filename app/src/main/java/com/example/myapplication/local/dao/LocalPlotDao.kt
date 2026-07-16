@@ -10,7 +10,6 @@ import com.example.myapplication.local.entities.LocalPlotEntity
 
 @Dao
 interface LocalPlotDao {
-
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertPlot(plot: LocalPlotEntity): Long
 
@@ -41,38 +40,51 @@ interface LocalPlotDao {
     @Query("DELETE FROM local_plots")
     suspend fun deleteAllPlots()
 
-    @Query("""
-        SELECT *
-        FROM local_plots
-        WHERE idLocalRanch = :idRanch
-        ORDER BY name ASC
-    """)
+    @Query("SELECT * FROM local_plots WHERE idLocalRanch = :idRanch ORDER BY name ASC")
     suspend fun getParcelasByRancho(idRanch: Long): List<LocalPlotEntity>
 
-    @Query("""
-        SELECT *
-        FROM local_plots
-        WHERE assigned_user_id = :idUser
-        ORDER BY name ASC
-    """)
+    /** Solo parcelas que pertenecen a programas de la CIA seleccionada. */
+    @Query(
+        """
+        SELECT DISTINCT pl.*
+        FROM local_plots pl
+        INNER JOIN local_programs p ON p.idLocalPlot = pl.idLocalPlot
+        WHERE p.idLocalCia = :idLocalCia
+          AND p.idLocalRanch = :idRanch
+        ORDER BY pl.name ASC
+        """
+    )
+    suspend fun getParcelasByCiaAndRancho(
+        idLocalCia: Long,
+        idRanch: Long
+    ): List<LocalPlotEntity>
+
+    @Query("SELECT * FROM local_plots WHERE assigned_user_id = :idUser ORDER BY name ASC")
     suspend fun getParcelasAsignadasAUsuario(idUser: Long): List<LocalPlotEntity>
 
-    @Query("""
-        SELECT *
-        FROM local_plots
+    @Query(
+        """
+        SELECT * FROM local_plots
         WHERE idLocalRanch = :idRanch
           AND assigned_user_id = :idUser
         ORDER BY name ASC
-    """)
-    suspend fun getParcelasByRanchoAndUser(
-        idRanch: Long,
-        idUser: Long
-    ): List<LocalPlotEntity>
+        """
+    )
+    suspend fun getParcelasByRanchoAndUser(idRanch: Long, idUser: Long): List<LocalPlotEntity>
 
-    @Query("""
-        SELECT *
-        FROM local_plots
-        WHERE idLocalPlot IN (:ids)
-    """)
+    @Query("SELECT * FROM local_plots WHERE idLocalPlot IN (:ids)")
     suspend fun getParcelasByIds(ids: List<Long>): List<LocalPlotEntity>
+
+    @Query("SELECT * FROM local_plots WHERE ext_id = :extId LIMIT 1")
+    suspend fun getPlotByExtId(extId: String): LocalPlotEntity?
+
+    @Query(
+        """
+        SELECT * FROM local_plots
+        WHERE idLocalRanch = :idLocalRanch
+          AND code = :code
+        LIMIT 1
+        """
+    )
+    suspend fun getPlotByCodeAndRanch(idLocalRanch: Long, code: String): LocalPlotEntity?
 }

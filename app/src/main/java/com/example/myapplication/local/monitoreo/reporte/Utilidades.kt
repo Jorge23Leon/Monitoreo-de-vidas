@@ -17,6 +17,130 @@ internal fun textoTipoCatalogo(type: String?): String {
     }
 }
 
+internal fun esEnfermedadReporte(type: String?): Boolean {
+    return type
+        ?.trim()
+        ?.lowercase()
+        ?.contains("enfermedad") == true
+}
+
+
+internal data class EstadoSeveridadEnfermedadReporteUi(
+    val etiqueta: String,
+    val colorHex: String,
+    val orden: Int
+)
+
+internal fun calcularEstadoSeveridadEnfermedadReporte(
+    checkpoint: LocalPhytomonitoringCheckpointEntity
+): EstadoSeveridadEnfermedadReporteUi {
+    if (checkpoint.presenceStatus == 0) {
+        return EstadoSeveridadEnfermedadReporteUi(
+            etiqueta = "No presente",
+            colorHex = "#16A34A",
+            orden = 0
+        )
+    }
+
+    val fase = checkpoint.stage
+        ?.trim()
+        ?.lowercase(Locale.getDefault())
+        .orEmpty()
+
+    return when {
+        fase.contains("avanz") || fase.contains("terminal") -> {
+            EstadoSeveridadEnfermedadReporteUi(
+                etiqueta = "Avanzado",
+                colorHex = "#DC2626",
+                orden = 3
+            )
+        }
+
+        fase.contains("desarrollo") -> {
+            EstadoSeveridadEnfermedadReporteUi(
+                etiqueta = "Desarrollo",
+                colorHex = "#F97316",
+                orden = 2
+            )
+        }
+
+        fase.contains("inicio") -> {
+            EstadoSeveridadEnfermedadReporteUi(
+                etiqueta = "Inicio",
+                colorHex = "#FACC15",
+                orden = 1
+            )
+        }
+
+        checkpoint.presenceStatus == 1 -> {
+            EstadoSeveridadEnfermedadReporteUi(
+                etiqueta = "Presente",
+                colorHex = "#FACC15",
+                orden = 1
+            )
+        }
+
+        else -> {
+            EstadoSeveridadEnfermedadReporteUi(
+                etiqueta = "No presente",
+                colorHex = "#16A34A",
+                orden = 0
+            )
+        }
+    }
+}
+
+internal fun esSinPlagaReporte(
+    checkpoint: LocalPhytomonitoringCheckpointEntity,
+    fito: LocalPhytosanitaryCatalogEntity?
+): Boolean {
+    if (checkpoint.idPhytosanitary == null) return true
+
+    val texto = listOf(
+        fito?.name.orEmpty(),
+        fito?.type.orEmpty(),
+        fito?.description.orEmpty()
+    ).joinToString(" ")
+        .trim()
+        .uppercase(Locale.getDefault())
+        .replace("Á", "A")
+        .replace("É", "E")
+        .replace("Í", "I")
+        .replace("Ó", "O")
+        .replace("Ú", "U")
+
+    return texto.contains("SIN_PLAGA") ||
+            texto.contains("SIN PLAGA") ||
+            texto.contains("NO PLAGA") ||
+            texto.contains("AUSENTE")
+}
+
+internal fun textoPresenciaFaseReporte(
+    checkpoint: LocalPhytomonitoringCheckpointEntity,
+    fito: LocalPhytosanitaryCatalogEntity?
+): String {
+    if (esSinPlagaReporte(checkpoint, fito)) return "-"
+
+    if (esEnfermedadReporte(fito?.type)) {
+        if (checkpoint.presenceStatus == 0) return "No presente"
+
+        val fase = checkpoint.stage
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+
+        return if (fase == null) {
+            "Presente"
+        } else {
+            "Presente / $fase"
+        }
+    }
+
+    return checkpoint.stage
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: "-"
+}
+
 internal fun textoEstadoReporteUi(status: String): String {
     return when (status.lowercase().trim()) {
         "pending", "pendiente" -> "Pendiente"
@@ -52,20 +176,50 @@ internal data class ReporteDataUi(
     val vertices: List<LocalPlotVertexEntity>,
     val catalogo: List<LocalPhytosanitaryCatalogEntity>,
     val cultivo: String,
-    val fotoCultivo: String?
+    val fotoCultivo: String?,
+    val mensajeSync: String? = null
 )
 
 internal data class FilaReporteCapturaUi(
     val numeroPunto: Int,
     val lat: Double?,
     val lon: Double?,
-    val coordenadas: String,
     val plagaEnfermedad: String,
     val tipo: String,
     val fase: String,
-    val cantidad: Int,
+    val cantidad: String,
     val severidad: String,
     val colorSeveridadHex: String,
     val fechaCaptura: String,
-    val notas: String
+    val notas: String,
+    val rutaFotoLocal: String?,
+    val photoRef: String?,
+    val photoUrl: String?,
+    val idHeader: Long,
+    val idTargetPoint: Long,
+    val capturedAtMillis: Long?
 )
+
+internal fun crearNumeroPuntoMapPorCoordenada(
+    puntos: List<LocalPhytomonitoringTargetPointEntity>
+): Map<Long, Int> {
+    val numeroPorCoordenada = linkedMapOf<String, Int>()
+
+    return puntos
+        .sortedBy { it.idTargetPoint }
+        .associate { punto ->
+            // Se usan 6 decimales para considerar la misma ubicación.
+            val clave = String.format(
+                Locale.US,
+                "%.6f,%.6f",
+                punto.lat,
+                punto.lon
+            )
+
+            val numeroPunto = numeroPorCoordenada.getOrPut(clave) {
+                numeroPorCoordenada.size + 1
+            }
+
+            punto.idTargetPoint to numeroPunto
+        }
+}

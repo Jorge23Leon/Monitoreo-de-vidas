@@ -2,6 +2,7 @@ package com.example.myapplication.local.monitoreo.reporte
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,7 +21,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-internal fun TablaReporteCapturasUi(filas: List<FilaReporteCapturaUi>) {
+internal fun TablaReporteCapturasUi(
+    filas: List<FilaReporteCapturaUi>,
+    onFotoClick: (FilaReporteCapturaUi) -> Unit,
+    onComentarioClick: (FilaReporteCapturaUi) -> Unit
+) {
     val scroll = rememberScrollState()
 
     Column(
@@ -34,13 +39,14 @@ internal fun TablaReporteCapturasUi(filas: List<FilaReporteCapturaUi>) {
                 .padding(vertical = 8.dp)
         ) {
             CeldaHeaderReporteUi("Punto", 70)
-            CeldaHeaderReporteUi("Coordenadas", 190)
             CeldaHeaderReporteUi("Plaga / Enfermedad", 180)
             CeldaHeaderReporteUi("Tipo", 110)
             CeldaHeaderReporteUi("Fase", 120)
             CeldaHeaderReporteUi("Cantidad", 90)
-            CeldaHeaderReporteUi("point_severity", 140)
+            CeldaHeaderReporteUi("Severidad punto", 140)
             CeldaHeaderReporteUi("Fecha", 150)
+            CeldaHeaderReporteUi("Imagen", 92)
+            CeldaHeaderReporteUi("Comentario", 112)
         }
 
         if (filas.isEmpty()) {
@@ -61,17 +67,28 @@ internal fun TablaReporteCapturasUi(filas: List<FilaReporteCapturaUi>) {
                         .padding(vertical = 7.dp)
                 ) {
                     CeldaTextoReporteUi(fila.numeroPunto.toString(), 70)
-                    CeldaTextoReporteUi(fila.coordenadas, 190)
                     CeldaTextoReporteUi(fila.plagaEnfermedad, 180)
                     CeldaTextoReporteUi(fila.tipo, 110)
                     CeldaTextoReporteUi(fila.fase, 120)
-                    CeldaTextoReporteUi(fila.cantidad.toString(), 90)
+                    CeldaTextoReporteUi(fila.cantidad, 90)
                     CeldaChipSeveridadReporteUi(
                         texto = fila.severidad,
                         colorHex = fila.colorSeveridadHex,
                         ancho = 140
                     )
                     CeldaTextoReporteUi(fila.fechaCaptura, 150)
+                    CeldaAccionReporteUi(
+                        texto = if (fila.rutaFotoLocal.isNullOrBlank()) "📷 0" else "🖼️ 1",
+                        habilitado = !fila.rutaFotoLocal.isNullOrBlank(),
+                        ancho = 92,
+                        onClick = { onFotoClick(fila) }
+                    )
+                    CeldaAccionReporteUi(
+                        texto = if (fila.notas.isBlank()) "💬 0" else "💬",
+                        habilitado = fila.notas.isNotBlank(),
+                        ancho = 112,
+                        onClick = { onComentarioClick(fila) }
+                    )
                 }
             }
         }
@@ -104,6 +121,30 @@ private fun CeldaTextoReporteUi(texto: String, ancho: Int) {
     )
 }
 
+@Composable
+private fun CeldaAccionReporteUi(
+    texto: String,
+    habilitado: Boolean,
+    ancho: Int,
+    onClick: () -> Unit
+) {
+    val color = if (habilitado) Color(0xFF0B6B20) else Color(0xFF9E9E9E)
+
+    Text(
+        text = texto,
+        modifier = Modifier
+            .width(ancho.dp)
+            .padding(horizontal = 7.dp)
+            .background(color.copy(alpha = 0.10f), RoundedCornerShape(10.dp))
+            .clickable(enabled = habilitado, onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 6.dp),
+        color = color,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Black,
+        textAlign = TextAlign.Center,
+        maxLines = 1
+    )
+}
 
 @Composable
 private fun CeldaChipSeveridadReporteUi(
