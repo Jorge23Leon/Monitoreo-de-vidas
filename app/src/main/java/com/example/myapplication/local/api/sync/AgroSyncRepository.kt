@@ -98,21 +98,14 @@ class AgroSyncRepository(
                 geoAssetsApi.listarParcelas(page = page)
             }
 
-            // Cuando el API no marca rancho/parcela con datacentral, el vínculo seguro
-            // viene de los programas de la CIA: programa -> plot -> ranch.
-            val parcelasPermitidasExtId = referenciasProgramas.parcelasExtId
-            val ranchosPermitidosExtId = parcelasJson
-                .asSequence()
-                .filter { parcela ->
-                    val extIdParcela = parcela.stringOrNull("id", "uuid", "ext_id", "extId")
-                    extIdParcela != null && extIdParcela in parcelasPermitidasExtId
-                }
-                .mapNotNull { parcela ->
-                    parcela.relacionIdOrNull(
-                        "ranch", "ranch_id", "ranchId", "local_ranch", "localRanch", "farm", "farm_id"
-                    )
-                }
-                .toSet()
+            /*
+             * Los ranchos y parcelas se guardan por la relación real:
+             * productor -> rancho -> parcela.
+             *
+             * No se deben descartar por no tener todavía un programa de campo,
+             * porque el catálogo debe estar disponible antes de crear o consultar
+             * monitoreos.
+             */
 
             var productoresGuardados = 0
             var ranchosGuardados = 0
@@ -239,16 +232,10 @@ class AgroSyncRepository(
                     "extId"
                 ) ?: return@forEach
 
-                val tieneRelacionDirectaConCia = perteneceACiaConRelacionExplicita(
-                    item = item,
-                    ciaExtId = ciaExtId
-                )
-
-                // Sin relación directa, solo aceptamos ranchos a los que llegue una
-                // parcela usada por un programa de ESTA CIA.
-                if (!tieneRelacionDirectaConCia && extId !in ranchosPermitidosExtId) {
-                    return@forEach
-                }
+                /*
+                 * El rancho se acepta cuando pertenece a uno de los productores
+                 * permitidos para la CIA. No exigimos que ya tenga un programa.
+                 */
 
                 val productorExtId = item.relacionIdOrNull(
                     "agro_unit",
@@ -358,16 +345,10 @@ class AgroSyncRepository(
                     "farm_id"
                 ) ?: return@forEach
 
-                val tieneRelacionDirectaConCia = perteneceACiaConRelacionExplicita(
-                    item = item,
-                    ciaExtId = ciaExtId
-                )
-
-                // No basta con que el productor sea compartido: la parcela debe estar
-                // en un programa de la CIA o traer una relación explícita a la CIA.
-                if (!tieneRelacionDirectaConCia && extId !in parcelasPermitidasExtId) {
-                    return@forEach
-                }
+                /*
+                 * La parcela se acepta cuando su rancho ya fue guardado para un
+                 * productor permitido de la CIA. No exigimos programa previo.
+                 */
 
                 val idRanchoLocal = ranchosLocalesPorExtId[ranchoExtId]
                     ?: return@forEach

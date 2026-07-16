@@ -70,7 +70,7 @@ internal fun TablaReporteCapturasUi(
                     CeldaTextoReporteUi(fila.plagaEnfermedad, 180)
                     CeldaTextoReporteUi(fila.tipo, 110)
                     CeldaTextoReporteUi(fila.fase, 120)
-                    CeldaTextoReporteUi(fila.cantidad.toString(), 90)
+                    CeldaTextoReporteUi(fila.cantidad, 90)
                     CeldaChipSeveridadReporteUi(
                         texto = fila.severidad,
                         colorHex = fila.colorSeveridadHex,

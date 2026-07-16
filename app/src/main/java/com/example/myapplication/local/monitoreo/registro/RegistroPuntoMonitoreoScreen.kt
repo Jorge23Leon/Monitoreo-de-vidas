@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import com.example.myapplication.local.monitoreo.severidad.agregarMetadataRangosSeveridad
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -207,15 +208,26 @@ fun RegistroPuntoMonitoreoScreen(
         )
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(
+        header.idCrop,
+        header.idHeader,
+        punto.idTargetPoint
+    ) {
         cargando = true
         error = null
 
         try {
             val resultado = withContext(Dispatchers.IO) {
+                /*
+                 * Solo se muestran plagas y enfermedades relacionadas con el cultivo
+                 * real del monitoreo. Los registros generales o de otros cultivos no
+                 * deben mezclarse en la captura.
+                 */
                 val catalogoDb = database.localphytosanitarycatalogDao()
-                    .getAllCatalogo()
-                    .filterNot { item -> item.name.equals("Sin plaga", ignoreCase = true) }
+                    .getCatalogoByCrop(header.idCrop)
+                    .filterNot { item ->
+                        item.name.equals("Sin plaga", ignoreCase = true)
+                    }
 
                 val cultivoDb = database.localCropCatalogDao().getCropById(header.idCrop)
 
@@ -554,6 +566,15 @@ fun RegistroPuntoMonitoreoScreen(
                     val notasLimpias = observaciones
                         .trim()
                         .takeIf { it.isNotBlank() }
+                    val notasParaGuardar: String? =
+                        if (hayPlagasConCantidad && rangosPunto != null) {
+                            agregarMetadataRangosSeveridad(
+                                notas = notasLimpias,
+                                rangos = rangosPunto
+                            )
+                        } else {
+                            notasLimpias
+                        }
 
                     // Una sola imagen por punto + timestamp. Todas las etapas guardadas
                     // en esta captura comparten photoRef y photoLocalPath.
@@ -575,7 +596,7 @@ fun RegistroPuntoMonitoreoScreen(
                             qty = cantidad,
                             presenceStatus = null,
                             stage = clave.stage,
-                            notes = notasLimpias,
+                            notes = notasParaGuardar,
                             photoRef = fotoGuardada?.name,
                             photoLocalPath = fotoGuardada?.absolutePath,
                             photoUrl = null,
@@ -595,7 +616,7 @@ fun RegistroPuntoMonitoreoScreen(
                             qty = 1,
                             presenceStatus = null,
                             stage = null,
-                            notes = notasLimpias,
+                            notes = notasParaGuardar,
                             photoRef = fotoGuardada?.name,
                             photoLocalPath = fotoGuardada?.absolutePath,
                             photoUrl = null,
@@ -622,7 +643,7 @@ fun RegistroPuntoMonitoreoScreen(
                             } else {
                                 null
                             },
-                            notes = notasLimpias,
+                            notes = notasParaGuardar,
                             photoRef = fotoGuardada?.name,
                             photoLocalPath = fotoGuardada?.absolutePath,
                             photoUrl = null,
@@ -767,42 +788,47 @@ fun RegistroPuntoMonitoreoScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                val mayorTexto = severidadMayorPunto
-                val rangos = rangosSeveridadDesdeTexto(mayorTexto) ?: RangosSeveridad()
-                val totalPuntoActual = totalCantidadPuntoActual()
+                val mostrandoPlagas =
+                    tipoCatalogoSeleccionado == TipoCatalogoRegistroUi.PLAGAS
 
-                val nivelPorPlagas = calcularNivelSeveridad(
-                    cantidadTotal = totalPuntoActual,
-                    presenceStatus = if (totalPuntoActual > 0) 1 else 0,
-                    rangos = rangos
-                )
-                val nivelPorEnfermedades = nivelSeveridadEnfermedadesActual()
-                val nivel = if (
-                    prioridadSeveridad(nivelPorEnfermedades) > prioridadSeveridad(nivelPorPlagas)
-                ) {
-                    nivelPorEnfermedades
-                } else {
-                    nivelPorPlagas
-                }
+                if (mostrandoPlagas) {
+                    val mayorTexto = severidadMayorPunto
+                    val rangos = rangosSeveridadDesdeTexto(mayorTexto)
+                        ?: RangosSeveridad()
 
-                SemaforoSeveridadCard(
-                    mayorTexto = mayorTexto,
-                    totalSeleccionado = totalPuntoActual,
-                    nivelTexto = nivel.etiqueta,
-                    colorNivel = nivelColorRegistro(nivel),
-                    onMayorChange = { nuevo ->
-                        severidadMayorPunto = nuevo
+                    val totalPuntoActual = totalCantidadPuntoActual()
 
-                        val mayor = nuevo.toIntOrNull()
-                        if (mayor != null && mayor > 0) {
-                            preferenciasSeveridad.edit()
-                                .putString(claveSeveridadMayor, nuevo)
-                                .apply()
+                    /*
+                     * Esta tarjeta representa solamente las plagas.
+                     * Las enfermedades ya no deben mezclarse con este cálculo.
+                     */
+                    val nivelPlaga = calcularNivelSeveridad(
+                        cantidadTotal = totalPuntoActual,
+                        presenceStatus = if (totalPuntoActual > 0) 1 else 0,
+                        rangos = rangos
+                    )
+
+                    SemaforoSeveridadCard(
+                        mayorTexto = mayorTexto,
+                        totalSeleccionado = totalPuntoActual,
+                        nivelTexto = nivelPlaga.etiqueta,
+                        colorNivel = nivelColorRegistro(nivelPlaga),
+                        onMayorChange = { nuevo ->
+                            severidadMayorPunto = nuevo
+
+                            val mayor = nuevo.toIntOrNull()
+
+                            if (mayor != null && mayor > 0) {
+                                preferenciasSeveridad
+                                    .edit()
+                                    .putString(claveSeveridadMayor, nuevo)
+                                    .apply()
+                            }
                         }
-                    }
-                )
+                    )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
 
                 when {
                     cargando -> {

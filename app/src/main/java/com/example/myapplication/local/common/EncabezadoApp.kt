@@ -1,18 +1,14 @@
 package com.example.myapplication.local.common
 
 import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -26,7 +22,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -46,6 +44,14 @@ fun EncabezadoApp(
     onCerrarSesionClick: () -> Unit
 )  {
     val context = LocalContext.current
+    val logoAgroindustryId = remember(context) {
+        context.resources.getIdentifier(
+            "logo_agroindustry",
+            "drawable",
+            context.packageName
+        )
+    }
+
 
     var menuAbierto by remember {
         mutableStateOf(false)
@@ -83,60 +89,45 @@ fun EncabezadoApp(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(62.dp)
+            .height(74.dp)
             .background(Color.White)
-            .padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 2.dp)
+            .padding(
+                start = 0.dp,
+                end = 10.dp,
+                top = 2.dp,
+                bottom = 2.dp
+            )
     ) {
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(top = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
+
+        if (logoAgroindustryId != 0) {
+            Image(
+                painter = painterResource(id = logoAgroindustryId),
+                contentDescription = "GPA Agroindustry",
                 modifier = Modifier
-                    .size(width = 26.dp, height = 26.dp)
-                    .background(
-                        color = Color(0xFF7CB342),
-                        shape = RoundedCornerShape(3.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "🌱",
-                    fontSize = 14.sp
-                )
-            }
-
-            Spacer(modifier = Modifier.width(7.dp))
-
-            Column(
-                horizontalAlignment = Alignment.Start
-            ) {
-                Text(
-                    text = "TIERRA",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Black,
-                    color = Color.Black,
-                    lineHeight = 17.sp
-                )
-
-                Text(
-                    text = "INTELIGENTE",
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.Black,
-                    lineHeight = 9.sp
-                )
-            }
+                    .align(Alignment.TopStart)
+                    .width(145.dp)
+                    .height(55.dp),
+                contentScale = ContentScale.Fit
+            )
+        } else {
+            Text(
+                text = "GPA Agroindustry",
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 2.dp, top = 10.dp),
+                color = Color(0xFF6D6D6D),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Black
+            )
         }
+
 
         Text(
             text = "Bienvenido $nombreUsuario - $fechaActual",
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(start = 70.dp, end = 45.dp, bottom = 2.dp),
+                .padding(start = 8.dp, end = 48.dp, bottom = 2.dp),
             fontSize = 9.sp,
             fontWeight = FontWeight.Bold,
             color = Color(0xFF6D6D6D),

@@ -54,6 +54,129 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 
+private const val COLOR_REPORTE_VERDE = "#16A34A"
+private const val COLOR_REPORTE_AMARILLO = "#FACC15"
+private const val COLOR_REPORTE_NARANJA = "#F97316"
+private const val COLOR_REPORTE_ROJO = "#DC2626"
+
+private data class EstadoMitadMapaReporte(
+    val color: String,
+    val texto: String,
+    val nivel: Int,
+    val total: Int = 0
+)
+
+private fun calcularEstadoPlagaMapaReporte(
+    checkpointsPunto: List<LocalPhytomonitoringCheckpointEntity>,
+    catalogoPorId: Map<Long, LocalPhytosanitaryCatalogEntity>
+): EstadoMitadMapaReporte {
+    val capturasPlaga = checkpointsPunto.filter { checkpoint ->
+        val fito = checkpoint.idPhytosanitary?.let(catalogoPorId::get)
+
+        fito != null &&
+                !esEnfermedadReporte(fito.type) &&
+                !esSinPlagaReporte(checkpoint, fito) &&
+                (checkpoint.qty ?: 0) > 0
+    }
+
+    if (capturasPlaga.isEmpty()) {
+        val seRegistroSinPlaga = checkpointsPunto.any { checkpoint ->
+            val fito = checkpoint.idPhytosanitary?.let(catalogoPorId::get)
+            esSinPlagaReporte(checkpoint, fito)
+        }
+
+        return EstadoMitadMapaReporte(
+            color = COLOR_REPORTE_VERDE,
+            texto = "Sin plaga detectada",
+            nivel = 0,
+            total = 0
+        )
+    }
+
+    val severidad = calcularSeveridadPorPunto(
+        checkpointsPunto = capturasPlaga,
+        catalogoPorId = catalogoPorId
+    )
+
+    return EstadoMitadMapaReporte(
+        color = severidad.nivelFinal.colorHex,
+        texto = severidad.nivelFinal.etiqueta,
+        nivel = severidad.nivelFinal.orden,
+        total = severidad.totalCantidadPunto
+    )
+}
+
+private fun prioridadEnfermedadMapaReporte(
+    checkpoint: LocalPhytomonitoringCheckpointEntity
+): Int {
+    if (checkpoint.presenceStatus == 0) return 1
+
+    val fase = checkpoint.stage
+        ?.trim()
+        ?.lowercase(Locale.getDefault())
+        .orEmpty()
+
+    return when {
+        fase.contains("avanz") -> 4
+        fase.contains("desarrollo") -> 3
+        fase.contains("inicio") -> 2
+        checkpoint.presenceStatus == 1 -> 2
+        else -> 0
+    }
+}
+
+private fun calcularEstadoEnfermedadMapaReporte(
+    checkpointsPunto: List<LocalPhytomonitoringCheckpointEntity>,
+    catalogoPorId: Map<Long, LocalPhytosanitaryCatalogEntity>
+): EstadoMitadMapaReporte {
+    val capturasEnfermedad = checkpointsPunto.filter { checkpoint ->
+        val fito = checkpoint.idPhytosanitary?.let(catalogoPorId::get)
+        esEnfermedadReporte(fito?.type)
+    }
+
+    if (capturasEnfermedad.isEmpty()) {
+        return EstadoMitadMapaReporte(
+            color = COLOR_REPORTE_VERDE,
+            texto = "No presente",
+            nivel = 1
+        )
+    }
+
+    return when (
+        capturasEnfermedad.maxOfOrNull(::prioridadEnfermedadMapaReporte) ?: 0
+    ) {
+        4 -> EstadoMitadMapaReporte(
+            color = COLOR_REPORTE_ROJO,
+            texto = "Presente / Avanzado",
+            nivel = 4
+        )
+
+        3 -> EstadoMitadMapaReporte(
+            color = COLOR_REPORTE_NARANJA,
+            texto = "Presente / Desarrollo",
+            nivel = 3
+        )
+
+        2 -> EstadoMitadMapaReporte(
+            color = COLOR_REPORTE_AMARILLO,
+            texto = "Presente / Inicio",
+            nivel = 2
+        )
+
+        1 -> EstadoMitadMapaReporte(
+            color = COLOR_REPORTE_VERDE,
+            texto = "No presente",
+            nivel = 1
+        )
+
+        else -> EstadoMitadMapaReporte(
+            color = COLOR_REPORTE_VERDE,
+            texto = "No presente",
+            nivel = 1
+        )
+    }
+}
+
 private data class FotoMapaDetalleUi(
     val titulo: String,
     val photo: String
@@ -319,6 +442,16 @@ internal fun crearHtmlMapaReporteUi(
                 catalogoPorId = catalogoMap
             )
 
+            val estadoPlaga = calcularEstadoPlagaMapaReporte(
+                checkpointsPunto = capturasMismaCoordenada,
+                catalogoPorId = catalogoMap
+            )
+
+            val estadoEnfermedad = calcularEstadoEnfermedadMapaReporte(
+                checkpointsPunto = capturasMismaCoordenada,
+                catalogoPorId = catalogoMap
+            )
+
             val capturasArray = JSONArray().apply {
                 severidadPunto.fitos.forEach { fito ->
                     put(JSONObject().apply {
@@ -327,15 +460,23 @@ internal fun crearHtmlMapaReporteUi(
                             ?.trim()
                             .orEmpty()
 
-                        val fase = when {
-                            !esEnfermedad -> fasesResumen.ifBlank { "-" }
-                            fito.cantidadTotal <= 0 -> "No presente"
-                            fasesResumen.isBlank() || fasesResumen == "-" -> "Presente"
-                            else -> "Presente / $fasesResumen"
-                        }
-
                         val capturasFito = capturasMismaCoordenada.filter { checkpoint ->
                             checkpoint.idPhytosanitary == fito.idPhytosanitary
+                        }
+
+                        val estadoEnfermedadFito = if (esEnfermedad) {
+                            calcularEstadoEnfermedadMapaReporte(
+                                checkpointsPunto = capturasFito,
+                                catalogoPorId = catalogoMap
+                            )
+                        } else {
+                            null
+                        }
+
+                        val fase = if (esEnfermedad) {
+                            estadoEnfermedadFito?.texto ?: "Sin evaluar"
+                        } else {
+                            fasesResumen.ifBlank { "-" }
                         }
 
                         val comentario = capturasFito
@@ -377,8 +518,14 @@ internal fun crearHtmlMapaReporteUi(
                         put("fase", fase)
                         put("cantidad", fito.cantidadTotal)
                         put("fecha", formatearFechaOpcionalReporteUi(fito.fechaUltimaCaptura))
-                        put("severidad", fito.nivel.etiqueta)
-                        put("color", fito.nivel.colorHex)
+                        put(
+                            "severidad",
+                            estadoEnfermedadFito?.texto ?: fito.nivel.etiqueta
+                        )
+                        put(
+                            "color",
+                            estadoEnfermedadFito?.color ?: fito.nivel.colorHex
+                        )
                         put("comentario", comentario)
                         put("tieneComentario", comentario.isNotBlank())
                         put("photoSrc", photoSrc.orEmpty())
@@ -398,6 +545,31 @@ internal fun crearHtmlMapaReporteUi(
                 else -> "not_monitored"
             }
 
+            val colorGlobal = when {
+                statusFinal == "cancelled" -> "#6B7280"
+                statusFinal != "completed" -> COLOR_REPORTE_VERDE
+                estadoPlaga.color.equals(COLOR_REPORTE_ROJO, ignoreCase = true) ||
+                        estadoEnfermedad.color.equals(COLOR_REPORTE_ROJO, ignoreCase = true) -> {
+                    COLOR_REPORTE_ROJO
+                }
+                estadoPlaga.color.equals(COLOR_REPORTE_NARANJA, ignoreCase = true) ||
+                        estadoEnfermedad.color.equals(COLOR_REPORTE_NARANJA, ignoreCase = true) ||
+                        estadoPlaga.color.equals(COLOR_REPORTE_AMARILLO, ignoreCase = true) ||
+                        estadoEnfermedad.color.equals(COLOR_REPORTE_AMARILLO, ignoreCase = true) -> {
+                    COLOR_REPORTE_NARANJA
+                }
+                else -> COLOR_REPORTE_VERDE
+            }
+
+            val nivelGlobal = when {
+                statusFinal != "completed" -> 0
+                colorGlobal.equals(COLOR_REPORTE_ROJO, ignoreCase = true) -> 3
+                colorGlobal.equals(COLOR_REPORTE_NARANJA, ignoreCase = true) -> 2
+                else -> 1
+            }
+
+            val conProblema = statusFinal == "completed" && nivelGlobal >= 2
+
             put(JSONObject().apply {
                 put("numero", index + 1)
                 put("id", puntoBase.idTargetPoint)
@@ -409,14 +581,37 @@ internal fun crearHtmlMapaReporteUi(
                 put("severityLabel", severidadPunto.nivelFinal.etiqueta)
                 put("severityColor", severidadPunto.nivelFinal.colorHex)
                 put("totalCantidad", severidadPunto.totalCantidadPunto)
+
+                put("plagaColor", estadoPlaga.color)
+                put("plagaTexto", estadoPlaga.texto)
+                put("plagaNivel", estadoPlaga.nivel)
+                put("totalCantidadPlaga", estadoPlaga.total)
+
+                put("enfermedadColor", estadoEnfermedad.color)
+                put("enfermedadTexto", estadoEnfermedad.texto)
+                put("enfermedadNivel", estadoEnfermedad.nivel)
+
+                put("colorGlobal", colorGlobal)
+                put("nivelGlobal", nivelGlobal)
+                put("conProblema", conProblema)
+
                 put("capturas", capturasArray)
             })
         }
     }.toString()
 
-    val radioBordeMapa = if (pantallaCompleta) "0px" else "18px"
-    val minHeightMapa = if (pantallaCompleta) "100%" else "420px"
+    val radioBordeMapa = if (pantallaCompleta) "0px" else "14px"
+    val minHeightMapa = if (pantallaCompleta) "100%" else "320px"
     val pantallaCompletaJs = if (pantallaCompleta) "true" else "false"
+    val claseModoMapa = if (pantallaCompleta) "modo-completo" else "modo-resumen"
+    val posicionLeyenda = if (pantallaCompleta) "topright" else "bottomleft"
+    val anchoLeyenda = if (pantallaCompleta) "230px" else "205px"
+    val altoMaximoLeyenda = if (pantallaCompleta) "calc(100vh - 105px)" else "150px"
+    val posicionLeyendaFallback = if (pantallaCompleta) {
+        "right:12px;top:12px;"
+    } else {
+        "left:12px;bottom:12px;"
+    }
 
     return """
         <!DOCTYPE html>
@@ -466,21 +661,98 @@ internal fun crearHtmlMapaReporteUi(
                 }
 
                 .legend {
-                    background: rgba(255,255,255,0.95);
-                    padding: 9px 11px;
-                    border-radius: 12px;
-                    box-shadow: 0 3px 12px rgba(0,0,0,0.25);
-                    font-size: 12px;
-                    line-height: 19px;
+                    background: rgba(255,255,255,0.96);
+                    padding: 7px 9px;
+                    border: 1px solid rgba(18,61,31,0.16);
+                    border-radius: 11px;
+                    box-shadow: 0 3px 12px rgba(0,0,0,0.24);
+                    font-size: 10.5px;
+                    line-height: 15px;
                     color: #222;
-                    max-width: 245px;
+                    width: max-content;
+                    max-width: $anchoLeyenda;
+                    max-height: $altoMaximoLeyenda;
+                    overflow-y: auto;
                     box-sizing: border-box;
+                    -webkit-overflow-scrolling: touch;
                 }
 
                 .legend-title {
+                    font-size: 11.5px;
                     font-weight: bold;
-                    margin-bottom: 4px;
+                    margin-bottom: 3px;
                     color: #123D1F;
+                }
+
+                /* Vista pequeña: únicamente muestra las leyendas P/E. */
+                .leyendas-pe-control {
+                    width: min(318px, calc(100vw - 24px));
+                    display: grid;
+                    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+                    gap: 8px;
+                    box-sizing: border-box;
+                    pointer-events: auto;
+                }
+
+                .leyenda-pe-card {
+                    min-width: 0;
+                    min-height: 102px;
+                    background: rgba(255,255,255,0.96);
+                    color: #263238;
+                    border: 1px solid rgba(18,61,31,0.14);
+                    border-radius: 12px;
+                    box-shadow: 0 3px 12px rgba(0,0,0,0.22);
+                    padding: 7px 8px;
+                    box-sizing: border-box;
+                    font-size: 9.4px;
+                    line-height: 13px;
+                }
+
+                .leyenda-pe-titulo {
+                    color: #123D1F;
+                    font-size: 10.6px;
+                    line-height: 14px;
+                    font-weight: 900;
+                    margin-bottom: 3px;
+                    white-space: nowrap;
+                }
+
+                .leyenda-pe-fila {
+                    display: flex;
+                    align-items: center;
+                    gap: 5px;
+                    min-width: 0;
+                    white-space: nowrap;
+                }
+
+                .leyenda-pe-fila .dot {
+                    flex: 0 0 auto;
+                    width: 9px;
+                    height: 9px;
+                    margin-right: 0;
+                }
+
+                /* Sube la atribución para que no tape la leyenda de enfermedades. */
+                .modo-resumen .leaflet-bottom.leaflet-right {
+                    bottom: 108px;
+                }
+
+                @media (max-width: 380px) {
+                    .leyendas-pe-control {
+                        width: calc(100vw - 18px);
+                        gap: 6px;
+                    }
+
+                    .leyenda-pe-card {
+                        min-height: 98px;
+                        padding: 6px;
+                        font-size: 8.7px;
+                        line-height: 12px;
+                    }
+
+                    .leyenda-pe-titulo {
+                        font-size: 9.7px;
+                    }
                 }
 
                 .dot {
@@ -491,7 +763,73 @@ internal fun crearHtmlMapaReporteUi(
                     margin-right: 6px;
                 }
 
-               
+                .marcador-pe-wrapper {
+                    background: transparent !important;
+                    border: none !important;
+                }
+
+                .marcador-pe {
+                    position: relative;
+                    width: 44px;
+                    height: 48px;
+                    user-select: none;
+                    -webkit-user-select: none;
+                }
+
+                .marcador-pe-letras {
+                    position: absolute;
+                    top: 0;
+                    left: 4px;
+                    width: 36px;
+                    display: flex;
+                    justify-content: space-around;
+                    color: #FFFFFF;
+                    font-size: 11px;
+                    line-height: 13px;
+                    font-weight: 900;
+                    text-shadow:
+                        -1px -1px 2px #111111,
+                         1px -1px 2px #111111,
+                        -1px  1px 2px #111111,
+                         1px  1px 2px #111111;
+                }
+
+                .marcador-pe-circulo {
+                    position: absolute;
+                    top: 14px;
+                    left: 5px;
+                    display: flex;
+                    width: 34px;
+                    height: 34px;
+                    overflow: hidden;
+                    border: 2.5px solid #17211B;
+                    border-radius: 50%;
+                    box-sizing: border-box;
+                    background: #16A34A;
+                    box-shadow:
+                        0 2px 7px rgba(0,0,0,0.48),
+                        0 0 0 2px rgba(255,255,255,0.82);
+                }
+
+                .marcador-pe-mitad {
+                    width: 50%;
+                    height: 100%;
+                    box-sizing: border-box;
+                }
+
+                .marcador-pe-plaga {
+                    border-right: 1.5px solid #17211B;
+                }
+
+                .marcador-pe-enfermedad {
+                    border-left: 1.5px solid #17211B;
+                }
+
+                .marcador-pe-wrapper.selected-marker-ring .marcador-pe-circulo {
+                    box-shadow:
+                        0 0 0 4px rgba(255,255,255,0.98),
+                        0 0 13px 7px rgba(18,61,31,0.78);
+                }
 
                 .no-data-box {
                     background: rgba(255,255,255,0.96);
@@ -562,10 +900,22 @@ internal fun crearHtmlMapaReporteUi(
                     box-sizing: border-box;
                     pointer-events: auto;
                     -webkit-overflow-scrolling: touch;
+                    overscroll-behavior-y: contain;
+                    touch-action: pan-y;
+                    will-change: transform, opacity;
+                    transition: transform 180ms ease-out, opacity 180ms ease-out;
                 }
 
                 .point-sheet.active {
                     display: block;
+                    transform: translateY(0);
+                    opacity: 1;
+                }
+
+                .point-sheet.dragging {
+                    transition: none;
+                    user-select: none;
+                    -webkit-user-select: none;
                 }
 
                 .sheet-handle {
@@ -574,6 +924,8 @@ internal fun crearHtmlMapaReporteUi(
                     border-radius: 10px;
                     background: #D0D0D0;
                     margin: 0 auto 8px;
+                    cursor: grab;
+                    touch-action: none;
                 }
 
                 .sheet-header {
@@ -833,6 +1185,112 @@ internal fun crearHtmlMapaReporteUi(
                     font-weight: 900;
                 }
 
+                .heat-canvas {
+                    pointer-events: none;
+                    z-index: 350;
+                    opacity: 0.92;
+                    mix-blend-mode: multiply;
+                }
+
+                .resumen-superficie {
+                    width: 276px;
+                    max-width: calc(100vw - 24px);
+                    background: rgba(255,255,255,0.97);
+                    color: #263238;
+                    border: 1px solid rgba(18,61,31,0.18);
+                    border-radius: 14px;
+                    box-shadow: 0 4px 18px rgba(0,0,0,0.28);
+                    padding: 10px 12px;
+                    box-sizing: border-box;
+                    font-size: 11.5px;
+                    line-height: 16px;
+                }
+
+                .resumen-titulo {
+                    color: #123D1F;
+                    font-size: 15px;
+                    font-weight: 900;
+                    margin-bottom: 5px;
+                }
+
+                .resumen-info {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    margin-top: 2px;
+                }
+
+                .resumen-subtitulo {
+                    color: #4B5563;
+                    font-size: 10px;
+                    font-weight: 900;
+                    letter-spacing: 0.25px;
+                    margin-top: 9px;
+                    margin-bottom: 3px;
+                    text-transform: uppercase;
+                }
+
+                .resumen-fila {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 8px;
+                    margin-top: 3px;
+                }
+
+                .resumen-fila-label {
+                    display: flex;
+                    align-items: center;
+                    min-width: 0;
+                }
+
+                .resumen-valor {
+                    color: #111827;
+                    font-weight: 900;
+                    white-space: nowrap;
+                }
+
+                .selector-vista {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 7px;
+                    margin-top: 9px;
+                }
+
+                .selector-vista button {
+                    border: 1px solid #D8DED9;
+                    border-radius: 9px;
+                    background: #F7F9F7;
+                    color: #374151;
+                    padding: 7px 5px;
+                    font-size: 11px;
+                    font-weight: 900;
+                }
+
+                .selector-vista button.active {
+                    background: #1F2937;
+                    color: #FFFFFF;
+                    border-color: #1F2937;
+                }
+
+                .resumen-nota {
+                    margin-top: 6px;
+                    color: #6B7280;
+                    font-size: 9.5px;
+                    line-height: 13px;
+                }
+
+                @media (max-width: 480px) {
+                    .resumen-superficie {
+                        width: 240px;
+                        padding: 8px 10px;
+                        font-size: 10.5px;
+                        line-height: 14px;
+                    }
+                    .resumen-titulo { font-size: 13px; }
+                    .selector-vista button { padding: 6px 4px; font-size: 10px; }
+                }
+
                 .error-box {
                     padding: 12px;
                     color: #b00020;
@@ -841,7 +1299,7 @@ internal fun crearHtmlMapaReporteUi(
                 }
             </style>
         </head>
-        <body>
+        <body class="$claseModoMapa">
             <div id="map"></div>
             <div id="point-sheet" class="point-sheet"></div>
             <div id="media-modal" class="media-modal" onclick="cerrarModalDetalle()">
@@ -868,9 +1326,273 @@ internal fun crearHtmlMapaReporteUi(
                 }
 
                 function colorEstado(status, p) {
-                    if (status === 'completed') return (p && p.severityColor) ? p.severityColor : '#16A34A';
-                    if (status === 'cancelled') return '#DC2626';
+                    if (status === 'completed') return '#334155';
+                    if (status === 'cancelled') return '#6B7280';
                     return '#D98A00';
+                }
+
+                function colorGlobalPunto(p) {
+                    if (p && p.colorGlobal) return p.colorGlobal;
+                    if (!p || p.status !== 'completed') return '#16A34A';
+                    return '#16A34A';
+                }
+
+                function hexARgba(hex, alpha) {
+                    const limpio = String(hex || '#16A34A').replace('#', '');
+                    const valor = limpio.length === 3
+                        ? limpio.split('').map(function(c) { return c + c; }).join('')
+                        : limpio.padEnd(6, '0').substring(0, 6);
+                    const r = parseInt(valor.substring(0, 2), 16) || 0;
+                    const g = parseInt(valor.substring(2, 4), 16) || 0;
+                    const b = parseInt(valor.substring(4, 6), 16) || 0;
+                    return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+                }
+
+                function crearProyectorMetros(verticesBase) {
+                    const referencia = verticesBase && verticesBase.length > 0
+                        ? verticesBase
+                        : puntos;
+                    const lat0 = referencia.length > 0
+                        ? referencia.reduce(function(a, p) { return a + Number(p.lat || 0); }, 0) / referencia.length
+                        : 0;
+                    const lon0 = referencia.length > 0
+                        ? referencia.reduce(function(a, p) { return a + Number(p.lon || 0); }, 0) / referencia.length
+                        : 0;
+                    const radioTierra = 6378137.0;
+                    const cosLat = Math.cos(lat0 * Math.PI / 180.0);
+
+                    return function(lat, lon) {
+                        return {
+                            x: (Number(lon) - lon0) * Math.PI / 180.0 * radioTierra * cosLat,
+                            y: (Number(lat) - lat0) * Math.PI / 180.0 * radioTierra
+                        };
+                    };
+                }
+
+                function areaPoligonoMetros(poly) {
+                    if (!poly || poly.length < 3) return 0;
+                    let suma = 0;
+                    for (let i = 0; i < poly.length; i++) {
+                        const a = poly[i];
+                        const b = poly[(i + 1) % poly.length];
+                        suma += a.x * b.y - b.x * a.y;
+                    }
+                    return Math.abs(suma) / 2.0;
+                }
+
+                function puntoDentroPoligono(x, y, poly) {
+                    let dentro = false;
+                    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+                        const xi = poly[i].x;
+                        const yi = poly[i].y;
+                        const xj = poly[j].x;
+                        const yj = poly[j].y;
+                        const cruza = ((yi > y) !== (yj > y)) &&
+                            (x < (xj - xi) * (y - yi) / ((yj - yi) || 0.0000001) + xi);
+                        if (cruza) dentro = !dentro;
+                    }
+                    return dentro;
+                }
+
+                function calcularResumenSuperficie() {
+                    if (!vertices || vertices.length < 3) {
+                        return {
+                            areaTotalHa: 0,
+                            areaProblemaHa: 0,
+                            areaSinProblemaHa: 0,
+                            porcentajeProblema: 0,
+                            porcentajeSinProblema: 0,
+                            disponible: false
+                        };
+                    }
+
+                    const proyectar = crearProyectorMetros(vertices);
+                    const poligono = vertices.map(function(v) {
+                        return proyectar(v.lat, v.lon);
+                    });
+                    const areaTotalM2 = areaPoligonoMetros(poligono);
+                    const puntosProblema = puntos
+                        .filter(function(p) { return p.conProblema === true || p.conProblema === 'true'; })
+                        .map(function(p) {
+                            const c = proyectar(p.lat, p.lon);
+                            c.radio = Math.max(0, Number(p.radius || 0));
+                            return c;
+                        })
+                        .filter(function(p) { return p.radio > 0; });
+
+                    if (areaTotalM2 <= 0) {
+                        return {
+                            areaTotalHa: 0,
+                            areaProblemaHa: 0,
+                            areaSinProblemaHa: 0,
+                            porcentajeProblema: 0,
+                            porcentajeSinProblema: 0,
+                            disponible: false
+                        };
+                    }
+
+                    if (puntosProblema.length === 0) {
+                        return {
+                            areaTotalHa: areaTotalM2 / 10000.0,
+                            areaProblemaHa: 0,
+                            areaSinProblemaHa: areaTotalM2 / 10000.0,
+                            porcentajeProblema: 0,
+                            porcentajeSinProblema: 100,
+                            disponible: true
+                        };
+                    }
+
+                    let minX = poligono[0].x;
+                    let maxX = poligono[0].x;
+                    let minY = poligono[0].y;
+                    let maxY = poligono[0].y;
+                    poligono.forEach(function(p) {
+                        minX = Math.min(minX, p.x);
+                        maxX = Math.max(maxX, p.x);
+                        minY = Math.min(minY, p.y);
+                        maxY = Math.max(maxY, p.y);
+                    });
+
+                    const ancho = Math.max(1, maxX - minX);
+                    const alto = Math.max(1, maxY - minY);
+                    const radioMinimo = Math.min.apply(null, puntosProblema.map(function(p) { return p.radio; }));
+                    let paso = Math.sqrt((ancho * alto) / 90000.0);
+                    paso = Math.max(1.25, Math.min(6.0, paso));
+                    if (isFinite(radioMinimo) && radioMinimo > 0) {
+                        paso = Math.min(paso, Math.max(1.25, radioMinimo / 3.0));
+                    }
+
+                    let dentroTotal = 0;
+                    let dentroProblema = 0;
+                    for (let x = minX + paso / 2.0; x <= maxX; x += paso) {
+                        for (let y = minY + paso / 2.0; y <= maxY; y += paso) {
+                            if (!puntoDentroPoligono(x, y, poligono)) continue;
+                            dentroTotal++;
+
+                            let problema = false;
+                            for (let i = 0; i < puntosProblema.length; i++) {
+                                const p = puntosProblema[i];
+                                const dx = x - p.x;
+                                const dy = y - p.y;
+                                if ((dx * dx + dy * dy) <= (p.radio * p.radio)) {
+                                    problema = true;
+                                    break;
+                                }
+                            }
+                            if (problema) dentroProblema++;
+                        }
+                    }
+
+                    const proporcion = dentroTotal > 0
+                        ? Math.max(0, Math.min(1, dentroProblema / dentroTotal))
+                        : 0;
+                    const areaProblemaM2 = areaTotalM2 * proporcion;
+                    const areaSinProblemaM2 = Math.max(0, areaTotalM2 - areaProblemaM2);
+
+                    return {
+                        areaTotalHa: areaTotalM2 / 10000.0,
+                        areaProblemaHa: areaProblemaM2 / 10000.0,
+                        areaSinProblemaHa: areaSinProblemaM2 / 10000.0,
+                        porcentajeProblema: proporcion * 100.0,
+                        porcentajeSinProblema: (1.0 - proporcion) * 100.0,
+                        disponible: true
+                    };
+                }
+
+                function crearCapaCalorSimple(puntosCalor) {
+                    return L.Layer.extend({
+                        initialize: function(lista) {
+                            this._lista = lista || [];
+                        },
+                        onAdd: function(map) {
+                            this._map = map;
+                            this._canvas = L.DomUtil.create('canvas', 'heat-canvas leaflet-zoom-animated');
+                            map.getPanes().overlayPane.appendChild(this._canvas);
+                            map.on('move zoom resize viewreset', this._dibujar, this);
+                            this._dibujar();
+                        },
+                        onRemove: function(map) {
+                            map.off('move zoom resize viewreset', this._dibujar, this);
+                            if (this._canvas && this._canvas.parentNode) {
+                                this._canvas.parentNode.removeChild(this._canvas);
+                            }
+                            this._canvas = null;
+                            this._map = null;
+                        },
+                        _dibujar: function() {
+                            if (!this._map || !this._canvas) return;
+                            const size = this._map.getSize();
+                            const dpr = Math.max(1, window.devicePixelRatio || 1);
+                            this._canvas.width = Math.round(size.x * dpr);
+                            this._canvas.height = Math.round(size.y * dpr);
+                            this._canvas.style.width = size.x + 'px';
+                            this._canvas.style.height = size.y + 'px';
+                            L.DomUtil.setPosition(
+                                this._canvas,
+                                this._map.containerPointToLayerPoint([0, 0])
+                            );
+
+                            const ctx = this._canvas.getContext('2d');
+                            if (!ctx) return;
+                            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                            ctx.clearRect(0, 0, size.x, size.y);
+
+                            this._lista.forEach(function(p) {
+                                const centro = L.latLng(Number(p.lat), Number(p.lon));
+                                const cp = this._map.latLngToContainerPoint(centro);
+                                const radioM = Math.max(5, Number(p.radius || 7.5));
+                                const deltaLon = radioM / (111320.0 * Math.max(0.2, Math.cos(Number(p.lat) * Math.PI / 180.0)));
+                                const borde = this._map.latLngToContainerPoint([
+                                    Number(p.lat),
+                                    Number(p.lon) + deltaLon
+                                ]);
+                                const radioPxReal = Math.max(4, Math.abs(borde.x - cp.x));
+                                const radioVisual = Math.max(24, Math.min(90, radioPxReal * 5.0));
+                                const color = colorGlobalPunto(p);
+                                const alphaCentro = Number(p.nivelGlobal || 0) >= 3
+                                    ? 0.74
+                                    : Number(p.nivelGlobal || 0) >= 2
+                                        ? 0.58
+                                        : 0.32;
+
+                                const gradiente = ctx.createRadialGradient(
+                                    cp.x, cp.y, 0,
+                                    cp.x, cp.y, radioVisual
+                                );
+                                gradiente.addColorStop(0, hexARgba(color, alphaCentro));
+                                gradiente.addColorStop(0.38, hexARgba(color, alphaCentro * 0.62));
+                                gradiente.addColorStop(1, hexARgba(color, 0));
+                                ctx.fillStyle = gradiente;
+                                ctx.beginPath();
+                                ctx.arc(cp.x, cp.y, radioVisual, 0, Math.PI * 2);
+                                ctx.fill();
+                            }, this);
+                        }
+                    });
+                }
+
+                function crearIconoPuntoDividido(p) {
+                    const colorPlaga = p.plagaColor || '#16A34A';
+                    const colorEnfermedad = p.enfermedadColor || '#16A34A';
+
+                    const html =
+                        '<div class="marcador-pe">' +
+                            '<div class="marcador-pe-letras">' +
+                                '<span>P</span><span>E</span>' +
+                            '</div>' +
+                            '<div class="marcador-pe-circulo">' +
+                                '<div class="marcador-pe-mitad marcador-pe-plaga" style="background:' + colorPlaga + '"></div>' +
+                                '<div class="marcador-pe-mitad marcador-pe-enfermedad" style="background:' + colorEnfermedad + '"></div>' +
+                            '</div>' +
+                        '</div>';
+
+                    return L.divIcon({
+                        className: 'marcador-pe-wrapper',
+                        html: html,
+                        iconSize: [44, 48],
+                        iconAnchor: [22, 31],
+                        tooltipAnchor: [0, -22]
+                    });
                 }
 
                 function escaparHtml(valor) {
@@ -974,7 +1696,7 @@ internal fun crearHtmlMapaReporteUi(
 
                     return 'Registros en esta coordenada: ' + p.capturas.length +
                         ' • ' + nombres.join(' / ') +
-                        ' • Cantidad total: ' + (p.totalCantidad || 0);
+                        ' • Cantidad de plagas: ' + (p.totalCantidadPlaga || 0);
                 }
 
                 function crearCapturaHtml(c, index) {
@@ -1004,13 +1726,17 @@ internal fun crearHtmlMapaReporteUi(
                 }
 
                 function crearDetallePuntoHtml(p) {
-                    const severidad = p.severityLabel || 'Sin plaga';
-                    const badgeClass = claseBadgePorSeveridad(severidad, p.status);
                     const estado = textoEstado(p.status);
-                    const total = p.totalCantidad || 0;
-                    const fecha = (p.capturas && p.capturas.length > 0) ? (p.capturas[0].fecha || 'No registrado') : 'No registrado';
+                    const totalPlaga = p.totalCantidadPlaga || 0;
+                    const fecha = (p.capturas && p.capturas.length > 0)
+                        ? (p.capturas[0].fecha || 'No registrado')
+                        : 'No registrado';
                     const resumen = obtenerResumenCaptura(p);
                     const coordenadas = formatearCoordenadasPunto(p);
+                    const plagaTexto = p.plagaTexto || 'Sin evaluar';
+                    const enfermedadTexto = p.enfermedadTexto || 'Sin evaluar';
+                    const plagaColor = p.plagaColor || '#16A34A';
+                    const enfermedadColor = p.enfermedadColor || '#16A34A';
 
                     let html = '';
                     html += '<div class="sheet-handle"></div>';
@@ -1018,7 +1744,8 @@ internal fun crearHtmlMapaReporteUi(
                     html += '<div>';
                     html += '<div class="sheet-title">Punto ' + escaparHtml(p.numero) + '</div>';
                     html += '<div class="sheet-badges">';
-                    html += '<span class="badge ' + badgeClass + '">● ' + escaparHtml(severidad) + '</span>';
+                    html += '<span class="badge" style="background:#F7F8F7;color:#263238;border:1px solid #E0E0E0"><span style="color:' + plagaColor + '">●</span> P · ' + escaparHtml(plagaTexto) + '</span>';
+                    html += '<span class="badge" style="background:#F7F8F7;color:#263238;border:1px solid #E0E0E0"><span style="color:' + enfermedadColor + '">●</span> E · ' + escaparHtml(enfermedadTexto) + '</span>';
                     html += '<span class="badge badge-green">✓ ' + escaparHtml(estado) + '</span>';
                     html += '</div>';
                     html += '</div>';
@@ -1041,7 +1768,7 @@ internal fun crearHtmlMapaReporteUi(
                     html += '<div class="sheet-grid">';
                     html += '<div class="sheet-field"><div class="sheet-label">Estado</div><div class="sheet-value">' + escaparHtml(estado) + '</div></div>';
                     html += '<div class="sheet-field"><div class="sheet-label">Fecha principal</div><div class="sheet-value">' + escaparHtml(fecha) + '</div></div>';
-                    html += '<div class="sheet-field"><div class="sheet-label">Total registrado</div><div class="sheet-value">' + escaparHtml(total) + '</div></div>';
+                    html += '<div class="sheet-field"><div class="sheet-label">Cantidad de plagas</div><div class="sheet-value">' + escaparHtml(totalPlaga) + '</div></div>';
                     html += '<div class="sheet-field"><div class="sheet-label">Radio</div><div class="sheet-value">' + escaparHtml(p.radius) + ' m</div></div>';
                     html += '<div class="sheet-field sheet-field-wide"><div class="sheet-label">Coordenadas</div><div class="sheet-value">' + escaparHtml(coordenadas) + '</div></div>';
                     html += '</div>';
@@ -1050,25 +1777,49 @@ internal fun crearHtmlMapaReporteUi(
                 }
 
                 let marcadorSeleccionado = null;
+                let puntoMarcadorSeleccionado = null;
+
+                function resaltarMarcador(marker, p, activo) {
+                    const elemento = marker && marker.getElement ? marker.getElement() : null;
+                    if (elemento) {
+                        if (activo) elemento.classList.add('selected-marker-ring');
+                        else elemento.classList.remove('selected-marker-ring');
+                    }
+
+                    if (marker && marker.setRadius) {
+                        marker.setRadius(activo ? 15 : 11);
+                    }
+
+                    if (marker && marker.setStyle && p && p.status !== 'completed') {
+                        marker.setStyle({
+                            color: activo ? '#FFFFFF' : '#1A1A1A',
+                            weight: activo ? 4 : 2
+                        });
+                    }
+
+                    if (marker && marker.setZIndexOffset) {
+                        marker.setZIndexOffset(activo ? 1000 : 0);
+                    }
+
+                    if (activo && marker && marker.bringToFront) {
+                        marker.bringToFront();
+                    }
+                }
 
                 function seleccionarMarcador(marker, p) {
                     try {
                         if (marcadorSeleccionado) {
-                            marcadorSeleccionado.setStyle({
-                                radius: 11,
-                                color: '#1A1A1A',
-                                weight: 2
-                            });
+                            resaltarMarcador(
+                                marcadorSeleccionado,
+                                puntoMarcadorSeleccionado,
+                                false
+                            );
                         }
 
                         marcadorSeleccionado = marker;
+                        puntoMarcadorSeleccionado = p;
                         puntoSeleccionadoActual = p;
-                        marker.setStyle({
-                            radius: 15,
-                            color: '#FFFFFF',
-                            weight: 4
-                        });
-                        marker.bringToFront();
+                        resaltarMarcador(marker, p, true);
 
                         if (!pantallaCompleta) {
                             marker.openTooltip();
@@ -1081,33 +1832,155 @@ internal fun crearHtmlMapaReporteUi(
                             return;
                         }
                         sheet.innerHTML = crearDetallePuntoHtml(p);
+                        sheet.style.transform = 'translateY(0)';
+                        sheet.style.opacity = '1';
                         sheet.style.display = 'block';
+                        sheet.classList.remove('dragging');
                         sheet.classList.add('active');
+                        prepararGestoCerrarDetalle();
                     } catch (err) {
                         alert(textoPlanoPunto(p));
                     }
                 }
 
+                let gestoDetallePreparado = false;
+                let gestoDetalleInicioY = 0;
+                let gestoDetalleUltimoY = 0;
+                let gestoDetalleInicioTiempo = 0;
+                let gestoDetalleArrastrando = false;
+                let gestoDetallePermitido = false;
+
+                function restaurarPosicionDetalle(sheet) {
+                    if (!sheet) return;
+                    sheet.classList.remove('dragging');
+                    sheet.style.transform = 'translateY(0)';
+                    sheet.style.opacity = '1';
+                }
+
+                function cerrarDetalleConAnimacion(sheet) {
+                    if (!sheet) {
+                        cerrarDetallePunto();
+                        return;
+                    }
+
+                    sheet.classList.remove('dragging');
+                    sheet.style.transform = 'translateY(100%)';
+                    sheet.style.opacity = '0.72';
+
+                    window.setTimeout(function() {
+                        cerrarDetallePunto();
+                    }, 180);
+                }
+
+                function prepararGestoCerrarDetalle() {
+                    const sheet = document.getElementById('point-sheet');
+                    if (!sheet || gestoDetallePreparado) return;
+
+                    gestoDetallePreparado = true;
+
+                    sheet.addEventListener('touchstart', function(event) {
+                        if (!sheet.classList.contains('active')) return;
+                        if (!event.touches || event.touches.length !== 1) return;
+
+                        const touch = event.touches[0];
+                        const rect = sheet.getBoundingClientRect();
+                        const inicioEnCabecera = touch.clientY <= rect.top + 118;
+                        const contenidoEnInicio = sheet.scrollTop <= 1;
+
+                        gestoDetallePermitido = inicioEnCabecera || contenidoEnInicio;
+                        gestoDetalleArrastrando = false;
+                        gestoDetalleInicioY = touch.clientY;
+                        gestoDetalleUltimoY = touch.clientY;
+                        gestoDetalleInicioTiempo = Date.now();
+                    }, { passive: true });
+
+                    sheet.addEventListener('touchmove', function(event) {
+                        if (!gestoDetallePermitido) return;
+                        if (!event.touches || event.touches.length !== 1) return;
+
+                        const touch = event.touches[0];
+                        const desplazamiento = touch.clientY - gestoDetalleInicioY;
+
+                        // Al mover hacia arriba se mantiene el desplazamiento normal del contenido.
+                        if (desplazamiento <= 0) {
+                            if (gestoDetalleArrastrando) {
+                                restaurarPosicionDetalle(sheet);
+                                gestoDetalleArrastrando = false;
+                            }
+                            return;
+                        }
+
+                        // Si el contenido ya está desplazado, primero se permite volver al inicio.
+                        if (sheet.scrollTop > 1 && !gestoDetalleArrastrando) return;
+
+                        gestoDetalleArrastrando = true;
+                        gestoDetalleUltimoY = touch.clientY;
+                        sheet.classList.add('dragging');
+                        sheet.style.transform = 'translateY(' + desplazamiento + 'px)';
+                        sheet.style.opacity = String(Math.max(0.72, 1 - desplazamiento / 700));
+                        event.preventDefault();
+                    }, { passive: false });
+
+                    sheet.addEventListener('touchend', function() {
+                        if (!gestoDetallePermitido) return;
+
+                        const desplazamiento = Math.max(0, gestoDetalleUltimoY - gestoDetalleInicioY);
+                        const duracion = Math.max(1, Date.now() - gestoDetalleInicioTiempo);
+                        const velocidad = desplazamiento / duracion;
+                        const umbralDistancia = Math.max(90, sheet.clientHeight * 0.18);
+                        const debeCerrar = gestoDetalleArrastrando && (
+                            desplazamiento >= umbralDistancia ||
+                            (desplazamiento >= 42 && velocidad >= 0.55)
+                        );
+
+                        gestoDetallePermitido = false;
+                        gestoDetalleArrastrando = false;
+
+                        if (debeCerrar) {
+                            cerrarDetalleConAnimacion(sheet);
+                        } else {
+                            restaurarPosicionDetalle(sheet);
+                        }
+                    }, { passive: true });
+
+                    sheet.addEventListener('touchcancel', function() {
+                        gestoDetallePermitido = false;
+                        gestoDetalleArrastrando = false;
+                        restaurarPosicionDetalle(sheet);
+                    }, { passive: true });
+                }
+
                 function cerrarDetallePunto() {
                     const sheet = document.getElementById('point-sheet');
-                    sheet.classList.remove('active');
-                    sheet.style.display = 'none';
-                    sheet.innerHTML = '';
+                    if (sheet) {
+                        sheet.classList.remove('active');
+                        sheet.classList.remove('dragging');
+                        sheet.style.transform = 'translateY(0)';
+                        sheet.style.opacity = '1';
+                        sheet.style.display = 'none';
+                        sheet.innerHTML = '';
+                    }
 
                     if (marcadorSeleccionado) {
-                        marcadorSeleccionado.setStyle({
-                            radius: 11,
-                            color: '#1A1A1A',
-                            weight: 2
-                        });
-                        marcadorSeleccionado = null;
+                        resaltarMarcador(
+                            marcadorSeleccionado,
+                            puntoMarcadorSeleccionado,
+                            false
+                        );
                     }
+
+                    marcadorSeleccionado = null;
+                    puntoMarcadorSeleccionado = null;
                     puntoSeleccionadoActual = null;
                     cerrarModalDetalle();
                 }
 
                 function textoPlanoPunto(p) {
                     let txt = 'Punto ' + p.numero + '\nEstado: ' + textoEstado(p.status);
+                    if (p.status === 'completed') {
+                        txt += '\nPlaga (P): ' + (p.plagaTexto || 'Sin evaluar');
+                        txt += '\nEnfermedad (E): ' + (p.enfermedadTexto || 'Sin evaluar');
+                    }
                     if (p.capturas.length === 0) {
                         txt += '\nNo se realizó monitoreo en este punto.';
                     } else {
@@ -1182,15 +2055,61 @@ internal fun crearHtmlMapaReporteUi(
                     }
 
                     puntos.forEach(function(p) {
-                        const px = x(p.lon).toFixed(2);
-                        const py = y(p.lat).toFixed(2);
-                        const color = colorEstado(p.status, p);
-                        svg += '<circle cx="' + px + '" cy="' + py + '" r="3.4" fill="' + color + '" stroke="#1A1A1A" stroke-width="0.7" onclick="alert(\'' + escaparParaAlert(textoPlanoPunto(p)) + '\')" />';
-                        svg += '<text x="' + px + '" y="' + (parseFloat(py) - 4.5).toFixed(2) + '" font-size="3.2" text-anchor="middle" fill="#123D1F" font-weight="bold">' + p.numero + '</text>';
+                        const px = Number(x(p.lon).toFixed(2));
+                        const py = Number(y(p.lat).toFixed(2));
+                        const evento = "alert('" + escaparParaAlert(textoPlanoPunto(p)) + "')";
+
+                        if (p.status === 'completed') {
+                            const r = 3.1;
+                            const colorP = p.plagaColor || '#16A34A';
+                            const colorE = p.enfermedadColor || '#16A34A';
+                            const top = (py - r).toFixed(2);
+                            const bottom = (py + r).toFixed(2);
+
+                            svg += '<g onclick="' + evento + '" style="cursor:pointer">';
+                            svg += '<path d="M ' + px + ' ' + top + ' A ' + r + ' ' + r + ' 0 0 0 ' + px + ' ' + bottom + ' L ' + px + ' ' + top + ' Z" fill="' + colorP + '" />';
+                            svg += '<path d="M ' + px + ' ' + top + ' A ' + r + ' ' + r + ' 0 0 1 ' + px + ' ' + bottom + ' L ' + px + ' ' + top + ' Z" fill="' + colorE + '" />';
+                            svg += '<circle cx="' + px + '" cy="' + py + '" r="' + r + '" fill="none" stroke="#17211B" stroke-width="0.75" />';
+                            svg += '<line x1="' + px + '" y1="' + top + '" x2="' + px + '" y2="' + bottom + '" stroke="#17211B" stroke-width="0.45" />';
+                            svg += '<text x="' + (px - 1.7).toFixed(2) + '" y="' + (py - 4.5).toFixed(2) + '" font-size="2.3" text-anchor="middle" fill="#123D1F" font-weight="bold">P</text>';
+                            svg += '<text x="' + (px + 1.7).toFixed(2) + '" y="' + (py - 4.5).toFixed(2) + '" font-size="2.3" text-anchor="middle" fill="#123D1F" font-weight="bold">E</text>';
+                            svg += '</g>';
+                        } else {
+                            const color = colorEstado(p.status, p);
+                            svg += '<circle cx="' + px + '" cy="' + py + '" r="3.4" fill="' + color + '" stroke="#1A1A1A" stroke-width="0.7" onclick="' + evento + '" />';
+                        }
+
+                        svg += '<text x="' + px + '" y="' + (py - 6.4).toFixed(2) + '" font-size="2.3" text-anchor="middle" fill="#123D1F" font-weight="bold">' + p.numero + '</text>';
                     });
 
                     svg += '</svg>';
-                   svg += '<div class="legend" style="position:absolute;left:12px;bottom:12px;z-index:2"><div class="legend-title">Semáforo</div><span class="dot" style="background:#16A34A"></span>Verde: sin plaga<br><span class="dot" style="background:#FACC15"></span>Amarillo: severidad menor<br><span class="dot" style="background:#F97316"></span>Naranja: severidad mayor<br><span class="dot" style="background:#DC2626"></span>Rojo: severidad alta</div>';
+
+                    if (pantallaCompleta) {
+                        svg += '<div class="legend" style="position:absolute;${posicionLeyendaFallback}z-index:2">' +
+                            '<div class="legend-title">Semáforo P / E</div>' +
+                            '<b>P</b> = Plaga · <b>E</b> = Enfermedad<br>' +
+                            '<span class="dot" style="background:#16A34A"></span>Verde: sin plaga / enfermedad no presente<br>' +
+                            '<span class="dot" style="background:#FACC15"></span>Amarillo: inicio / severidad menor<br>' +
+                            '<span class="dot" style="background:#F97316"></span>Naranja: desarrollo / severidad mayor<br>' +
+                            '<span class="dot" style="background:#DC2626"></span>Rojo: avanzado / supera umbral</div>';
+                    } else {
+                        svg += '<div class="leyendas-pe-control" style="position:absolute;left:12px;bottom:12px;z-index:2">' +
+                            '<div class="leyenda-pe-card">' +
+                                '<div class="leyenda-pe-titulo">P · Plagas</div>' +
+                                '<div class="leyenda-pe-fila"><span class="dot" style="background:#16A34A"></span>Sin plaga</div>' +
+                                '<div class="leyenda-pe-fila"><span class="dot" style="background:#FACC15"></span>Severidad menor</div>' +
+                                '<div class="leyenda-pe-fila"><span class="dot" style="background:#F97316"></span>Severidad mayor</div>' +
+                                '<div class="leyenda-pe-fila"><span class="dot" style="background:#DC2626"></span>Severidad alta</div>' +
+                            '</div>' +
+                            '<div class="leyenda-pe-card">' +
+                                '<div class="leyenda-pe-titulo">E · Enfermedades</div>' +
+                                '<div class="leyenda-pe-fila"><span class="dot" style="background:#16A34A"></span>Sin presencia</div>' +
+                                '<div class="leyenda-pe-fila"><span class="dot" style="background:#FACC15"></span>Baja</div>' +
+                                '<div class="leyenda-pe-fila"><span class="dot" style="background:#F97316"></span>Media</div>' +
+                                '<div class="leyenda-pe-fila"><span class="dot" style="background:#DC2626"></span>Alta</div>' +
+                            '</div>' +
+                        '</div>';
+                    }
                     if (motivo) {
                         svg += '<div class="no-data-box" style="position:absolute;right:12px;top:12px;z-index:2"><b>Vista local</b><br>' + motivo + '</div>';
                     }
@@ -1229,8 +2148,8 @@ internal fun crearHtmlMapaReporteUi(
                             window.reporteMap.invalidateSize(true);
                             if (boundsReporte) {
                                 window.reporteMap.fitBounds(boundsReporte, {
-                                    padding: pantallaCompleta ? [34, 34] : [24, 24],
-                                    maxZoom: pantallaCompleta ? 18 : 18
+                                    padding: pantallaCompleta ? [26, 26] : [12, 12],
+                                    maxZoom: pantallaCompleta ? 19 : 19
                                 });
                             }
                         }
@@ -1283,28 +2202,55 @@ internal fun crearHtmlMapaReporteUi(
                             noData.addTo(map);
                         }
 
+                        const capaDiscos = L.layerGroup();
+                        const capaMarcadores = L.layerGroup().addTo(map);
+                        const CapaCalorSimple = crearCapaCalorSimple(puntos);
+                        const capaCalor = new CapaCalorSimple(puntos);
+                        let visualizacionActual = 'discos';
+
                         puntos.forEach(function(p) {
-                            const color = colorEstado(p.status, p);
+                            const colorBase = colorEstado(p.status, p);
+                            const colorMancha = colorGlobalPunto(p);
 
                             L.circle([p.lat, p.lon], {
-                                radius: p.radius,
-                                color: color,
-                                weight: 1,
-                                fillColor: color,
-                                fillOpacity: 0.08
-                            }).addTo(map);
+                                radius: Math.max(0.5, Number(p.radius || 7.5)),
+                                color: colorMancha,
+                                weight: p.conProblema ? 2 : 1.25,
+                                opacity: 0.92,
+                                fillColor: colorMancha,
+                                fillOpacity: p.status === 'completed' ? 0.34 : 0.18,
+                                interactive: false
+                            }).addTo(capaDiscos);
 
-                            const marker = L.circleMarker([p.lat, p.lon], {
-                                radius: 11,
-                                color: '#1A1A1A',
-                                weight: 2,
-                                fillColor: color,
-                                fillOpacity: 0.95
-                            })
-                            .addTo(map)
-                            .bindTooltip('Punto ' + p.numero + ' • ' + textoEstado(p.status), {
+                            let marker;
+
+                            if (p.status === 'completed') {
+                                marker = L.marker([p.lat, p.lon], {
+                                    icon: crearIconoPuntoDividido(p),
+                                    keyboard: false,
+                                    riseOnHover: true,
+                                    riseOffset: 500
+                                }).addTo(capaMarcadores);
+                            } else {
+                                marker = L.circleMarker([p.lat, p.lon], {
+                                    radius: 9,
+                                    color: '#1A1A1A',
+                                    weight: 2,
+                                    fillColor: p.status === 'cancelled' ? '#6B7280' : '#16A34A',
+                                    fillOpacity: 0.95
+                                }).addTo(capaMarcadores);
+                            }
+
+                            const tooltip = p.status === 'completed'
+                                ? 'Punto ' + p.numero +
+                                    '<br>P · ' + escaparHtml(p.plagaTexto || 'Sin evaluar') +
+                                    '<br>E · ' + escaparHtml(p.enfermedadTexto || 'Sin evaluar')
+                                : 'Punto ' + p.numero + ' • ' + textoEstado(p.status);
+
+                            marker.bindTooltip(tooltip, {
                                 permanent: false,
-                                direction: 'top'
+                                direction: 'top',
+                                opacity: 0.97
                             });
 
                             marker.on('click', function(e) {
@@ -1316,20 +2262,115 @@ internal fun crearHtmlMapaReporteUi(
                             });
                         });
 
-                       
+                        capaDiscos.addTo(map);
 
-                        const legend = L.control({ position: 'bottomleft' });
-                        legend.onAdd = function() {
-                            const div = L.DomUtil.create('div', 'legend');
+                        function actualizarBotonesVisualizacion() {
+                            const btnCalor = document.getElementById('btn-mapa-calor');
+                            const btnDiscos = document.getElementById('btn-discos');
+                            if (btnCalor) btnCalor.classList.toggle('active', visualizacionActual === 'calor');
+                            if (btnDiscos) btnDiscos.classList.toggle('active', visualizacionActual === 'discos');
+                        }
+
+                        function cambiarVisualizacion(tipo) {
+                            visualizacionActual = tipo === 'calor' ? 'calor' : 'discos';
+
+                            if (visualizacionActual === 'calor') {
+                                if (map.hasLayer(capaDiscos)) map.removeLayer(capaDiscos);
+                                if (!map.hasLayer(capaCalor)) capaCalor.addTo(map);
+                            } else {
+                                if (map.hasLayer(capaCalor)) map.removeLayer(capaCalor);
+                                if (!map.hasLayer(capaDiscos)) capaDiscos.addTo(map);
+                            }
+
+                            actualizarBotonesVisualizacion();
+                        }
+
+                        const resumenSuperficie = calcularResumenSuperficie();
+                        const radiosDisponibles = puntos
+                            .map(function(p) { return Number(p.radius || 0); })
+                            .filter(function(r) { return isFinite(r) && r > 0; });
+                        const radiosUnicos = radiosDisponibles.filter(function(r, i, arr) {
+                            return arr.findIndex(function(v) { return Math.abs(v - r) < 0.01; }) === i;
+                        });
+                        const textoRadio = radiosUnicos.length === 1
+                            ? 'MANCHAS DE ' + radiosUnicos[0].toFixed(1).replace('.0', '') + ' M'
+                            : radiosUnicos.length > 1
+                                ? 'RADIOS VARIABLES'
+                                : 'RADIO SIN DEFINIR';
+
+                        const controlLeyendasPE = L.control({ position: 'bottomleft' });
+                        controlLeyendasPE.onAdd = function() {
+                            const div = L.DomUtil.create('div', 'leyendas-pe-control');
+
                             div.innerHTML =
-                        '<div class="legend-title">Semáforo</div>' +
-                        '<span class="dot" style="background:#16A34A"></span>Verde: sin plaga<br>' +
-                        '<span class="dot" style="background:#FACC15"></span>Amarillo: severidad menor<br>' +
-                        '<span class="dot" style="background:#F97316"></span>Naranja: severidad mayor<br>' +
-                        '<span class="dot" style="background:#DC2626"></span>Rojo: severidad alta';
+                                '<div class="leyenda-pe-card">' +
+                                    '<div class="leyenda-pe-titulo">P · Plagas</div>' +
+                                    '<div class="leyenda-pe-fila"><span class="dot" style="background:#16A34A"></span>Sin plaga</div>' +
+                                    '<div class="leyenda-pe-fila"><span class="dot" style="background:#FACC15"></span>Severidad menor</div>' +
+                                    '<div class="leyenda-pe-fila"><span class="dot" style="background:#F97316"></span>Severidad mayor</div>' +
+                                    '<div class="leyenda-pe-fila"><span class="dot" style="background:#DC2626"></span>Severidad alta</div>' +
+                                '</div>' +
+                                '<div class="leyenda-pe-card">' +
+                                    '<div class="leyenda-pe-titulo">E · Enfermedades</div>' +
+                                    '<div class="leyenda-pe-fila"><span class="dot" style="background:#16A34A"></span>Sin presencia</div>' +
+                                    '<div class="leyenda-pe-fila"><span class="dot" style="background:#FACC15"></span>Baja</div>' +
+                                    '<div class="leyenda-pe-fila"><span class="dot" style="background:#F97316"></span>Media</div>' +
+                                    '<div class="leyenda-pe-fila"><span class="dot" style="background:#DC2626"></span>Alta</div>' +
+                                '</div>';
+
+                            L.DomEvent.disableClickPropagation(div);
+                            L.DomEvent.disableScrollPropagation(div);
                             return div;
                         };
-                        legend.addTo(map);
+
+                        const controlResumen = L.control({ position: 'bottomleft' });
+                        controlResumen.onAdd = function() {
+                            const div = L.DomUtil.create('div', 'resumen-superficie');
+                            const areaProblema = resumenSuperficie.disponible
+                                ? resumenSuperficie.areaProblemaHa.toFixed(2) + ' ha (' + resumenSuperficie.porcentajeProblema.toFixed(1) + '%)'
+                                : 'Sin polígono';
+                            const areaSinProblema = resumenSuperficie.disponible
+                                ? resumenSuperficie.areaSinProblemaHa.toFixed(2) + ' ha (' + resumenSuperficie.porcentajeSinProblema.toFixed(1) + '%)'
+                                : 'Sin polígono';
+
+                            div.innerHTML =
+                                '<div class="resumen-titulo">Presencia</div>' +
+                                '<div class="resumen-info"><span class="dot" style="background:#DC2626"></span>Crítica</div>' +
+                                '<div class="resumen-info"><span class="dot" style="background:#F97316"></span>Advertencia</div>' +
+                                '<div class="resumen-info"><span class="dot" style="background:#16A34A"></span>Baja / Sin monitorear</div>' +
+                                '<div class="resumen-subtitulo">SUPERFICIE (' + escaparHtml(textoRadio) + ')</div>' +
+                                '<div class="resumen-fila">' +
+                                    '<div class="resumen-fila-label"><span class="dot" style="background:#DC2626"></span>Con problemas</div>' +
+                                    '<div class="resumen-valor">' + escaparHtml(areaProblema) + '</div>' +
+                                '</div>' +
+                                '<div class="resumen-fila">' +
+                                    '<div class="resumen-fila-label"><span class="dot" style="background:#16A34A"></span>Baja / Sin monitoreo</div>' +
+                                    '<div class="resumen-valor">' + escaparHtml(areaSinProblema) + '</div>' +
+                                '</div>' +
+                                '<div class="selector-vista">' +
+                                    '<button type="button" id="btn-mapa-calor">Mapa de calor</button>' +
+                                    '<button type="button" id="btn-discos" class="active">Discos</button>' +
+                                '</div>' +
+                                '<div class="resumen-nota">La superficie es una estimación que recorta las manchas al polígono y evita contar dos veces las zonas superpuestas.</div>';
+
+                            L.DomEvent.disableClickPropagation(div);
+                            L.DomEvent.disableScrollPropagation(div);
+
+                            setTimeout(function() {
+                                const btnCalor = document.getElementById('btn-mapa-calor');
+                                const btnDiscos = document.getElementById('btn-discos');
+                                if (btnCalor) btnCalor.addEventListener('click', function() { cambiarVisualizacion('calor'); });
+                                if (btnDiscos) btnDiscos.addEventListener('click', function() { cambiarVisualizacion('discos'); });
+                                actualizarBotonesVisualizacion();
+                            }, 0);
+
+                            return div;
+                        };
+                        if (pantallaCompleta) {
+                            controlResumen.addTo(map);
+                        } else {
+                            controlLeyendasPE.addTo(map);
+                        }
 
                         [150, 350, 700, 1200, 2000].forEach(function(ms) {
                             setTimeout(ajustarVistaReporte, ms);

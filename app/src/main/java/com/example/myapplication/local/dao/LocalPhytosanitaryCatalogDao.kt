@@ -40,6 +40,26 @@ interface LocalPhytosanitaryCatalogDao {
     @Query("""
         SELECT *
         FROM local_phytosanitary_catalog
+        WHERE ext_id = :extId
+        LIMIT 1
+    """)
+    suspend fun getPhytosanitaryByExtId(
+        extId: String
+    ): LocalPhytosanitaryCatalogEntity?
+
+    @Query("""
+        SELECT *
+        FROM local_phytosanitary_catalog
+        WHERE idDefaultCrop = :idCrop
+        ORDER BY type ASC, name ASC
+    """)
+    suspend fun getCatalogoByCrop(
+        idCrop: Long
+    ): List<LocalPhytosanitaryCatalogEntity>
+
+    @Query("""
+        SELECT *
+        FROM local_phytosanitary_catalog
         WHERE LOWER(TRIM(type)) = LOWER(TRIM(:type))
         ORDER BY name ASC
     """)

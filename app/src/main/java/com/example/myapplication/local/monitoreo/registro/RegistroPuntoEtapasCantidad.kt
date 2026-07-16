@@ -239,6 +239,7 @@ internal fun PresenciaFaseEnfermedadCard(
                 OpcionPresenciaEnfermedad(
                     text = "⊘  No presente",
                     seleccionada = presencia == PresenciaEnfermedadUi.NO_PRESENTE,
+                    colorSeleccionado = Color(0xFF16A34A),
                     onClick = onNoPresente,
                     modifier = Modifier.weight(1f)
                 )
@@ -246,6 +247,7 @@ internal fun PresenciaFaseEnfermedadCard(
                 OpcionPresenciaEnfermedad(
                     text = "✓  Presente",
                     seleccionada = enfermedadPresente,
+                    colorSeleccionado = Color(0xFF0D47C5),
                     onClick = onPresente,
                     modifier = Modifier.weight(1f)
                 )
@@ -293,6 +295,7 @@ internal fun PresenciaFaseEnfermedadCard(
 private fun OpcionPresenciaEnfermedad(
     text: String,
     seleccionada: Boolean,
+    colorSeleccionado: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -301,14 +304,28 @@ private fun OpcionPresenciaEnfermedad(
         modifier = modifier.height(58.dp),
         shape = RoundedCornerShape(15.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = if (seleccionada) Color(0xFFF1F6FF) else Color.White,
-            contentColor = if (seleccionada) Color(0xFF0D47C5) else Color(0xFF1D2430)
+            containerColor = if (seleccionada) {
+                colorSeleccionado.copy(alpha = 0.15f)
+            } else {
+                Color.White
+            },
+            contentColor = if (seleccionada) {
+                colorSeleccionado
+            } else {
+                Color(0xFF1D2430)
+            }
         ),
         border = BorderStroke(
-            1.5.dp,
-            if (seleccionada) Color(0xFF0D47C5) else Color(0xFFD9DEE6)
+            width = 1.5.dp,
+            color = if (seleccionada) {
+                colorSeleccionado
+            } else {
+                Color(0xFFD9DEE6)
+            }
         ),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+        elevation = ButtonDefaults.buttonElevation(
+            defaultElevation = 0.dp
+        )
     ) {
         Text(
             text = text,
@@ -318,7 +335,28 @@ private fun OpcionPresenciaEnfermedad(
         )
     }
 }
+private fun colorEstadoFaseEnfermedad(
+    stage: String?
+): Color {
+    val fase = stage
+        ?.trim()
+        ?.lowercase()
+        .orEmpty()
 
+    return when {
+        fase.contains("inicio") ->
+            Color(0xFFFACC15)
+
+        fase.contains("desarrollo") ->
+            Color(0xFFF97316)
+
+        fase.contains("avanz") ->
+            Color(0xFFDC2626)
+
+        else ->
+            Color(0xFF6B7280)
+    }
+}
 @Composable
 private fun OpcionFaseEnfermedad(
     etapa: LocalPhytostageEntity,
@@ -326,19 +364,37 @@ private fun OpcionFaseEnfermedad(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colorFase = colorEstadoFaseEnfermedad(
+        etapa.stage
+    )
+
     Button(
         onClick = onClick,
         modifier = modifier.height(130.dp),
         shape = RoundedCornerShape(16.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = if (seleccionada) Color(0xFFF1F6FF) else Color.White,
-            contentColor = if (seleccionada) Color(0xFF0D47C5) else Color(0xFF1D2430)
+            containerColor = if (seleccionada) {
+                colorFase.copy(alpha = 0.18f)
+            } else {
+                Color.White
+            },
+            contentColor = if (seleccionada) {
+                colorFase
+            } else {
+                Color(0xFF1D2430)
+            }
         ),
         border = BorderStroke(
-            1.5.dp,
-            if (seleccionada) Color(0xFF0D47C5) else Color(0xFFD9DEE6)
+            width = 2.dp,
+            color = if (seleccionada) {
+                colorFase
+            } else {
+                Color(0xFFD9DEE6)
+            }
         ),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
+        elevation = ButtonDefaults.buttonElevation(
+            defaultElevation = if (seleccionada) 3.dp else 0.dp
+        ),
         contentPadding = PaddingValues(6.dp)
     ) {
         Column(
@@ -349,7 +405,13 @@ private fun OpcionFaseEnfermedad(
                 modifier = Modifier
                     .size(52.dp)
                     .clip(CircleShape)
-                    .background(colorIconoEtapaRegistro(etapa.stage)),
+                    .background(
+                        if (seleccionada) {
+                            colorFase.copy(alpha = 0.24f)
+                        } else {
+                            colorIconoEtapaRegistro(etapa.stage)
+                        }
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 ImageUriBox(
@@ -366,6 +428,11 @@ private fun OpcionFaseEnfermedad(
                 textAlign = TextAlign.Center,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Black,
+                color = if (seleccionada) {
+                    colorFase
+                } else {
+                    Color(0xFF1D2430)
+                },
                 maxLines = 2
             )
         }

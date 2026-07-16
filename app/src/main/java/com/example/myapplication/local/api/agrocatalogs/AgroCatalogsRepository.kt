@@ -8,6 +8,11 @@ import com.example.myapplication.local.entities.LocalPhytostageEntity
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 import retrofit2.Response
@@ -24,7 +29,8 @@ class AgroCatalogsRepository(
 
     companion object {
         private const val TAG = "CATALOGO_FOTOS"
-        private const val TIMEOUT_DETALLE_MS = 12_000L
+        private const val TIMEOUT_DETALLE_MS = 8_000L
+        private const val MAX_DETALLES_EN_PARALELO = 4
     }
 
     suspend fun obtenerTodosLosCultivos(): ResultadoAgroCatalogsApi {
@@ -61,11 +67,62 @@ class AgroCatalogsRepository(
             }
 
             /*
-             * La API de listado a veces devuelve solo nombre/código; se complementa
-             * con el endpoint de detalle para obtener photo, attachments_url, etc.
+             * La lista se consulta siempre para detectar cultivos nuevos, pero el
+             * endpoint de detalle solo se solicita cuando el cultivo no existe localmente
+             * o todavía no tiene fotografía. Así las siguientes sincronizaciones son
+             * mucho más rápidas.
              */
-            val completos = todos.map { cultivo ->
-                completarCultivoConDetalle(cultivo)
+            val existentesPorExtId = database
+                ?.localCropCatalogDao()
+                ?.getAllCrops()
+                ?.mapNotNull { cultivo ->
+                    cultivo.extId
+                        ?.trim()
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { extId -> extId to cultivo }
+                }
+                ?.toMap()
+                .orEmpty()
+
+            val completos = coroutineScope {
+                val limite = Semaphore(MAX_DETALLES_EN_PARALELO)
+
+                todos.map { cultivo ->
+                    async(Dispatchers.IO) {
+                        limite.acquire()
+                        try {
+                            val extId = cultivo.id
+                                ?.toString()
+                                ?.trim()
+                                .orEmpty()
+
+                            val existente = existentesPorExtId[extId]
+                            val fotoLista = extraerFotoCultivo(cultivo)
+
+                            val necesitaDetalle =
+                                extId.isNotBlank() &&
+                                        (
+                                                existente == null ||
+                                                        (
+                                                                fotoLista.isNullOrBlank() &&
+                                                                        existente.photo.isNullOrBlank()
+                                                                )
+                                                )
+
+                            if (necesitaDetalle) {
+                                completarCultivoConDetalle(cultivo)
+                            } else {
+                                cultivo.copy(
+                                    photo = fotoLista
+                                        ?.takeIf { it.isNotBlank() }
+                                        ?: existente?.photo
+                                )
+                            }
+                        } finally {
+                            limite.release()
+                        }
+                    }
+                }.awaitAll()
             }
 
             ResultadoAgroCatalogsApi.Exito(completos)
@@ -84,8 +141,78 @@ class AgroCatalogsRepository(
             )
 
         return try {
+            /*
+             * El listado completo es ligero y permite detectar registros nuevos.
+             * Los detalles pesados solo se consultan para elementos nuevos o incompletos.
+             */
             val items = cargarTodasLasPaginasJson("catálogo fitosanitario") { page ->
                 api.listarCatalogoFitosanitario(page = page)
+            }
+
+            val daoCatalogo = db.localphytosanitarycatalogDao()
+            val existentes = daoCatalogo.getAllCatalogo()
+            val existentesPorExtId = existentes
+                .mapNotNull { item ->
+                    item.extId
+                        ?.trim()
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { extId -> extId to item }
+                }
+                .toMap()
+
+            val detallesPorExtId = coroutineScope {
+                val limite = Semaphore(MAX_DETALLES_EN_PARALELO)
+
+                items.mapNotNull { itemLista ->
+                    val extId = itemLista.stringOrNull(
+                        "id",
+                        "uuid",
+                        "ext_id",
+                        "extId"
+                    ) ?: return@mapNotNull null
+
+                    val existente = existentesPorExtId[extId]
+                    val etapasExistentes = existente
+                        ?.let { fito ->
+                            db.localphytostageDao()
+                                .getStagesByPhytosanitary(fito.idPhytosanitary)
+                        }
+                        .orEmpty()
+
+                    val fotoLista = extraerFotoPrincipal(itemLista)
+                    val cultivoLista = extraerExtIdCultivo(itemLista)
+
+                    val necesitaDetalle =
+                        existente == null ||
+                                existente.idDefaultCrop == null ||
+                                existente.photo.isNullOrBlank() ||
+                                etapasExistentes.isEmpty() ||
+                                (
+                                        cultivoLista.isNullOrBlank() &&
+                                                existente.idDefaultCrop == null
+                                        ) ||
+                                (
+                                        fotoLista.isNullOrBlank() &&
+                                                existente.photo.isNullOrBlank()
+                                        )
+
+                    if (!necesitaDetalle) {
+                        return@mapNotNull null
+                    }
+
+                    async(Dispatchers.IO) {
+                        limite.acquire()
+                        try {
+                            extId to obtenerDetalleFitosanitario(extId)
+                        } finally {
+                            limite.release()
+                        }
+                    }
+                }.awaitAll()
+                    .mapNotNull { (extId, detalle) ->
+                        detalle?.let { extId to it }
+                    }
+                    .toMap()
             }
 
             var catalogoGuardado = 0
@@ -100,11 +227,8 @@ class AgroCatalogsRepository(
                     "extId"
                 ) ?: return@forEach
 
-                /*
-                 * El endpoint de detalle es indispensable: normalmente ahí vienen
-                 * photos/stage_photos que el listado no incluye.
-                 */
-                val itemDetalle = obtenerDetalleFitosanitario(extId)
+                val existente = existentesPorExtId[extId]
+                val itemDetalle = detallesPorExtId[extId]
                 val item = combinarObjetos(
                     base = itemLista,
                     detalle = itemDetalle
@@ -131,6 +255,8 @@ class AgroCatalogsRepository(
                 )
 
                 val foto = extraerFotoPrincipal(item)
+                    ?.takeIf { it.isNotBlank() }
+                    ?: existente?.photo
 
                 if (foto.isNullOrBlank()) {
                     sinFoto++
@@ -147,43 +273,61 @@ class AgroCatalogsRepository(
                     "descripcion",
                     "comments",
                     "notes"
-                )
+                ) ?: existente?.description
+
+                val idDefaultCropLocal = resolverIdDefaultCropLocal(
+                    database = db,
+                    item = item
+                ) ?: existente?.idDefaultCrop
 
                 val idLocalCatalogo = guardarCatalogo(
                     database = db,
+                    existente = existente,
                     extId = extId,
                     nombre = nombre,
                     tipo = tipoLocal,
                     foto = foto,
-                    descripcion = descripcion
+                    descripcion = descripcion,
+                    idDefaultCrop = idDefaultCropLocal
                 )
 
-                val etapas = extraerEtapasConFoto(
-                    item = item,
-                    tipoLocal = tipoLocal
-                )
+                /*
+                 * No se recrean etapas en cada sincronización. Solo se procesan cuando
+                 * el servidor realmente mandó etapas/fotos o cuando el registro es nuevo.
+                 */
+                val debeProcesarEtapas =
+                    existente == null ||
+                            itemDetalle != null ||
+                            tieneInformacionEtapas(item)
 
-                etapas.forEach { etapa ->
-                    if (etapa.foto.isNullOrBlank()) {
-                        Log.w(
-                            TAG,
-                            "SIN_FOTO_ETAPA fito='$nombre' etapa='${etapa.nombre}'"
-                        )
-                    } else {
-                        Log.d(
-                            TAG,
-                            "FOTO_ETAPA fito='$nombre' etapa='${etapa.nombre}' -> ${etapa.foto}"
-                        )
-                    }
-
-                    guardarEtapa(
-                        database = db,
-                        idPhytosanitary = idLocalCatalogo,
-                        etapa = etapa.nombre,
-                        foto = etapa.foto
+                if (debeProcesarEtapas) {
+                    val etapas = extraerEtapasConFoto(
+                        item = item,
+                        tipoLocal = tipoLocal
                     )
 
-                    etapasGuardadas++
+                    etapas.forEach { etapa ->
+                        if (etapa.foto.isNullOrBlank()) {
+                            Log.w(
+                                TAG,
+                                "SIN_FOTO_ETAPA fito='$nombre' etapa='${etapa.nombre}'"
+                            )
+                        } else {
+                            Log.d(
+                                TAG,
+                                "FOTO_ETAPA fito='$nombre' etapa='${etapa.nombre}' -> ${etapa.foto}"
+                            )
+                        }
+
+                        guardarEtapa(
+                            database = db,
+                            idPhytosanitary = idLocalCatalogo,
+                            etapa = etapa.nombre,
+                            foto = etapa.foto
+                        )
+
+                        etapasGuardadas++
+                    }
                 }
 
                 catalogoGuardado++
@@ -344,19 +488,15 @@ class AgroCatalogsRepository(
 
     private suspend fun guardarCatalogo(
         database: AppDatabase,
+        existente: LocalPhytosanitaryCatalogEntity?,
         extId: String,
         nombre: String,
         tipo: String,
         foto: String?,
-        descripcion: String?
+        descripcion: String?,
+        idDefaultCrop: Long?
     ): Long {
         val dao = database.localphytosanitarycatalogDao()
-
-        val existente = dao.getAllCatalogo()
-            .firstOrNull { item ->
-                item.extId == extId ||
-                        item.name.equals(nombre, ignoreCase = true)
-            }
 
         val entidad = LocalPhytosanitaryCatalogEntity(
             idPhytosanitary = existente?.idPhytosanitary ?: 0L,
@@ -365,9 +505,9 @@ class AgroCatalogsRepository(
             type = tipo,
             minRefValue = existente?.minRefValue,
             maxRefValue = existente?.maxRefValue,
-            description = descripcion,
+            description = descripcion ?: existente?.description,
             photo = foto?.takeIf { it.isNotBlank() } ?: existente?.photo,
-            idDefaultCrop = existente?.idDefaultCrop
+            idDefaultCrop = idDefaultCrop ?: existente?.idDefaultCrop
         )
 
         return if (existente != null) {
@@ -408,6 +548,157 @@ class AgroCatalogsRepository(
         }
     }
 
+    private suspend fun resolverIdDefaultCropLocal(
+        database: AppDatabase,
+        item: JsonObject
+    ): Long? {
+        val cropDao = database.localCropCatalogDao()
+        val extIdCultivo = extraerExtIdCultivo(item)
+
+        if (!extIdCultivo.isNullOrBlank()) {
+            cropDao.getCropByExtId(extIdCultivo)?.let { return it.idCrop }
+        }
+
+        val codigoCultivo = extraerCodigoCultivo(item)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+
+        if (codigoCultivo != null) {
+            cropDao.getCropByCode(codigoCultivo)?.let { return it.idCrop }
+        }
+
+        val nombreCultivo = extraerNombreCultivo(item)
+            ?.substringBefore("(")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+
+        return nombreCultivo
+            ?.let { cropDao.getCropByName(it) }
+            ?.idCrop
+    }
+
+    private fun extraerExtIdCultivo(item: JsonObject): String? {
+        val campos = listOf(
+            "default_crop",
+            "defaultCrop",
+            "default_crop_id",
+            "defaultCropId",
+            "crop",
+            "crop_id",
+            "cropId"
+        )
+
+        campos.forEach { campo ->
+            val valor = item.getOrNull(campo) ?: return@forEach
+
+            if (valor.isJsonPrimitive) {
+                return runCatching { valor.asString }
+                    .getOrNull()
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+            }
+
+            if (valor.isJsonObject) {
+                val objeto = valor.asJsonObject
+
+                listOf("id", "uuid", "ext_id", "extId", "pk").forEach { clave ->
+                    val candidato = objeto.getOrNull(clave)
+                    if (candidato?.isJsonPrimitive == true) {
+                        val texto = runCatching { candidato.asString }
+                            .getOrNull()
+                            ?.trim()
+                            ?.takeIf { it.isNotBlank() }
+
+                        if (texto != null) return texto
+                    }
+                }
+            }
+        }
+
+        return null
+    }
+
+    private fun extraerNombreCultivo(item: JsonObject): String? {
+        val campos = listOf(
+            "default_crop",
+            "defaultCrop",
+            "crop"
+        )
+
+        campos.forEach { campo ->
+            val valor = item.getOrNull(campo) ?: return@forEach
+
+            if (valor.isJsonObject) {
+                val objeto = valor.asJsonObject
+
+                listOf("name", "nombre", "label", "title").forEach { clave ->
+                    val candidato = objeto.getOrNull(clave)
+                    if (candidato?.isJsonPrimitive == true) {
+                        val texto = runCatching { candidato.asString }
+                            .getOrNull()
+                            ?.trim()
+                            ?.takeIf { it.isNotBlank() }
+
+                        if (texto != null) return texto
+                    }
+                }
+            }
+        }
+
+        return null
+    }
+
+    private fun extraerCodigoCultivo(item: JsonObject): String? {
+        val campos = listOf(
+            "default_crop",
+            "defaultCrop",
+            "crop"
+        )
+
+        campos.forEach { campo ->
+            val valor = item.getOrNull(campo) ?: return@forEach
+
+            if (valor.isJsonObject) {
+                val objeto = valor.asJsonObject
+
+                listOf("code", "codigo", "crop_code").forEach { clave ->
+                    val candidato = objeto.getOrNull(clave)
+                    if (candidato?.isJsonPrimitive == true) {
+                        val texto = runCatching { candidato.asString }
+                            .getOrNull()
+                            ?.trim()
+                            ?.takeIf { it.isNotBlank() }
+
+                        if (texto != null) return texto
+                    }
+                }
+            }
+        }
+
+        return null
+    }
+
+    private fun tieneInformacionEtapas(item: JsonObject): Boolean {
+        val campos = listOf(
+            "stages",
+            "etapas",
+            "development_stages",
+            "phases",
+            "fases",
+            "stage_photos",
+            "photos",
+            "images",
+            "stage_images",
+            "development_photos",
+            "phase_photos"
+        )
+
+        return campos.any { campo ->
+            val valor = item.getOrNull(campo)
+            valor?.isJsonArray == true && valor.asJsonArray.size() > 0
+        }
+    }
+
     private fun normalizarTipoFito(
         tipoApi: String,
         nombre: String
@@ -431,7 +722,14 @@ class AgroCatalogsRepository(
                     texto.contains("mosaico") ||
                     texto.contains("mancha") ||
                     texto.contains("moho") ||
-                    texto.contains("virus") -> "Enfermedad"
+                    texto.contains("virus") ||
+                    texto.contains("carbon") ||
+                    texto.contains("pudricion") ||
+                    texto.contains("fusarium") ||
+                    texto.contains("achaparramiento") ||
+                    texto.contains("bacter") ||
+                    texto.contains("mildiu") ||
+                    texto.contains("cenicilla") -> "Enfermedad"
 
             texto.contains("pest") ||
                     texto.contains("plaga") ||
@@ -613,20 +911,27 @@ class AgroCatalogsRepository(
 
     private fun extraerFotoPrincipal(item: JsonObject): String? {
         val directa = item.stringOrNull(
-            "photo",
-            "image",
+            "download_url",
+            "file_url",
             "image_url",
             "photo_url",
-            "attachment_url",
-            "file_url",
-            "thumbnail",
-            "thumbnail_url",
-            "download_url",
-            "source_url",
+            "absolute_url",
+            "content_url",
             "original_url",
+            "source_url",
+            "thumbnail_url",
+            "attachment_url",
+            "download",
+            "photo",
+            "image",
             "file",
+            "thumbnail",
             "path",
-            "url"
+            "url",
+            "href",
+            "resource_url",
+            "detail_url",
+            "api_url"
         )?.takeIf(::pareceUrlOPathImagen)
 
         return directa
@@ -657,21 +962,27 @@ class AgroCatalogsRepository(
                 val obj = element.asJsonObject
 
                 obj.stringOrNull(
-                    "url",
+                    "download_url",
+                    "file_url",
+                    "image_url",
+                    "photo_url",
+                    "absolute_url",
+                    "content_url",
+                    "original_url",
+                    "source_url",
+                    "thumbnail_url",
+                    "attachment_url",
+                    "download",
                     "file",
                     "image",
                     "photo",
-                    "path",
-                    "href",
-                    "attachment_url",
-                    "image_url",
-                    "photo_url",
-                    "file_url",
                     "thumbnail",
-                    "thumbnail_url",
-                    "download_url",
-                    "source_url",
-                    "original_url"
+                    "path",
+                    "url",
+                    "href",
+                    "resource_url",
+                    "detail_url",
+                    "api_url"
                 )?.takeIf(::pareceUrlOPathImagen)
                     ?: obj.entrySet().firstNotNullOfOrNull { entry ->
                         buscarUrlEnJson(entry.value)
@@ -851,21 +1162,27 @@ private fun JsonObject.stringOrNull(vararg keys: String): String? {
         if (value.isJsonObject) {
             val obj = value.asJsonObject
             val text = obj.stringOrNull(
-                "url",
+                "download_url",
+                "file_url",
+                "image_url",
+                "photo_url",
+                "absolute_url",
+                "content_url",
+                "original_url",
+                "source_url",
+                "thumbnail_url",
+                "attachment_url",
+                "download",
                 "file",
                 "image",
                 "photo",
-                "path",
-                "href",
-                "attachment_url",
-                "image_url",
-                "photo_url",
-                "file_url",
                 "thumbnail",
-                "thumbnail_url",
-                "download_url",
-                "source_url",
-                "original_url"
+                "path",
+                "url",
+                "href",
+                "resource_url",
+                "detail_url",
+                "api_url"
             )
 
             if (!text.isNullOrBlank()) return text

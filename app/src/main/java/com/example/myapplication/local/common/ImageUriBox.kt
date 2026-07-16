@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.net.Uri
+import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -59,7 +60,12 @@ fun ImageUriBox(
                     context = context.applicationContext,
                     ruta = rutaLocal
                 )
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.w(
+                    "IMAGE_UI",
+                    "No se pudo mostrar la imagen: ${photo ?: "sin URL"}",
+                    e
+                )
                 null
             }
         }

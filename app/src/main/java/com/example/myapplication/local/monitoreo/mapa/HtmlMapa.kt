@@ -95,26 +95,40 @@ internal fun crearHtmlMapaMonitoreo(
                     color: #b00020;
                 }
                 .legend-fija {
-                    margin-top: 8px;
-                    background: rgba(255, 255, 255, 0.94);
-                    padding: 7px 9px;
-                    border-radius: 12px;
+                    margin: 0;
+                    background: rgba(255, 255, 255, 0.95);
+                    padding: 7px 8px;
+                    border: 1px solid rgba(18,61,31,0.16);
+                    border-radius: 11px;
                     box-shadow: 0 3px 10px rgba(0,0,0,0.22);
-                    font-size: 10px;
-                    line-height: 16px;
+                    font-size: 10.5px;
+                    line-height: 14px;
                     color: #222;
-                    min-width: 145px;
+                    min-width: 126px;
+                    max-width: 148px;
+                    box-sizing: border-box;
                 }
 
                 .legend-fija .legend-title {
+                    color: #123D1F;
                     font-size: 11px;
-                    margin-bottom: 3px;
+                    font-weight: bold;
+                    margin-bottom: 4px;
+                    white-space: nowrap;
+                }
+
+                .legend-row {
+                    display: flex;
+                    align-items: center;
+                    gap: 5px;
+                    white-space: nowrap;
                 }
 
                 .legend-fija .dot {
                     width: 9px;
                     height: 9px;
-                    margin-right: 5px;
+                    flex: 0 0 9px;
+                    margin-right: 0;
                 }
 
 
@@ -137,6 +151,68 @@ internal fun crearHtmlMapaMonitoreo(
                     font-size: 12px;
                     font-weight: bold;
                     max-width: 260px;
+                }
+                .marcador-pe-wrapper {
+                    background: transparent !important;
+                    border: none !important;
+                }
+
+                .marcador-pe {
+                    position: relative;
+                    width: 44px;
+                    height: 48px;
+                    user-select: none;
+                    -webkit-user-select: none;
+                }
+
+                .marcador-pe-letras {
+                    position: absolute;
+                    top: 0;
+                    left: 4px;
+                    width: 36px;
+                    display: flex;
+                    justify-content: space-around;
+                    align-items: center;
+                    color: #FFFFFF;
+                    font-size: 11px;
+                    line-height: 13px;
+                    font-weight: 900;
+                    text-shadow:
+                        -1px -1px 2px #1A1A1A,
+                         1px -1px 2px #1A1A1A,
+                        -1px  1px 2px #1A1A1A,
+                         1px  1px 2px #1A1A1A;
+                }
+
+                .marcador-pe-circulo {
+                    position: absolute;
+                    top: 14px;
+                    left: 5px;
+                    display: flex;
+                    width: 34px;
+                    height: 34px;
+                    overflow: hidden;
+                    border: 2.5px solid #17211B;
+                    border-radius: 50%;
+                    box-sizing: border-box;
+                    background: #16A34A;
+                    box-shadow:
+                        0 2px 6px rgba(0, 0, 0, 0.42),
+                        0 0 0 2px rgba(255, 255, 255, 0.76);
+                }
+
+                .marcador-pe-mitad {
+                    width: 50%;
+                    height: 100%;
+                    box-sizing: border-box;
+                }
+
+                .marcador-pe-plaga {
+                    border-right: 1.5px solid #17211B;
+                }
+
+                .marcador-pe-enfermedad {
+                    border-left: 1.5px solid #17211B;
                 }
 
                 .leaflet-control-attribution {
@@ -194,12 +270,78 @@ internal fun crearHtmlMapaMonitoreo(
                         lat: Number(p.lat),
                         lon: Number(p.lon),
                         radius: Number(p.radius || p.radiusM || 4),
-                        status: (p.status || 'pending').toLowerCase(),
+                        status: String(p.status || 'pending').toLowerCase(),
+
+                        // Campos anteriores conservados por compatibilidad.
                         totalCantidadPunto: Number(p.totalCantidadPunto || 0),
-                        severityStatus: p.severityStatus || p.severityLabel || 'Pendiente',
-                        severityColor: p.severityColor || '#D98A00',
-                        severityLevel: Number(p.severityLevel || 0)
+                        severityStatus:
+                            p.severityStatus ||
+                            p.severityLabel ||
+                            'Pendiente',
+                        severityColor:
+                            p.severityColor ||
+                            '#D98A00',
+                        severityLevel:
+                            Number(p.severityLevel || 0),
+
+                        // Mitad izquierda: plagas.
+                        plagaColor:
+                            p.plagaColor ||
+                            '#16A34A',
+                        plagaTexto:
+                            p.plagaTexto ||
+                            'Sin evaluar',
+                        plagaNivel:
+                            Number(p.plagaNivel || 0),
+                        totalCantidadPlaga:
+                            Number(p.totalCantidadPlaga || 0),
+
+                        // Mitad derecha: enfermedades.
+                        enfermedadColor:
+                            p.enfermedadColor ||
+                            '#16A34A',
+                        enfermedadTexto:
+                            p.enfermedadTexto ||
+                            'Sin evaluar',
+                        enfermedadNivel:
+                            Number(p.enfermedadNivel || 0)
                     };
+                }
+
+                function crearIconoPuntoDividido(p) {
+                    const colorPlaga =
+                        p.plagaColor ||
+                        '#16A34A';
+
+                    const colorEnfermedad =
+                        p.enfermedadColor ||
+                        '#16A34A';
+
+                    const html =
+                        '<div class="marcador-pe">' +
+                            '<div class="marcador-pe-letras">' +
+                                '<span>P</span>' +
+                                '<span>E</span>' +
+                            '</div>' +
+                            '<div class="marcador-pe-circulo">' +
+                                '<div ' +
+                                    'class="marcador-pe-mitad marcador-pe-plaga" ' +
+                                    'style="background:' + colorPlaga + '">' +
+                                '</div>' +
+                                '<div ' +
+                                    'class="marcador-pe-mitad marcador-pe-enfermedad" ' +
+                                    'style="background:' + colorEnfermedad + '">' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>';
+
+                    return L.divIcon({
+                        className: 'marcador-pe-wrapper',
+                        html: html,
+                        iconSize: [44, 48],
+                        iconAnchor: [22, 31],
+                        tooltipAnchor: [0, -22]
+                    });
                 }
 
                 function puntoEstaCompletado(p) {
@@ -237,12 +379,13 @@ internal fun crearHtmlMapaMonitoreo(
                         return 'Punto pendiente';
                     }
 
-                    const total = Number(p.totalCantidadPunto || 0);
-                    const severidad = p.severityStatus || 'Sin plaga';
-
-                    return 'Punto monitoreado<br>' +
-                        'Severidad: ' + escapeHtml(severidad) + '<br>' +
-                        'Total del punto: ' + total;
+                    return '' +
+                        '<b>Punto monitoreado</b><br>' +
+                        '<b>P · Plaga:</b> ' +
+                        escapeHtml(p.plagaTexto || 'Sin evaluar') +
+                        '<br>' +
+                        '<b>E · Enfermedad:</b> ' +
+                        escapeHtml(p.enfermedadTexto || 'Sin evaluar');
                 }
 
                 function mostrarError(mensaje) {
@@ -510,27 +653,49 @@ internal fun crearHtmlMapaMonitoreo(
                 }
 
                
-               function agregarLeyenda() {
-                   const control = L.control({ position: 'topleft' });
+                function agregarLeyenda() {
+                    const controlPlagas = L.control({
+                        position: 'bottomleft'
+                    });
 
-                   control.onAdd = function() {
-                       const div = L.DomUtil.create('div', 'legend-fija');
+                    controlPlagas.onAdd = function() {
+                        const div = L.DomUtil.create('div', 'legend-fija');
 
-                       div.innerHTML =
-                           '<div class="legend-title">Severidad</div>' +
-                           '<div><span class="dot" style="background:#16A34A"></span>Sin plaga</div>' +
-                           '<div><span class="dot" style="background:#FACC15"></span>Menor</div>' +
-                           '<div><span class="dot" style="background:#F97316"></span>Mayor</div>' +
-                           '<div><span class="dot" style="background:#DC2626"></span>Supera límite</div>';
+                        div.innerHTML =
+                            '<div class="legend-title">P · Plagas</div>' +
+                            '<div class="legend-row"><span class="dot" style="background:#16A34A"></span>Sin plaga</div>' +
+                            '<div class="legend-row"><span class="dot" style="background:#FACC15"></span>Severidad menor</div>' +
+                            '<div class="legend-row"><span class="dot" style="background:#F97316"></span>Severidad mayor</div>' +
+                            '<div class="legend-row"><span class="dot" style="background:#DC2626"></span>Severidad alta</div>';
 
-                       L.DomEvent.disableClickPropagation(div);
-                       L.DomEvent.disableScrollPropagation(div);
+                        L.DomEvent.disableClickPropagation(div);
+                        L.DomEvent.disableScrollPropagation(div);
+                        return div;
+                    };
 
-                       return div;
-                   };
+                    controlPlagas.addTo(map);
 
-                   control.addTo(map);
-               }
+                    const controlEnfermedades = L.control({
+                        position: 'bottomright'
+                    });
+
+                    controlEnfermedades.onAdd = function() {
+                        const div = L.DomUtil.create('div', 'legend-fija');
+
+                        div.innerHTML =
+                            '<div class="legend-title">E · Enfermedades</div>' +
+                            '<div class="legend-row"><span class="dot" style="background:#16A34A"></span>Sin presencia</div>' +
+                            '<div class="legend-row"><span class="dot" style="background:#FACC15"></span>Baja</div>' +
+                            '<div class="legend-row"><span class="dot" style="background:#F97316"></span>Media</div>' +
+                            '<div class="legend-row"><span class="dot" style="background:#DC2626"></span>Alta</div>';
+
+                        L.DomEvent.disableClickPropagation(div);
+                        L.DomEvent.disableScrollPropagation(div);
+                        return div;
+                    };
+
+                    controlEnfermedades.addTo(map);
+                }
 
                 function renderFallback() {
                     const mapDiv = document.getElementById('map');
@@ -538,47 +703,78 @@ internal fun crearHtmlMapaMonitoreo(
                 }
 
                 function agregarPuntoMonitoreado(p, index) {
-                    const color = colorPunto(p);
-                    const radioPunto = puntoEstaCompletado(p) ? 13 : 11;
-
+                    /*
+                     * El radio queda neutral porque el marcador ahora representa
+                     * dos estados independientes: plaga y enfermedad.
+                     */
                     if (puntoEstaCompletado(p)) {
                         L.circle([p.lat, p.lon], {
                             radius: Math.max(3, p.radius || 4),
-                            color: color,
-                            weight: 2,
-                            opacity: 0.55,
-                            fillColor: color,
-                            fillOpacity: 0.16,
+                            color: '#334155',
+                            weight: 1,
+                            opacity: 0.35,
+                            fillColor: '#FFFFFF',
+                            fillOpacity: 0.06,
                             interactive: false
                         }).addTo(map);
                     }
 
-                    const marker = L.circleMarker([p.lat, p.lon], {
-                        radius: radioPunto,
-                        color: '#FFFFFF',
-                        weight: 3,
-                        fillColor: color,
-                        fillOpacity: 0.98
-                    }).addTo(map);
+                    let marker;
+
+                    if (puntoEstaCompletado(p)) {
+                        marker = L.marker(
+                            [p.lat, p.lon],
+                            {
+                                icon: crearIconoPuntoDividido(p),
+                                keyboard: false,
+                                riseOnHover: true,
+                                riseOffset: 500
+                            }
+                        ).addTo(map);
+                    } else {
+                        const colorEstado = puntoEstaCancelado(p)
+                            ? '#6B7280'
+                            : '#D98A00';
+
+                        marker = L.circleMarker(
+                            [p.lat, p.lon],
+                            {
+                                radius: 9,
+                                color: '#FFFFFF',
+                                weight: 3,
+                                fillColor: colorEstado,
+                                fillOpacity: 0.98
+                            }
+                        ).addTo(map);
+                    }
 
                     marker.bindTooltip(
-                        'Punto ' + (index + 1) + '<br>' + textoPunto(p),
+                        'Punto ' + (index + 1) +
+                        '<br>' +
+                        textoPunto(p),
                         {
                             permanent: false,
-                            direction: 'top'
+                            direction: 'top',
+                            opacity: 0.97
                         }
                     );
 
                     marker.on('click', function(e) {
                         if (e && e.originalEvent) {
-                            L.DomEvent.stopPropagation(e.originalEvent);
+                            L.DomEvent.stopPropagation(
+                                e.originalEvent
+                            );
                         }
 
                         if (puntoEstaCompletado(p)) {
                             alert(
-                                'Este punto ya fue capturado.\n\n' +
-                                'Total del punto: ' + Number(p.totalCantidadPunto || 0) + '\n' +
-                                'Severidad: ' + (p.severityStatus || 'Sin plaga')
+                                'Punto ' + (index + 1) +
+                                ' capturado.\\n\\n' +
+                                'Plaga (P): ' +
+                                (p.plagaTexto || 'Sin evaluar') +
+                                '\\n' +
+                                'Enfermedad (E): ' +
+                                (p.enfermedadTexto || 'Sin evaluar')
                             );
                             return;
                         }
@@ -670,7 +866,6 @@ internal fun crearHtmlMapaMonitoreo(
                     }
 
                     agregarTituloMapa();
-                    agregarLeyenda();
 
                     setTimeout(function () {
                         if (map != null) {

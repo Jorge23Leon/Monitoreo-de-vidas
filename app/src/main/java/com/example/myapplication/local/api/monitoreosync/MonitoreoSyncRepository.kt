@@ -33,6 +33,14 @@ import com.example.myapplication.local.api.core.ApiConfig
 import com.google.gson.JsonElement
 import com.example.myapplication.local.common.ImageCache
 import com.example.myapplication.local.monitoreo.media.PhytoMediaStorage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
 
 class MonitoreoSyncRepository(
     private val context: Context,
@@ -45,6 +53,14 @@ class MonitoreoSyncRepository(
     private val fieldOpsRepository = FieldOpsRepository(context)
     private val phytoMonitoringRepository = PhytoMonitoringRepository(context)
 
+    /*
+     * Las imágenes se descargan después de terminar la sincronización de datos.
+     * Así el usuario puede continuar trabajando mientras la cache se completa.
+     */
+    private val imageCacheScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO
+    )
+
     /**
      * Sincroniza exclusivamente una CIA hija. El parámetro nunca puede ser nulo:
      * así se evita descargar programas globales y mezclarlos en Room.
@@ -54,10 +70,13 @@ class MonitoreoSyncRepository(
         actualizarCatalogos: Boolean = false
     ): ResultadoMonitoreoSync {
         return try {
+            val inicioSincronizacion = System.currentTimeMillis()
+
             var cultivosGuardados = 0
             var programasGuardados = 0
             var headersGuardados = 0
             var puntosGuardados = 0
+            var catalogosConImagenesActualizados = false
             val advertencias = mutableListOf<String>()
 
             fun advertir(mensaje: String, error: Throwable? = null) {
@@ -122,6 +141,8 @@ class MonitoreoSyncRepository(
                             )
                         }
                 }
+
+                catalogosConImagenesActualizados = true
             }
 
             val hayCatalogoFitoLocal = database.localphytosanitarycatalogDao()
@@ -136,7 +157,10 @@ class MonitoreoSyncRepository(
                         "Timeout catálogo fitosanitario: /api/v1/agro-catalogs/phytosanitary/ tardó más de 120 segundos"
                     )
                 ) {
-                    is ResultadoCatalogoFitoSync.Exito -> Unit
+                    is ResultadoCatalogoFitoSync.Exito -> {
+                        catalogosConImagenesActualizados = true
+                    }
+
                     is ResultadoCatalogoFitoSync.Error -> {
                         return ResultadoMonitoreoSync.Error(resultadoCatalogoFito.mensaje)
                     }
@@ -186,20 +210,45 @@ class MonitoreoSyncRepository(
             }
 
             // Los headers se piden por field_task para que el servidor no entregue otras CIAs.
+            // Se consultan hasta cuatro programas a la vez para reducir el tiempo total.
+            val resultadosHeaders = coroutineScope {
+                val limiteHeaders = Semaphore(permits = 4)
+
+                idsProgramasCia.map { programaExtId ->
+                    async(Dispatchers.IO) {
+                        limiteHeaders.acquire()
+                        try {
+                            programaExtId to kotlinx.coroutines.withTimeoutOrNull(20_000L) {
+                                phytoMonitoringRepository.obtenerTodosLosHeaders(
+                                    fieldTask = programaExtId
+                                )
+                            }
+                        } finally {
+                            limiteHeaders.release()
+                        }
+                    }
+                }.awaitAll()
+            }
+
             val headersPorExtId = linkedMapOf<String, PhytoHeaderApiItem>()
-            idsProgramasCia.forEach { programaExtId ->
-                when (
-                    val resultadoHeaders = kotlinx.coroutines.withTimeoutOrNull(60_000L) {
-                        phytoMonitoringRepository.obtenerTodosLosHeaders(fieldTask = programaExtId)
-                    }
-                ) {
+
+            resultadosHeaders.forEach { (programaExtId, resultadoHeaders) ->
+                when (resultadoHeaders) {
                     null -> advertir("Timeout headers para programa $programaExtId")
+
                     is ResultadoPhytoHeadersApi.Error -> {
-                        advertir("No se pudieron cargar headers de $programaExtId: ${resultadoHeaders.mensaje}")
+                        advertir(
+                            "No se pudieron cargar headers de $programaExtId: " +
+                                    resultadoHeaders.mensaje
+                        )
                     }
+
                     is ResultadoPhytoHeadersApi.Exito -> {
                         resultadoHeaders.headers.forEach { header ->
-                            if (header.id.isNotBlank() && header.fieldTask == programaExtId) {
+                            if (
+                                header.id.isNotBlank() &&
+                                header.fieldTask == programaExtId
+                            ) {
                                 headersPorExtId[header.id] = header
                             }
                         }
@@ -291,11 +340,31 @@ class MonitoreoSyncRepository(
             }
 
             /*
-             * Descargar todas las imágenes de cultivos/plagas/etapas en cada
-             * sincronización bloqueaba la lista. ImageCache las resolverá cuando
-             * una tarjeta realmente las necesite.
+             * Las imágenes no bloquean la sincronización principal. Solo los datos
+             * necesarios para trabajar quedan listos antes de mostrar "Sincronizado".
+             * Las fotografías nuevas continúan descargándose en segundo plano.
              */
+            if (catalogosConImagenesActualizados) {
+                imageCacheScope.launch {
+                    runCatching {
+                        precachearImagenesOffline(forceRefresh = false)
+                    }.onFailure { error ->
+                        Log.w(
+                            "SYNC_MON",
+                            "No se pudo completar la cache de imágenes: ${error.message}",
+                            error
+                        )
+                    }
+                }
+            }
+
             val imagenesCacheadas = 0
+
+            Log.d(
+                "SYNC_MON",
+                "Sincronización de datos terminada en " +
+                        "${System.currentTimeMillis() - inicioSincronizacion} ms"
+            )
 
             ResultadoMonitoreoSync.Exito(
                 cultivos = cultivosGuardados,
@@ -397,15 +466,27 @@ class MonitoreoSyncRepository(
                 val obj = element.asJsonObject
 
                 val campos = listOf(
-                    "url",
+                    "download_url",
+                    "file_url",
+                    "image_url",
+                    "photo_url",
+                    "absolute_url",
+                    "content_url",
+                    "original_url",
+                    "source_url",
+                    "thumbnail_url",
+                    "attachment_url",
+                    "download",
                     "file",
                     "image",
                     "photo",
+                    "thumbnail",
                     "path",
+                    "url",
                     "href",
-                    "attachment_url",
-                    "image_url",
-                    "photo_url"
+                    "resource_url",
+                    "detail_url",
+                    "api_url"
                 )
 
                 campos.firstNotNullOfOrNull { key ->
@@ -429,6 +510,12 @@ class MonitoreoSyncRepository(
                 text.startsWith("https://") ||
                 text.startsWith("/media/") ||
                 text.startsWith("media/") ||
+                text.startsWith("/uploads/") ||
+                text.startsWith("uploads/") ||
+                text.startsWith("/files/") ||
+                text.startsWith("files/") ||
+                text.startsWith("/api/v1/core/attachments/") ||
+                text.startsWith("api/v1/core/attachments/") ||
                 text.endsWith(".jpg") ||
                 text.endsWith(".jpeg") ||
                 text.endsWith(".png") ||
@@ -688,53 +775,69 @@ class MonitoreoSyncRepository(
 
 
     /**
-     * Descarga cada imagen y actualiza Room con la ruta local real. Así la UI
-     * no depende de que el túnel de Cloudflare siga vivo después de sincronizar.
+     * Descarga cada imagen al almacenamiento privado para usarla sin conexión.
+     * Room conserva la URL remota para poder volver a descargarla si el archivo
+     * local se elimina, se daña o cambia el túnel del backend.
      */
-    private suspend fun precachearImagenesOffline(): Int {
-        var actualizadas = 0
+    private suspend fun precachearImagenesOffline(
+        forceRefresh: Boolean
+    ): Int = coroutineScope {
+        val fotos = buildList {
+            database.localCropCatalogDao()
+                .getAllCrops()
+                .mapNotNullTo(this) { it.photo?.trim()?.takeIf(String::isNotBlank) }
 
-        val cropDao = database.localCropCatalogDao()
-        cropDao.getAllCrops().forEach { cultivo ->
-            val rutaLocal = ImageCache.resolverParaPersistir(
-                context = context.applicationContext,
-                photo = cultivo.photo
-            )
+            database.localphytosanitarycatalogDao()
+                .getAllCatalogo()
+                .mapNotNullTo(this) { it.photo?.trim()?.takeIf(String::isNotBlank) }
 
-            if (!rutaLocal.isNullOrBlank() && rutaLocal != cultivo.photo) {
-                cropDao.updateCrop(cultivo.copy(photo = rutaLocal))
-                actualizadas++
-            }
+            database.localphytostageDao()
+                .getAllPhytostages()
+                .mapNotNullTo(this) { it.photo?.trim()?.takeIf(String::isNotBlank) }
+        }.distinct()
+
+        if (fotos.isEmpty()) {
+            Log.d("SYNC_MON", "No hay imágenes de catálogo para precargar")
+            return@coroutineScope 0
         }
 
-        val fitoDao = database.localphytosanitarycatalogDao()
-        fitoDao.getAllCatalogo().forEach { fito ->
-            val rutaLocal = ImageCache.resolverParaPersistir(
-                context = context.applicationContext,
-                photo = fito.photo
-            )
+        /*
+         * Se descargan hasta cuatro imágenes en paralelo. Antes se hacía una por una,
+         * por lo que una URL lenta o inválida podía detener toda la sincronización.
+         */
+        val limite = Semaphore(permits = 4)
 
-            if (!rutaLocal.isNullOrBlank() && rutaLocal != fito.photo) {
-                fitoDao.updatePhytosanitary(fito.copy(photo = rutaLocal))
-                actualizadas++
+        val resultados = fotos.map { fotoRemota ->
+            async(Dispatchers.IO) {
+                limite.acquire()
+                try {
+                    runCatching {
+                        ImageCache.guardarEnCache(
+                            context = context.applicationContext,
+                            photo = fotoRemota,
+                            forceRefresh = forceRefresh
+                        )
+                    }.onFailure { error ->
+                        Log.w(
+                            "SYNC_MON",
+                            "No se pudo precargar imagen $fotoRemota: ${error.message}",
+                            error
+                        )
+                    }.getOrNull() != null
+                } finally {
+                    limite.release()
+                }
             }
-        }
+        }.awaitAll()
 
-        val etapaDao = database.localphytostageDao()
-        etapaDao.getAllPhytostages().forEach { etapa ->
-            val rutaLocal = ImageCache.resolverParaPersistir(
-                context = context.applicationContext,
-                photo = etapa.photo
-            )
+        val cacheadas = resultados.count { it }
 
-            if (!rutaLocal.isNullOrBlank() && rutaLocal != etapa.photo) {
-                etapaDao.updatePhytostage(etapa.copy(photo = rutaLocal))
-                actualizadas++
-            }
-        }
+        Log.d(
+            "SYNC_MON",
+            "Imágenes disponibles en cache: $cacheadas de ${fotos.size}"
+        )
 
-        Log.d("SYNC_MON", "Imágenes locales actualizadas: $actualizadas")
-        return actualizadas
+        cacheadas
     }
 
     private suspend fun sincronizarEstadosLocalesAntesDeDescargar(

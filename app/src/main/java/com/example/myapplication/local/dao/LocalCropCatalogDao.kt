@@ -42,12 +42,21 @@ interface LocalCropCatalogDao {
         LIMIT 1
     """)
     suspend fun getCropByName(name: String): LocalCropCatalogEntity?
+
     @Query("""
-    SELECT *
-    FROM local_crop_catalog
-    WHERE ext_id = :extId
-    LIMIT 1
-""")
+        SELECT *
+        FROM local_crop_catalog
+        WHERE LOWER(TRIM(code)) = LOWER(TRIM(:code))
+        LIMIT 1
+    """)
+    suspend fun getCropByCode(code: String): LocalCropCatalogEntity?
+
+    @Query("""
+        SELECT *
+        FROM local_crop_catalog
+        WHERE ext_id = :extId
+        LIMIT 1
+    """)
     suspend fun getCropByExtId(extId: String): LocalCropCatalogEntity?
 
     @Query("""

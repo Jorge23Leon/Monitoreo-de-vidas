@@ -24,6 +24,72 @@ internal fun esEnfermedadReporte(type: String?): Boolean {
         ?.contains("enfermedad") == true
 }
 
+
+internal data class EstadoSeveridadEnfermedadReporteUi(
+    val etiqueta: String,
+    val colorHex: String,
+    val orden: Int
+)
+
+internal fun calcularEstadoSeveridadEnfermedadReporte(
+    checkpoint: LocalPhytomonitoringCheckpointEntity
+): EstadoSeveridadEnfermedadReporteUi {
+    if (checkpoint.presenceStatus == 0) {
+        return EstadoSeveridadEnfermedadReporteUi(
+            etiqueta = "No presente",
+            colorHex = "#16A34A",
+            orden = 0
+        )
+    }
+
+    val fase = checkpoint.stage
+        ?.trim()
+        ?.lowercase(Locale.getDefault())
+        .orEmpty()
+
+    return when {
+        fase.contains("avanz") || fase.contains("terminal") -> {
+            EstadoSeveridadEnfermedadReporteUi(
+                etiqueta = "Avanzado",
+                colorHex = "#DC2626",
+                orden = 3
+            )
+        }
+
+        fase.contains("desarrollo") -> {
+            EstadoSeveridadEnfermedadReporteUi(
+                etiqueta = "Desarrollo",
+                colorHex = "#F97316",
+                orden = 2
+            )
+        }
+
+        fase.contains("inicio") -> {
+            EstadoSeveridadEnfermedadReporteUi(
+                etiqueta = "Inicio",
+                colorHex = "#FACC15",
+                orden = 1
+            )
+        }
+
+        checkpoint.presenceStatus == 1 -> {
+            EstadoSeveridadEnfermedadReporteUi(
+                etiqueta = "Presente",
+                colorHex = "#FACC15",
+                orden = 1
+            )
+        }
+
+        else -> {
+            EstadoSeveridadEnfermedadReporteUi(
+                etiqueta = "No presente",
+                colorHex = "#16A34A",
+                orden = 0
+            )
+        }
+    }
+}
+
 internal fun esSinPlagaReporte(
     checkpoint: LocalPhytomonitoringCheckpointEntity,
     fito: LocalPhytosanitaryCatalogEntity?
@@ -121,19 +187,17 @@ internal data class FilaReporteCapturaUi(
     val plagaEnfermedad: String,
     val tipo: String,
     val fase: String,
-    val cantidad: Int,
+    val cantidad: String,
     val severidad: String,
     val colorSeveridadHex: String,
     val fechaCaptura: String,
     val notas: String,
-
-    /** Ruta local válida o URL remota que se muestra mientras se guarda caché offline. */
-    val rutaFotoLocal: String? = null,
-    val photoRef: String? = null,
-    val photoUrl: String? = null,
-    val idHeader: Long = 0L,
-    val idTargetPoint: Long = 0L,
-    val capturedAtMillis: Long? = null
+    val rutaFotoLocal: String?,
+    val photoRef: String?,
+    val photoUrl: String?,
+    val idHeader: Long,
+    val idTargetPoint: Long,
+    val capturedAtMillis: Long?
 )
 
 internal fun crearNumeroPuntoMapPorCoordenada(

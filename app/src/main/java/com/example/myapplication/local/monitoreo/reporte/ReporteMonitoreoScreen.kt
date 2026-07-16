@@ -668,6 +668,10 @@ fun ReporteMonitoreoScreen(
 
     var detalleSuperiorExpandido by remember { mutableStateOf(false) }
 
+    /*
+     * La severidad por umbral técnico se calcula únicamente con PLAGAS.
+     * Las enfermedades usan su fase: Inicio, Desarrollo o Avanzado.
+     */
     val severidadPorPuntoMap = remember(
         checkpoints,
         catalogoMap,
@@ -684,8 +688,18 @@ fun ReporteMonitoreoScreen(
                 valueTransform = { it.second }
             )
             .mapValues { (_, capturasMismaCoordenada) ->
+                val capturasPlaga = capturasMismaCoordenada.filter { checkpoint ->
+                    val fito = checkpoint.idPhytosanitary?.let(catalogoMap::get)
+
+                    fito != null &&
+                            !esEnfermedadReporte(fito.type) &&
+                            !esSinPlagaReporte(checkpoint, fito) &&
+                            checkpoint.presenceStatus != 0 &&
+                            (checkpoint.qty ?: 0) > 0
+                }
+
                 calcularSeveridadPorPunto(
-                    checkpointsPunto = capturasMismaCoordenada,
+                    checkpointsPunto = capturasPlaga,
                     catalogoPorId = catalogoMap
                 )
             }
@@ -712,6 +726,30 @@ fun ReporteMonitoreoScreen(
                 val numeroPunto = numeroPuntoMap[checkpoint.idTargetPoint] ?: 0
                 val severidadPunto = severidadPorPuntoMap[numeroPunto]
                 val nivelPunto = severidadPunto?.nivelFinal
+                val esEnfermedad = esEnfermedadReporte(item?.type)
+                val estadoEnfermedad = if (esEnfermedad) {
+                    calcularEstadoSeveridadEnfermedadReporte(checkpoint)
+                } else {
+                    null
+                }
+
+                val cantidadVisible = when {
+                    esSinPlaga -> "0"
+                    esEnfermedad -> "—"
+                    else -> (checkpoint.qty ?: 0).toString()
+                }
+
+                val severidadVisible = when {
+                    esSinPlaga -> "Sin plaga"
+                    esEnfermedad -> estadoEnfermedad?.etiqueta ?: "No presente"
+                    else -> nivelPunto?.etiqueta ?: "Sin plaga"
+                }
+
+                val colorSeveridadVisible = when {
+                    esSinPlaga -> "#16A34A"
+                    esEnfermedad -> estadoEnfermedad?.colorHex ?: "#16A34A"
+                    else -> nivelPunto?.colorHex ?: "#16A34A"
+                }
 
                 val rutaGuardada = checkpoint.photoLocalPath
                     ?.takeIf { ruta ->
@@ -755,9 +793,9 @@ fun ReporteMonitoreoScreen(
                         checkpoint = checkpoint,
                         fito = item
                     ),
-                    cantidad = checkpoint.qty ?: 0,
-                    severidad = nivelPunto?.etiqueta ?: "Sin plaga",
-                    colorSeveridadHex = nivelPunto?.colorHex ?: "#16A34A",
+                    cantidad = cantidadVisible,
+                    severidad = severidadVisible,
+                    colorSeveridadHex = colorSeveridadVisible,
                     fechaCaptura = formatearFechaOpcionalReporteUi(checkpoint.capturedAt),
                     notas = limpiarMetadataRangosSeveridad(checkpoint.notes),
                     rutaFotoLocal = rutaGuardada ?: rutaLocalPorReferencia ?: rutaLocalDetectada ?: checkpoint.photoUrl,
@@ -822,13 +860,13 @@ fun ReporteMonitoreoScreen(
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Mapa del monitoreo",
+                            text = "Mapa satelital del reporte",
                             color = Color(0xFF123D1F),
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Black
                         )
                         Text(
-                            text = "Vista satelital completa",
+                            text = "Toca un punto para ver el detalle",
                             color = Color(0xFF5F6F64),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
@@ -1070,11 +1108,11 @@ fun ReporteMonitoreoScreen(
 
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(22.dp),
+                        shape = RoundedCornerShape(18.dp),
                         colors = CardDefaults.cardColors(containerColor = Color.White),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
                     ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
+                        Column(modifier = Modifier.padding(10.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1083,14 +1121,14 @@ fun ReporteMonitoreoScreen(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = "Mapa satelital del reporte",
-                                        fontSize = 18.sp,
+                                        fontSize = 17.sp,
                                         fontWeight = FontWeight.Black,
                                         color = Color(0xFF123D1F)
                                     )
 
                                     Text(
-                                        text = "Vista satelital, polígono, puntos monitoreados y puntos sin captura",
-                                        fontSize = 12.sp,
+                                        text = "Polígono y puntos del monitoreo",
+                                        fontSize = 11.sp,
                                         color = Color(0xFF5F6F64)
                                     )
                                 }
@@ -1102,22 +1140,26 @@ fun ReporteMonitoreoScreen(
                                 )
                             }
 
-                            Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
 
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(460.dp)
+                                    .height(340.dp)
                                     .border(
                                         width = 1.dp,
                                         color = Color(0xFFDDE8D6),
-                                        shape = RoundedCornerShape(18.dp)
+                                        shape = RoundedCornerShape(14.dp)
                                     )
                             ) {
-                                MapaReporteWebViewUi(
-                                    htmlMapa = htmlMapa,
-                                    modifier = Modifier.fillMaxSize()
-                                )
+                                // Fuerza a crear un WebView nuevo cuando cambia el HTML del mapa.
+                                // Esto evita que quede visible una versión anterior de las leyendas.
+                                key(htmlMapa.hashCode()) {
+                                    MapaReporteWebViewUi(
+                                        htmlMapa = htmlMapa,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
                             }
 
                             Spacer(modifier = Modifier.height(8.dp))
@@ -1127,9 +1169,9 @@ fun ReporteMonitoreoScreen(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    text = "⛶ Ver mapa en pantalla completa y tocar puntos para detalle",
+                                    text = "⛶ Abrir mapa completo y tocar puntos",
                                     color = Color(0xFF1B5E20),
-                                    fontSize = 13.sp,
+                                    fontSize = 12.sp,
                                     fontWeight = FontWeight.Black,
                                     textAlign = TextAlign.Center
                                 )

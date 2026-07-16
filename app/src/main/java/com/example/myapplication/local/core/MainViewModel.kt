@@ -1802,34 +1802,24 @@ class MainViewModel(
         idLocalCia: Long,
         idProductor: Long
     ): List<LocalRanchEntity> {
-        val idsParcelasCia = database.localprogramDao()
-            .getProgramasByCia(idLocalCia)
-            .map { programa -> programa.idLocalPlot }
-            .filter { idParcela -> idParcela > 0L }
-            .toSet()
+        /*
+         * El productor sí debe pertenecer a la CIA seleccionada, pero sus ranchos
+         * no necesitan tener un programa para mostrarse en el catálogo.
+         */
+        val productorPerteneceACia = database.localCiaAgroUnitDao()
+            .getProductoresByCia(idLocalCia)
+            .any { productor ->
+                productor.idLocalAgroUnit == idProductor
+            }
 
-        if (idsParcelasCia.isEmpty()) {
+        if (!productorPerteneceACia) {
             return emptyList()
         }
 
-        val idsRanchosConPrograma = database.localPlotDao()
-            .getAllPlots()
-            .asSequence()
-            .filter { parcela ->
-                parcela.idLocalPlot in idsParcelasCia
-            }
-            .map { parcela ->
-                parcela.idLocalRanch
-            }
-            .filter { idRancho ->
-                idRancho > 0L
-            }
-            .toSet()
-
         return database.localRanchDao()
             .getRanchosByProductor(idProductor)
-            .filter { rancho ->
-                rancho.idLocalRanch in idsRanchosConPrograma
+            .distinctBy { rancho ->
+                rancho.idLocalRanch
             }
             .sortedBy { rancho ->
                 rancho.name.trim().lowercase(Locale.getDefault())
@@ -1840,21 +1830,30 @@ class MainViewModel(
         idLocalCia: Long,
         idRancho: Long
     ): List<LocalPlotEntity> {
-        val idsParcelasCia = database.localprogramDao()
-            .getProgramasByCia(idLocalCia)
-            .map { programa -> programa.idLocalPlot }
-            .filter { idParcela -> idParcela > 0L }
+        /*
+         * Verificamos que el rancho pertenezca a un productor de la CIA.
+         * Después mostramos todas sus parcelas, aunque aún no tengan programa.
+         */
+        val idsProductoresCia = database.localCiaAgroUnitDao()
+            .getProductoresByCia(idLocalCia)
+            .map { productor ->
+                productor.idLocalAgroUnit
+            }
             .toSet()
 
-        if (idsParcelasCia.isEmpty()) {
+        val ranchoPerteneceACia = database.localRanchDao()
+            .getAllRanches()
+            .any { rancho ->
+                rancho.idLocalRanch == idRancho &&
+                        rancho.idLocalAgroUnit in idsProductoresCia
+            }
+
+        if (!ranchoPerteneceACia) {
             return emptyList()
         }
 
         return database.localPlotDao()
             .getParcelasByRancho(idRancho)
-            .filter { parcela ->
-                parcela.idLocalPlot in idsParcelasCia
-            }
             .distinctBy { parcela ->
                 parcela.idLocalPlot
             }
@@ -2073,7 +2072,7 @@ class MainViewModel(
 
                 if (lista.isEmpty()) {
                     mostrarMensaje(
-                        "El productor seleccionado no tiene ranchos con programas en esta CIA"
+                        "El productor seleccionado no tiene ranchos registrados en esta CIA"
                     )
                 }
             } catch (e: Exception) {
@@ -2168,7 +2167,7 @@ class MainViewModel(
                     val mensaje = if (sesion != null && (sesion.esTecnico || sesion.esInvitado)) {
                         "No tienes parcelas asignadas en este rancho"
                     } else {
-                        "El rancho seleccionado no tiene parcelas con programas en esta CIA"
+                        "El rancho seleccionado no tiene parcelas registradas"
                     }
                     mostrarMensaje(mensaje)
                 }
@@ -2963,7 +2962,7 @@ class MainViewModel(
                 val errores = mutableListOf<String>()
                 var actualizacionesCorrectas = 0
 
-                ciasObjetivo.forEach { cia ->
+                ciasObjetivo.forEachIndexed { indiceCia, cia ->
                     /*
                      * Solo la CIA objetivo. Nunca se descarga información global de
                      * todas las CIAs del usuario al tocar el botón.
@@ -2976,12 +2975,17 @@ class MainViewModel(
 
                     if (resultadoAgro is ResultadoAgroSync.Error) {
                         errores += "${cia.nombre}: ${resultadoAgro.mensaje}"
-                        return@forEach
+                        return@forEachIndexed
                     }
 
                     val resultadoMonitoreos = withContext(Dispatchers.IO) {
                         monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
-                            idLocalCia = cia.idLocalCia
+                            idLocalCia = cia.idLocalCia,
+                            /*
+                             * Los catálogos son globales: se revisan una sola vez,
+                             * aunque el usuario tenga varias CIAs asignadas.
+                             */
+                            actualizarCatalogos = indiceCia == 0
                         )
                     }
 
