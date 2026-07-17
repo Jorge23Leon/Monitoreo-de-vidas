@@ -10,7 +10,8 @@ internal data class RegistroPuntoDataUi(
     val nombreCultivo: String,
     val fotoCultivo: String?,
     val numeroPuntoVisible: Int,
-    val totalPlagasAgregadas: Int
+    val totalPlagasAgregadas: Int,
+    val idsFitosRegistrados: Set<Long>
 )
 
 internal data class ClaveEtapaUi(

@@ -92,17 +92,17 @@ private fun EtapaRowModerna(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(76.dp)
-            .padding(horizontal = 14.dp),
+            .height(102.dp)
+            .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp)
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         ImageUriBox(
             photo = etapa.photo,
             fallbackIcon = iconoEtapaRegistro(nombreEtapa),
-            sizeDp = 56,
+            sizeDp = 82,
             modifier = Modifier
-                .size(56.dp)
+                .size(82.dp)
                 .clip(CircleShape)
                 .background(colorIconoEtapaRegistro(nombreEtapa))
         )
@@ -370,7 +370,7 @@ private fun OpcionFaseEnfermedad(
 
     Button(
         onClick = onClick,
-        modifier = modifier.height(130.dp),
+        modifier = modifier.height(164.dp),
         shape = RoundedCornerShape(16.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = if (seleccionada) {
@@ -403,7 +403,7 @@ private fun OpcionFaseEnfermedad(
         ) {
             Box(
                 modifier = Modifier
-                    .size(52.dp)
+                    .size(82.dp)
                     .clip(CircleShape)
                     .background(
                         if (seleccionada) {
@@ -417,11 +417,14 @@ private fun OpcionFaseEnfermedad(
                 ImageUriBox(
                     photo = etapa.photo,
                     fallbackIcon = iconoEtapaRegistro(etapa.stage),
-                    sizeDp = 48
+                    sizeDp = 78,
+                    modifier = Modifier
+                        .size(78.dp)
+                        .clip(CircleShape)
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             Text(
                 text = etapa.stage,

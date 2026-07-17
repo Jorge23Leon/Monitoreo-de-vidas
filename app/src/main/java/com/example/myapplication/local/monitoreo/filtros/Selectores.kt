@@ -213,7 +213,7 @@ internal fun SelectorFiltroOpcionalPrograma(
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(62.dp),
+                .height(54.dp),
             shape = RoundedCornerShape(12.dp),
             contentPadding = PaddingValues(horizontal = 10.dp)
         ) {
@@ -327,7 +327,7 @@ internal fun SelectorFechaFiltro(
         onClick = {
             abrirCalendario()
         },
-        modifier = modifier.height(62.dp),
+        modifier = modifier.height(54.dp),
         shape = RoundedCornerShape(12.dp),
         contentPadding = PaddingValues(horizontal = 10.dp)
     ) {
@@ -388,7 +388,7 @@ internal fun SelectorEstadoFiltro(
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(62.dp),
+                .height(54.dp),
             shape = RoundedCornerShape(12.dp),
             contentPadding = PaddingValues(horizontal = 10.dp)
         ) {

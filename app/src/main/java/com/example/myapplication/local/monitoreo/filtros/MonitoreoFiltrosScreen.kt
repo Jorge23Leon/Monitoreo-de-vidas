@@ -130,7 +130,7 @@ fun MonitoreoFiltrosScreen(
     }
 
     var filtrosExpandidos by remember {
-        mutableStateOf(true)
+        mutableStateOf(false)
     }
     var monitoreoCanceladoParaVer by remember {
         mutableStateOf<LocalPhytomonitoringHeaderEntity?>(null)
@@ -401,7 +401,7 @@ fun MonitoreoFiltrosScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.White)
-                .padding(18.dp)
+                .padding(14.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -432,7 +432,7 @@ fun MonitoreoFiltrosScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                FiltrosPrincipalesCard(
+                PanelFiltrosConsultaCompacto(
                     filtrosExpandidos = filtrosExpandidos,
                     onExpandChange = {
                         filtrosExpandidos = !filtrosExpandidos
@@ -443,32 +443,22 @@ fun MonitoreoFiltrosScreen(
                     productorSeleccionado = productorSeleccionado,
                     ranchoSeleccionado = ranchoSeleccionado,
                     parcelaSeleccionada = parcelaSeleccionada,
-                    onProductorChange = onProductorChange,
-                    onRanchoChange = onRanchoChange,
-                    onParcelaChange = onParcelaChange
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                FiltrosSecundarios(
                     cicloFiltro = cicloFiltro,
                     programas = programasDisponibles,
                     fechaInicioTexto = fechaInicioTexto,
                     fechaFinTexto = fechaFinTexto,
                     estadoFiltro = estadoFiltro,
-                    onCicloChange = {
-                        cicloFiltro = it
-                    },
-                    onFechaInicioChange = {
-                        fechaInicioTexto = it
-                    },
-                    onFechaFinChange = {
-                        fechaFinTexto = it
-                    },
-                    onEstadoChange = {
-                        estadoFiltro = it
-                    },
+                    onProductorChange = onProductorChange,
+                    onRanchoChange = onRanchoChange,
+                    onParcelaChange = onParcelaChange,
+                    onCicloChange = { cicloFiltro = it },
+                    onFechaInicioChange = { fechaInicioTexto = it },
+                    onFechaFinChange = { fechaFinTexto = it },
+                    onEstadoChange = { estadoFiltro = it },
                     onLimpiarClick = {
+                        onParcelaChange(null)
+                        onRanchoChange(null)
+                        onProductorChange(null)
                         cicloFiltro = null
                         fechaInicioTexto = ""
                         fechaFinTexto = ""
@@ -476,7 +466,7 @@ fun MonitoreoFiltrosScreen(
                     }
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 BarraActualizarMonitoreosFiltros(
                     titulo = "Monitoreos disponibles: ${monitoreosFiltrados.size}",

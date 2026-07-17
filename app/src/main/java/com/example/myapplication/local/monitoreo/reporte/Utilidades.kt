@@ -151,10 +151,57 @@ internal fun textoEstadoReporteUi(status: String): String {
     }
 }
 
+internal data class FechaHoraCompactaReporteUi(
+    val fecha: String,
+    val hora: String
+)
+
+internal fun formatearFechaHoraCompactaReporteUi(
+    fecha: Long?,
+    textoVacio: String
+): FechaHoraCompactaReporteUi {
+    if (fecha == null) {
+        return FechaHoraCompactaReporteUi(
+            fecha = textoVacio,
+            hora = ""
+        )
+    }
+
+    return try {
+        val locale = Locale("es", "MX")
+        val fechaTexto = SimpleDateFormat("EEEE, dd MMM yyyy", locale)
+            .format(Date(fecha))
+            .replace(".", "")
+            .replaceFirstChar {
+                if (it.isLowerCase()) it.titlecase(locale) else it.toString()
+            }
+
+        val horaTexto = SimpleDateFormat("HH:mm 'h'", locale)
+            .format(Date(fecha))
+
+        FechaHoraCompactaReporteUi(
+            fecha = fechaTexto,
+            hora = horaTexto
+        )
+    } catch (_: Exception) {
+        FechaHoraCompactaReporteUi(
+            fecha = "-",
+            hora = ""
+        )
+    }
+}
+
 internal fun formatearFechaReporteUi(fecha: Long?): String {
     if (fecha == null) return "No programada"
+
     return try {
-        SimpleDateFormat("dd-MM-yyyy HH:mm", Locale.getDefault()).format(Date(fecha))
+        val locale = Locale("es", "MX")
+        SimpleDateFormat("EEE dd MMM yyyy • HH:mm", locale)
+            .format(Date(fecha))
+            .replace(".", "")
+            .replaceFirstChar {
+                if (it.isLowerCase()) it.titlecase(locale) else it.toString()
+            }
     } catch (_: Exception) {
         "-"
     }
@@ -164,7 +211,8 @@ internal fun formatearFechaOpcionalReporteUi(fecha: Long?): String {
     if (fecha == null) return "No registrado"
 
     return try {
-        SimpleDateFormat("dd-MM-yyyy HH:mm", Locale.getDefault()).format(Date(fecha))
+        val locale = Locale("es", "MX")
+        SimpleDateFormat("dd-MM-yyyy HH:mm", locale).format(Date(fecha))
     } catch (_: Exception) {
         "-"
     }

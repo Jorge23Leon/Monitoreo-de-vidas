@@ -180,6 +180,10 @@ fun MonitoreoListaScreen(
         mutableStateOf("Todos")
     }
 
+    var filtrosExpandidos by remember {
+        mutableStateOf(false)
+    }
+
     val fechaInicioMillis = parseFechaInicioLista(fechaInicioTexto)
     val fechaFinMillis = parseFechaFinLista(fechaFinTexto)
 
@@ -372,7 +376,7 @@ fun MonitoreoListaScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
-            .padding(18.dp)
+            .padding(14.dp)
     ) {
         Column(
             modifier = Modifier
@@ -417,21 +421,18 @@ fun MonitoreoListaScreen(
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            if (esTecnico && parcelasDisponibles.isNotEmpty()) {
-                SelectorParcelaOpcionalMonitoreo(
-                    parcelaSeleccionada = parcelaSeleccionada,
-                    parcelas = parcelasDisponibles,
-                    onParcelaSeleccionada = { parcela ->
-                        idParcelaSeleccionada = parcela?.idLocalPlot
-                        cicloFiltro = null
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            FiltrosCompactosBarra(
+            PanelFiltrosListaCompacto(
+                filtrosExpandidos = filtrosExpandidos,
+                onExpandChange = {
+                    filtrosExpandidos = !filtrosExpandidos
+                },
+                mostrarFiltroParcela = esTecnico && parcelasDisponibles.isNotEmpty(),
+                parcelaSeleccionada = parcelaSeleccionada,
+                parcelas = parcelasDisponibles,
+                onParcelaSeleccionada = { parcela ->
+                    idParcelaSeleccionada = parcela?.idLocalPlot
+                    cicloFiltro = null
+                },
                 cicloFiltro = cicloFiltro,
                 programas = programasPorParcela,
                 fechaInicioTexto = fechaInicioTexto,
@@ -442,6 +443,7 @@ fun MonitoreoListaScreen(
                 onFechaFinChange = { fechaFinTexto = it },
                 onEstadoChange = { estadoFiltro = it },
                 onLimpiarClick = {
+                    idParcelaSeleccionada = null
                     cicloFiltro = null
                     fechaInicioTexto = ""
                     fechaFinTexto = ""
@@ -449,7 +451,7 @@ fun MonitoreoListaScreen(
                 }
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             BarraActualizarMonitoreosLista(
                 titulo = if (esInvitado) {

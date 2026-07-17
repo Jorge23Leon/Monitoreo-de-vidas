@@ -134,6 +134,7 @@ fun RegistroPuntoMonitoreoScreen(
     var fotoCultivo by remember { mutableStateOf<String?>(null) }
     var numeroPuntoVisible by remember { mutableStateOf(1) }
     var registrosAgregados by rememberSaveable { mutableStateOf(0) }
+    var idsFitosGuardados by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var cargando by remember { mutableStateOf(true) }
     var finalizando by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -246,8 +247,10 @@ fun RegistroPuntoMonitoreoScreen(
                     ?.takeIf { it > 0 }
                     ?: indiceRespaldo
 
-                val capturasExistentes = database.localphytomonitoringcheckpointDao()
+                val todasLasCapturasExistentes = database.localphytomonitoringcheckpointDao()
                     .getCheckpointsByTargetPoint(punto.idTargetPoint)
+
+                val capturasExistentes = todasLasCapturasExistentes
                     .filter { checkpoint ->
                         (checkpoint.qty ?: 0) > 0 && checkpoint.presenceStatus != 0
                     }
@@ -262,7 +265,12 @@ fun RegistroPuntoMonitoreoScreen(
                     nombreCultivo = cultivoDb?.name ?: "Cultivo no identificado",
                     fotoCultivo = cultivoDb?.photo,
                     numeroPuntoVisible = numeroPuntoCalculado,
-                    totalPlagasAgregadas = totalPlagasAgregadas
+                    totalPlagasAgregadas = totalPlagasAgregadas,
+                    idsFitosRegistrados = todasLasCapturasExistentes
+                        .mapNotNull { checkpoint ->
+                            checkpoint.idPhytosanitary
+                        }
+                        .toSet()
                 )
             }
 
@@ -283,6 +291,7 @@ fun RegistroPuntoMonitoreoScreen(
             fotoCultivo = resultado.fotoCultivo
             numeroPuntoVisible = resultado.numeroPuntoVisible
             registrosAgregados = resultado.totalPlagasAgregadas
+            idsFitosGuardados = resultado.idsFitosRegistrados
             resultado.catalogo.forEach { fito ->
                 val etapasFito = withContext(Dispatchers.IO) {
                     database.localphytostageDao()
@@ -355,6 +364,26 @@ fun RegistroPuntoMonitoreoScreen(
     val registrosPendientesEnfermedad = estadosEnfermedadPorFito.size
     val registrosPendientes =
         registrosPendientesPorEtapa + registrosPendientesSinEtapas + registrosPendientesEnfermedad
+
+    val idsFitosRegistradosVisuales = remember(
+        idsFitosGuardados,
+        cantidadesPorEtapa.toMap(),
+        fitosSinEtapasSeleccionados.toMap(),
+        estadosEnfermedadPorFito.toMap()
+    ) {
+        buildSet {
+            addAll(idsFitosGuardados)
+            cantidadesPorEtapa
+                .filterValues { cantidad -> cantidad > 0 }
+                .keys
+                .forEach { clave -> add(clave.idPhytosanitary) }
+            fitosSinEtapasSeleccionados
+                .filterValues { seleccionado -> seleccionado }
+                .keys
+                .forEach(::add)
+            addAll(estadosEnfermedadPorFito.keys)
+        }
+    }
 
     /* Solo las plagas aportan una cantidad real al punto. */
     fun totalCantidadPuntoActual(): Int {
@@ -873,6 +902,7 @@ fun RegistroPuntoMonitoreoScreen(
                             CatalogoPlagasHorizontal(
                                 catalogo = catalogoVisible,
                                 fitoSeleccionado = fitoSeleccionado,
+                                idsFitosRegistrados = idsFitosRegistradosVisuales,
                                 fotosRepresentativas = fotosRepresentativasPorFito,
                                 onSelected = { item -> fitoSeleccionado = item }
                             )

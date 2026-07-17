@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -666,7 +667,12 @@ fun ReporteMonitoreoScreen(
         0
     }
 
-    var detalleSuperiorExpandido by remember { mutableStateOf(false) }
+    var contenidoSuperiorExpandido by rememberSaveable(header.idHeader) {
+        mutableStateOf(false)
+    }
+    var detalleSuperiorExpandido by rememberSaveable(header.idHeader) {
+        mutableStateOf(false)
+    }
 
     /*
      * La severidad por umbral técnico se calcula únicamente con PLAGAS.
@@ -860,7 +866,7 @@ fun ReporteMonitoreoScreen(
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Mapa satelital del reporte",
+                            text = "Mapa del monitoreo",
                             color = Color(0xFF123D1F),
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Black
@@ -1047,9 +1053,19 @@ fun ReporteMonitoreoScreen(
                         cultivo = nombreCultivo,
                         fotoCultivo = fotoCultivo,
                         fechaProgramada = formatearFechaReporteUi(header.estStartDate),
-                        inicioReal = formatearFechaOpcionalReporteUi(header.startAt),
-                        finalizado = formatearFechaOpcionalReporteUi(header.finishedAt),
+                        inicioReal = formatearFechaHoraCompactaReporteUi(
+                            fecha = header.startAt,
+                            textoVacio = "Sin iniciar"
+                        ),
+                        finReal = formatearFechaHoraCompactaReporteUi(
+                            fecha = header.finishedAt,
+                            textoVacio = "Sin finalizar"
+                        ),
                         porcentajeAvance = porcentajeAvance,
+                        contenidoExpandido = contenidoSuperiorExpandido,
+                        onToggleContenido = {
+                            contenidoSuperiorExpandido = !contenidoSuperiorExpandido
+                        },
                         detalleExpandido = detalleSuperiorExpandido,
                         onToggleDetalle = { detalleSuperiorExpandido = !detalleSuperiorExpandido }
                     )
@@ -1086,6 +1102,8 @@ fun ReporteMonitoreoScreen(
                             titulo = "Puntos",
                             valor = totalPuntos.toString(),
                             detalle = "Asignados",
+                            icono = "◎",
+                            colorAcento = Color(0xFF1B7A35),
                             modifier = Modifier.weight(1f)
                         )
 
@@ -1093,6 +1111,8 @@ fun ReporteMonitoreoScreen(
                             titulo = "Capturados",
                             valor = puntosCapturados.toString(),
                             detalle = "$porcentajeAvance% avance",
+                            icono = "✓",
+                            colorAcento = Color(0xFF1B7A35),
                             modifier = Modifier.weight(1f)
                         )
 
@@ -1100,6 +1120,8 @@ fun ReporteMonitoreoScreen(
                             titulo = "Pendientes",
                             valor = puntosPendientes.toString(),
                             detalle = "Por revisar",
+                            icono = "◉",
+                            colorAcento = Color(0xFFF57C00),
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -1120,7 +1142,7 @@ fun ReporteMonitoreoScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "Mapa satelital del reporte",
+                                        text = "Mapa del monitoreo",
                                         fontSize = 17.sp,
                                         fontWeight = FontWeight.Black,
                                         color = Color(0xFF123D1F)
@@ -1181,96 +1203,128 @@ fun ReporteMonitoreoScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    Row(
+                    Card(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF7FAF6)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                     ) {
-                        Button(
-                            onClick = { sincronizarReporteManual() },
-                            enabled = (
-                                    estadoSincronizacion == EstadoSincronizacionReporte.PENDIENTE ||
-                                            estadoSincronizacion == EstadoSincronizacionReporte.ERROR
-                                    ) && !cargando,
+                        Row(
                             modifier = Modifier
-                                .weight(1f)
-                                .height(54.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = colorSincronizacion,
-                                disabledContainerColor = when (estadoSincronizacion) {
-                                    EstadoSincronizacionReporte.SINCRONIZADO -> Color(0xFF2E7D32)
-                                    EstadoSincronizacionReporte.SINCRONIZANDO -> Color(0xFFF9A825)
-                                    else -> colorSincronizacion
-                                },
-                                disabledContentColor = Color.White
-                            ),
-                            shape = RoundedCornerShape(22.dp)
+                                .fillMaxWidth()
+                                .padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(7.dp)
                         ) {
-                            Text(
-                                text = when (estadoSincronizacion) {
-                                    EstadoSincronizacionReporte.SINCRONIZANDO -> "Sincronizando..."
-                                    EstadoSincronizacionReporte.SINCRONIZADO -> "✓ Sincronizado"
-                                    EstadoSincronizacionReporte.ERROR -> "Reintentar"
-                                    else -> "Sincronizar"
-                                },
-                                color = Color.White,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 13.sp,
-                                textAlign = TextAlign.Center
-                            )
-                        }
+                            Button(
+                                onClick = {
+                                    descargandoCsv = true
 
-                        Button(
-                            onClick = {
-                                descargandoCsv = true
+                                    coroutineScope.launch {
+                                        try {
+                                            val archivoCsv = withContext(Dispatchers.IO) {
+                                                descargarCsvReporteUi(
+                                                    context = context.applicationContext,
+                                                    header = header,
+                                                    productor = productor?.commercial_name ?: "-",
+                                                    rancho = rancho?.name ?: "-",
+                                                    parcela = parcela?.code ?: "-",
+                                                    checkpoints = checkpoints,
+                                                    puntos = puntos,
+                                                    catalogo = catalogo
+                                                )
+                                            }
 
-                                coroutineScope.launch {
-                                    try {
-                                        val archivoCsv = withContext(Dispatchers.IO) {
-                                            descargarCsvReporteUi(
+                                            NotificacionCsvReporte.mostrar(
                                                 context = context.applicationContext,
-                                                header = header,
-                                                productor = productor?.commercial_name ?: "-",
-                                                rancho = rancho?.name ?: "-",
-                                                parcela = parcela?.code ?: "-",
-                                                checkpoints = checkpoints,
-                                                puntos = puntos,
-                                                catalogo = catalogo
+                                                archivo = archivoCsv
                                             )
+                                        } catch (e: Exception) {
+                                            Toast.makeText(
+                                                context,
+                                                "No se pudo descargar el CSV: ${e.message ?: "error desconocido"}",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        } finally {
+                                            descargandoCsv = false
                                         }
-                                        // CSV: muestra notificación y permite abrir el archivo exacto.
-                                        NotificacionCsvReporte.mostrar(
-                                            context = context.applicationContext,
-                                            archivo = archivoCsv
-                                        )
-                                    } catch (e: Exception) {
-                                        Toast.makeText(
-                                            context,
-                                            "No se pudo descargar el CSV: ${e.message ?: "error desconocido"}",
-                                            Toast.LENGTH_LONG
-                                        ).show()
-                                    } finally {
-                                        descargandoCsv = false
                                     }
+                                },
+                                enabled = !descargandoCsv,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(70.dp),
+                                shape = RoundedCornerShape(15.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF166534),
+                                    contentColor = Color.White,
+                                    disabledContainerColor = Color(0xFFB8C9BC),
+                                    disabledContentColor = Color.White
+                                )
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = "↓",
+                                        fontSize = 27.sp,
+                                        fontWeight = FontWeight.Black,
+                                        lineHeight = 27.sp
+                                    )
+                                    Text(
+                                        text = if (descargandoCsv) "Guardando..." else "Descargar CSV",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Black,
+                                        textAlign = TextAlign.Center
+                                    )
                                 }
-                            },
-                            enabled = !descargandoCsv,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(54.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF1B5E20)
-                            ),
-                            shape = RoundedCornerShape(22.dp)
-                        ) {
-                            Text(
-                                text = if (descargandoCsv) "Descargando..." else "⬇ Descargar CSV",
-                                color = Color.White,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 13.sp,
-                                textAlign = TextAlign.Center
-                            )
+                            }
+
+                            Button(
+                                onClick = { sincronizarReporteManual() },
+                                enabled = (
+                                        estadoSincronizacion == EstadoSincronizacionReporte.PENDIENTE ||
+                                                estadoSincronizacion == EstadoSincronizacionReporte.ERROR
+                                        ) && !cargando,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(70.dp),
+                                shape = RoundedCornerShape(15.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFF59E0B),
+                                    contentColor = Color.White,
+                                    disabledContainerColor = when (estadoSincronizacion) {
+                                        EstadoSincronizacionReporte.SINCRONIZADO -> Color(0xFF2E7D32)
+                                        EstadoSincronizacionReporte.SINCRONIZANDO -> Color(0xFFD99A22)
+                                        else -> Color(0xFFBDBDBD)
+                                    },
+                                    disabledContentColor = Color.White
+                                )
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = if (
+                                            estadoSincronizacion == EstadoSincronizacionReporte.SINCRONIZADO
+                                        ) "✓" else "↻",
+                                        fontSize = 26.sp,
+                                        fontWeight = FontWeight.Black,
+                                        lineHeight = 26.sp
+                                    )
+                                    Text(
+                                        text = when (estadoSincronizacion) {
+                                            EstadoSincronizacionReporte.SINCRONIZANDO -> "Enviando..."
+                                            EstadoSincronizacionReporte.SINCRONIZADO -> "Sincronizado"
+                                            EstadoSincronizacionReporte.ERROR -> "Reintentar"
+                                            else -> "Sincronizar"
+                                        },
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Black,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+
                         }
                     }
+
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Card(
