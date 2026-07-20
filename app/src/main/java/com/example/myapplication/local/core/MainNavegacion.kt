@@ -487,6 +487,10 @@ fun MainNavegacion(
                     nombreUsuario = uiState.nombreUsuarioActual,
                     rolUsuario = uiState.rolUsuarioActual,
                     nombreMonitoreo = nombreMonitoreo,
+                    mostrarMapaCompletoInicial = uiState.mapaMonitoreoPantallaCompleta,
+                    onModoMapaCompletoChange = { pantallaCompleta ->
+                        mainViewModel.actualizarModoMapaMonitoreo(pantallaCompleta)
+                    },
 
                     onPuntoValidoClick = { idTargetPoint ->
                         mainViewModel.abrirPuntoParaRegistro(idTargetPoint)

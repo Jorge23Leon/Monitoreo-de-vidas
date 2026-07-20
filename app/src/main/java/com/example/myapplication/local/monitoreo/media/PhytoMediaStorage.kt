@@ -490,6 +490,32 @@ object PhytoMediaStorage {
         }
     }
 
+    /**
+     * Libera únicamente evidencias que ya estaban en uploaded. La carpeta pending
+     * jamás se toca desde la depuración mensual.
+     */
+    fun eliminarFotosConfirmadasDeHeader(
+        context: Context,
+        idHeader: Long
+    ): Boolean {
+        if (idHeader <= 0L) return false
+
+        val uploadedRoot = carpetaHeader(context, UPLOADED_DIRECTORY, idHeader)
+        if (!uploadedRoot.exists()) return true
+
+        val eliminado = runCatching {
+            uploadedRoot.deleteRecursively()
+        }.getOrDefault(false)
+
+        if (eliminado) {
+            limpiarDirectoriosVacios(
+                File(context.filesDir, "$ROOT_DIRECTORY/$UPLOADED_DIRECTORY")
+            )
+        }
+
+        return eliminado
+    }
+
     fun eliminarZipTemporal(zip: ZipPendiente?) {
         runCatching { zip?.file?.delete() }
     }

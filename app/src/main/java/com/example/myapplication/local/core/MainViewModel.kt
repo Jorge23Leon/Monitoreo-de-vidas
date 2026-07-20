@@ -47,6 +47,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 import android.util.Log
 import com.example.myapplication.local.api.monitoreosync.MonitoreoSyncRepository
@@ -54,6 +55,7 @@ import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import com.example.myapplication.local.api.monitoreosync.ResultadoMonitoreoSync
+import com.example.myapplication.local.api.monitoreosync.ResultadoPrepararHeader
 import com.example.myapplication.local.api.phytomonitoring.PhytoMonitoringRepository
 import com.example.myapplication.local.api.phytomonitoring.ResultadoActualizarHeaderApi
 
@@ -83,6 +85,11 @@ private data class MainCatalogosFiltrosTemp(
     val productorRestaurado: LocalAgroUnitEntity?,
     val ranchos: List<LocalRanchEntity>,
     val parcelas: List<LocalPlotEntity>
+)
+
+private data class MainHeadersFuenteTemp(
+    val headers: List<LocalPhytomonitoringHeaderEntity>,
+    val desdeApi: Boolean
 )
 private sealed class MainLoginServidorTemp {
     data class Exito(
@@ -116,6 +123,30 @@ class MainViewModel(
         context = application.applicationContext,
         database = database
     )
+    private val headersOnlinePorCia = mutableMapOf<Long, List<LocalPhytomonitoringHeaderEntity>>()
+    private val ciasConHeadersOnline = mutableSetOf<Long>()
+    private val connectivityManager = application.applicationContext.getSystemService(
+        Context.CONNECTIVITY_SERVICE
+    ) as ConnectivityManager
+    @Volatile
+    private var ultimaConexionValidada = hayConexionInternet()
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onCapabilitiesChanged(
+            network: Network,
+            networkCapabilities: NetworkCapabilities
+        ) {
+            val disponible = networkCapabilities.hasCapability(
+                NetworkCapabilities.NET_CAPABILITY_INTERNET
+            ) && networkCapabilities.hasCapability(
+                NetworkCapabilities.NET_CAPABILITY_VALIDATED
+            )
+            manejarCambioConexion(disponible)
+        }
+
+        override fun onLost(network: Network) {
+            manejarCambioConexion(hayConexionInternet())
+        }
+    }
     private val phytoMonitoringRepository = PhytoMonitoringRepository(
         context = application.applicationContext
     )
@@ -139,7 +170,8 @@ class MainViewModel(
         private set
 
     /*
-     * La pantalla siempre lee Room. Estas variables solo controlan el botón
+     * La lista usa la respuesta temporal de la API cuando hay red y la ventana
+     * protegida de Room cuando no la hay. Estas variables controlan el botón
      * manual de actualización; no bloquean el login ni la navegación.
      */
     var sincronizandoMonitoreos by mutableStateOf(false)
@@ -151,6 +183,12 @@ class MainViewModel(
     private var trabajoSincronizacionMonitoreos: Job? = null
 
     init {
+        runCatching {
+            connectivityManager.registerDefaultNetworkCallback(networkCallback)
+        }.onFailure { error ->
+            Log.w("MAIN_VM", "No se pudo observar el cambio de red", error)
+        }
+
         ultimaSincronizacionMonitoreosMillis = obtenerPrefsSincronizacion()
             .getLong("ultima_sync_monitoreos_global", 0L)
             .takeIf { it > 0L }
@@ -158,6 +196,43 @@ class MainViewModel(
         cargarCredencialesRecordadasEnLogin()
         insertarDatosInicialesSeguros()
         cargarSesionGuardadaAlIniciar()
+    }
+
+    override fun onCleared() {
+        runCatching {
+            connectivityManager.unregisterNetworkCallback(networkCallback)
+        }
+        super.onCleared()
+    }
+
+    private fun manejarCambioConexion(disponible: Boolean) {
+        if (disponible == ultimaConexionValidada) return
+        ultimaConexionValidada = disponible
+
+        viewModelScope.launch {
+            val sesion = uiState.usuarioSesion ?: return@launch
+            val estaEnConsulta = uiState.pantallaActual == PantallaActual.LISTA_MONITOREOS ||
+                    uiState.pantallaActual == PantallaActual.FILTROS_MONITOREO
+
+            if (!estaEnConsulta) return@launch
+
+            if (disponible) {
+                sincronizarInformacionActual(mostrarMensajeFinal = false)
+            } else if (sesion.esTecnico || sesion.esInvitado) {
+                mostrarMensaje(
+                    "Sin internet: se muestra el último mes y cualquier trabajo pendiente de enviar."
+                )
+                cargarMonitoreosDirectoPorUsuario(
+                    sesion = sesion,
+                    intentarSincronizacionInicial = false
+                )
+            } else {
+                mostrarMensaje(
+                    "Sin internet: se muestra el último mes y cualquier trabajo pendiente de enviar."
+                )
+                cargarMonitoreosPorFiltrosProgresivos()
+            }
+        }
     }
 
     private fun actualizarEstado(transform: (MainUiState) -> MainUiState) {
@@ -587,6 +662,81 @@ class MainViewModel(
             .sortedBy { cultivo -> cultivo.name }
     }
 
+    private fun fechaLimiteOffline(): Long {
+        return System.currentTimeMillis() - MonitoreoSyncRepository.VENTANA_OFFLINE_MS
+    }
+
+    private suspend fun obtenerHeadersFuenteParaCias(
+        idsCias: Set<Long>
+    ): MainHeadersFuenteTemp {
+        val puedeUsarApi = hayConexionInternet() &&
+                idsCias.isNotEmpty() &&
+                idsCias.all { it in ciasConHeadersOnline }
+
+        if (puedeUsarApi) {
+            return MainHeadersFuenteTemp(
+                headers = idsCias
+                    .flatMap { idCia -> headersOnlinePorCia[idCia].orEmpty() }
+                    .distinctBy { it.extId },
+                desdeApi = true
+            )
+        }
+
+        val headersOffline = database.localphytomonitoringheaderDao()
+            .getHeadersDisponiblesOffline(fechaLimiteOffline())
+
+        if (idsCias.isEmpty()) {
+            return MainHeadersFuenteTemp(
+                headers = headersOffline,
+                desdeApi = false
+            )
+        }
+
+        val idsProgramasPermitidos = buildSet {
+            idsCias.forEach { idCia ->
+                database.localprogramDao()
+                    .getProgramasByCia(idCia)
+                    .forEach { programa -> add(programa.idProgram) }
+            }
+        }
+
+        return MainHeadersFuenteTemp(
+            headers = headersOffline.filter { it.idProgram in idsProgramasPermitidos },
+            desdeApi = false
+        )
+    }
+
+    private suspend fun obtenerHeadersFiltradosDeFuente(
+        idLocalCia: Long,
+        programIds: Set<Long>,
+        idProgram: Long?,
+        idPlot: Long?,
+        startDate: Long?,
+        endDate: Long?,
+        statuses: Set<String>
+    ): List<LocalPhytomonitoringHeaderEntity> {
+        if (programIds.isEmpty()) return emptyList()
+
+        val fuente = obtenerHeadersFuenteParaCias(setOf(idLocalCia))
+
+        return fuente.headers
+            .asSequence()
+            .filter { it.idProgram in programIds }
+            .filter { idProgram == null || it.idProgram == idProgram }
+            .filter { idPlot == null || it.idLocalPlot == idPlot }
+            .filter { header ->
+                startDate == null ||
+                        header.estStartDate?.let { it >= startDate } == true
+            }
+            .filter { header ->
+                endDate == null ||
+                        header.estStartDate?.let { it <= endDate } == true
+            }
+            .filter { it.status in statuses }
+            .sortedByDescending { it.estStartDate ?: 0L }
+            .toList()
+    }
+
     fun limpiarMensaje() {
         actualizarEstado { it.copy(mensaje = null) }
     }
@@ -671,9 +821,14 @@ class MainViewModel(
                         monitoreoSeleccionadoParaMapa = null,
                         monitoreoSeleccionadoParaReporte = null,
                         puntoSeleccionadoParaRegistro = null,
+                        mapaMonitoreoPantallaCompleta = false,
                         pantallaActual = PantallaActual.LISTA_MONITOREOS
                     )
                 }
+                cargarMonitoreosDirectoPorUsuario(
+                    sesion = sesion,
+                    intentarSincronizacionInicial = true
+                )
             }
 
             uiState.ciaSeleccionada != null -> {
@@ -682,6 +837,7 @@ class MainViewModel(
                         monitoreoSeleccionadoParaMapa = null,
                         monitoreoSeleccionadoParaReporte = null,
                         puntoSeleccionadoParaRegistro = null,
+                        mapaMonitoreoPantallaCompleta = false,
                         pantallaActual = PantallaActual.FILTROS_MONITOREO
                     )
                 }
@@ -952,13 +1108,13 @@ class MainViewModel(
             return "Login correcto. No tienes CIAS asignadas; no se descargaron datos de campo."
         } else {
             ciasUsuario.forEach { cia ->
-                when (
-                    val resultadoAgro = kotlinx.coroutines.withTimeoutOrNull(120000L) {
-                        agroSyncRepository.sincronizarProductoresRanchosParcelas(
-                            idLocalCia = cia.idLocalCia
-                        )
-                    }
-                ) {
+                val resultadoAgro = kotlinx.coroutines.withTimeoutOrNull(120000L) {
+                    agroSyncRepository.sincronizarProductoresRanchosParcelas(
+                        idLocalCia = cia.idLocalCia
+                    )
+                }
+
+                when (resultadoAgro) {
                     null -> errores.add("La actualización de productores/ranchos/parcelas tardó demasiado para ${cia.nombre}")
                     is ResultadoAgroSync.Error -> errores.add(resultadoAgro.mensaje)
                     is ResultadoAgroSync.Exito -> Unit
@@ -967,13 +1123,21 @@ class MainViewModel(
                 when (
                     val resultadoMonitoreo = kotlinx.coroutines.withTimeoutOrNull(120000L) {
                         monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
-                            idLocalCia = cia.idLocalCia
+                            idLocalCia = cia.idLocalCia,
+                            programasApiPrecargados =
+                            (resultadoAgro as? ResultadoAgroSync.Exito)
+                                ?.programasApi
+                                ?.takeIf { it.isNotEmpty() }
                         )
                     }
                 ) {
                     null -> errores.add("La actualización de monitoreos tardó demasiado para ${cia.nombre}")
                     is ResultadoMonitoreoSync.Error -> errores.add(resultadoMonitoreo.mensaje)
-                    is ResultadoMonitoreoSync.Exito -> Unit
+                    is ResultadoMonitoreoSync.Exito -> {
+                        headersOnlinePorCia[cia.idLocalCia] =
+                            resultadoMonitoreo.headersOnline
+                        ciasConHeadersOnline += cia.idLocalCia
+                    }
                 }
             }
         }
@@ -1762,7 +1926,9 @@ class MainViewModel(
                     .isEmpty()
             }
 
-            if (cacheVacia) {
+            val faltaListaOnline = cia.idLocalCia !in ciasConHeadersOnline
+
+            if (cacheVacia || faltaListaOnline) {
                 sincronizarInformacionActual(mostrarMensajeFinal = false)
             }
         }
@@ -2359,25 +2525,25 @@ class MainViewModel(
                     val headersBase = if (idsProgramas.isEmpty()) {
                         emptyList()
                     } else {
-                        database.localphytomonitoringheaderDao()
-                            .filtrarHeadersMonitoreo(
-                                programIds = idsProgramas,
-                                idProgram = null,
-                                idPlot = if (saltarFiltros) {
-                                    null
-                                } else {
-                                    estadoActual.parcelaSeleccionada?.idLocalPlot
-                                },
-                                startDate = parseFechaInicioVm(estadoActual.fechaInicioTexto),
-                                endDate = parseFechaFinVm(estadoActual.fechaFinTexto),
-                                statuses = obtenerEstadosSeleccionadosVm(
-                                    saltarFiltros = saltarFiltros,
-                                    rolUsuarioActual = estadoActual.rolUsuarioActual,
-                                    vigentesChecked = estadoActual.vigentesChecked,
-                                    finalizadosChecked = estadoActual.finalizadosChecked,
-                                    canceladosChecked = estadoActual.canceladosChecked
-                                )
-                            )
+                        obtenerHeadersFiltradosDeFuente(
+                            idLocalCia = cia.idLocalCia,
+                            programIds = idsProgramas.toSet(),
+                            idProgram = null,
+                            idPlot = if (saltarFiltros) {
+                                null
+                            } else {
+                                estadoActual.parcelaSeleccionada?.idLocalPlot
+                            },
+                            startDate = parseFechaInicioVm(estadoActual.fechaInicioTexto),
+                            endDate = parseFechaFinVm(estadoActual.fechaFinTexto),
+                            statuses = obtenerEstadosSeleccionadosVm(
+                                saltarFiltros = saltarFiltros,
+                                rolUsuarioActual = estadoActual.rolUsuarioActual,
+                                vigentesChecked = estadoActual.vigentesChecked,
+                                finalizadosChecked = estadoActual.finalizadosChecked,
+                                canceladosChecked = estadoActual.canceladosChecked
+                            ).toSet()
+                        )
                     }
 
                     val idsParcelasBase = headersBase.map { header ->
@@ -2575,31 +2741,31 @@ class MainViewModel(
                     val headers = if (idsProgramas.isEmpty()) {
                         emptyList()
                     } else {
-                        database.localphytomonitoringheaderDao()
-                            .filtrarHeadersMonitoreo(
-                                programIds = idsProgramas,
-                                idProgram = null,
-                                idPlot = parcelaActual?.idLocalPlot,
-                                startDate = null,
-                                endDate = null,
-                                statuses = listOf(
-                                    "Pendiente",
-                                    "pending",
-                                    "pendiente",
-                                    "En proceso",
-                                    "in_progress",
-                                    "en proceso",
-                                    "vigente",
-                                    "Completado",
-                                    "completed",
-                                    "completado",
-                                    "finalizado",
-                                    "Cancelado",
-                                    "cancelled",
-                                    "cancelado",
-                                    "canceled"
-                                )
+                        obtenerHeadersFiltradosDeFuente(
+                            idLocalCia = cia.idLocalCia,
+                            programIds = idsProgramas.toSet(),
+                            idProgram = null,
+                            idPlot = parcelaActual?.idLocalPlot,
+                            startDate = null,
+                            endDate = null,
+                            statuses = setOf(
+                                "Pendiente",
+                                "pending",
+                                "pendiente",
+                                "En proceso",
+                                "in_progress",
+                                "en proceso",
+                                "vigente",
+                                "Completado",
+                                "completed",
+                                "completado",
+                                "finalizado",
+                                "Cancelado",
+                                "cancelled",
+                                "cancelado",
+                                "canceled"
                             )
+                        )
                     }
 
                     val idsProgramasResultado = headers
@@ -2704,14 +2870,13 @@ class MainViewModel(
                     )
                 }
 
-                val resultado = withContext(Dispatchers.IO) {
+                val (resultado, idsCiasPermitidasUsuario) = withContext(Dispatchers.IO) {
                     val ciasPermitidasUsuario = database.userLocalCiaDao()
                         .getCiasByUser(sesion.idUser)
 
                     /*
-                     * Técnico e invitado siempre abren desde Room.
-                     * La red se usa únicamente con el botón ⟳ Sincronizar
-                     * (o una sola vez cuando no existe cache local).
+                     * Con red se usa la lista temporal de la API. Sin red se usa
+                     * Room, limitado al último mes y al trabajo aún pendiente.
                      */
 
                     val ciasPermitidasTecnico = if (sesion.esTecnico) {
@@ -2733,8 +2898,12 @@ class MainViewModel(
                         emptySet()
                     }
 
-                    val headersTodos = database.localphytomonitoringheaderDao()
-                        .getAllHeaders()
+                    val fuenteHeaders = obtenerHeadersFuenteParaCias(
+                        ciasPermitidasUsuario
+                            .map { it.idLocalCia }
+                            .toSet()
+                    )
+                    val headersTodos = fuenteHeaders.headers
 
                     val idsParcelasTodos = headersTodos
                         .map { header -> header.idLocalPlot }
@@ -2751,8 +2920,14 @@ class MainViewModel(
                         parcela.idLocalPlot
                     }
 
-                    val headersUsuario = headersTodos
-                        .filter { header ->
+                    val headersUsuario = if (fuenteHeaders.desdeApi) {
+                        /*
+                         * La API ya aplica los permisos del token. Esto también
+                         * permite consultar históricos que no viven en Room.
+                         */
+                        headersTodos
+                    } else {
+                        headersTodos.filter { header ->
                             val parcelaHeader = parcelasTodosMap[header.idLocalPlot]
 
                             /*
@@ -2801,6 +2976,7 @@ class MainViewModel(
                                 else -> false
                             }
                         }
+                    }
                         .sortedByDescending { header -> header.estStartDate ?: 0L }
 
                     val idsProgramasResultado = headersUsuario
@@ -2852,7 +3028,7 @@ class MainViewModel(
                         programas = programasRel
                     )
 
-                    MainResultadoMonitoreoTemp(
+                    val resultadoMonitoreos = MainResultadoMonitoreoTemp(
                         headers = headersUsuario,
                         productores = productoresRel,
                         ranchos = ranchosRel,
@@ -2860,6 +3036,10 @@ class MainViewModel(
                         programas = programasRel,
                         cultivos = cultivosRel
                     )
+
+                    resultadoMonitoreos to ciasPermitidasUsuario
+                        .map { cia -> cia.idLocalCia }
+                        .toSet()
                 }
 
                 actualizarEstado {
@@ -2880,9 +3060,14 @@ class MainViewModel(
 
                 val debeIniciarSincronizacionInicial =
                     intentarSincronizacionInicial &&
-                            resultado.headers.isEmpty() &&
                             hayConexionInternet() &&
-                            !sincronizandoMonitoreos
+                            !sincronizandoMonitoreos &&
+                            (
+                                    resultado.headers.isEmpty() ||
+                                            idsCiasPermitidasUsuario.any { idLocalCia ->
+                                                idLocalCia !in ciasConHeadersOnline
+                                            }
+                                    )
 
                 if (debeIniciarSincronizacionInicial) {
                     /*
@@ -2929,6 +3114,14 @@ class MainViewModel(
 
         if (!hayConexionInternet()) {
             mostrarMensaje("Sin internet. Se muestran los datos guardados.")
+            if (sesion.esTecnico || sesion.esInvitado) {
+                cargarMonitoreosDirectoPorUsuario(
+                    sesion = sesion,
+                    intentarSincronizacionInicial = false
+                )
+            } else {
+                cargarMonitoreosPorFiltrosProgresivos()
+            }
             return
         }
 
@@ -2962,7 +3155,7 @@ class MainViewModel(
                 val errores = mutableListOf<String>()
                 var actualizacionesCorrectas = 0
 
-                ciasObjetivo.forEachIndexed { indiceCia, cia ->
+                ciasObjetivo.forEach { cia ->
                     /*
                      * Solo la CIA objetivo. Nunca se descarga información global de
                      * todas las CIAs del usuario al tocar el botón.
@@ -2975,23 +3168,27 @@ class MainViewModel(
 
                     if (resultadoAgro is ResultadoAgroSync.Error) {
                         errores += "${cia.nombre}: ${resultadoAgro.mensaje}"
-                        return@forEachIndexed
+                        return@forEach
                     }
 
                     val resultadoMonitoreos = withContext(Dispatchers.IO) {
                         monitoreoSyncRepository.sincronizarMonitoreosFitosanitarios(
                             idLocalCia = cia.idLocalCia,
-                            /*
-                             * Los catálogos son globales: se revisan una sola vez,
-                             * aunque el usuario tenga varias CIAs asignadas.
-                             */
-                            actualizarCatalogos = indiceCia == 0
+                            // El repositorio los revisa solo si faltan o vencio su cache diaria.
+                            actualizarCatalogos = false,
+                            programasApiPrecargados =
+                            (resultadoAgro as? ResultadoAgroSync.Exito)
+                                ?.programasApi
+                                ?.takeIf { it.isNotEmpty() }
                         )
                     }
 
                     when (resultadoMonitoreos) {
                         is ResultadoMonitoreoSync.Exito -> {
                             actualizacionesCorrectas++
+                            headersOnlinePorCia[cia.idLocalCia] =
+                                resultadoMonitoreos.headersOnline
+                            ciasConHeadersOnline += cia.idLocalCia
 
                             if (resultadoMonitoreos.advertencias.isNotEmpty()) {
                                 errores += resultadoMonitoreos.advertencias.take(2)
@@ -3063,22 +3260,29 @@ class MainViewModel(
     private fun headerPermitidoEnListaActual(header: LocalPhytomonitoringHeaderEntity): Boolean {
         val sesion = uiState.usuarioSesion ?: return false
 
-        return when {
-            sesion.esAdmin || sesion.esGerente || sesion.esSupervisor -> {
-                uiState.ciaSeleccionada != null &&
-                        uiState.monitoreosEncontrados.any { permitido ->
+        fun esMismoHeader(permitido: LocalPhytomonitoringHeaderEntity): Boolean {
+            val extActual = header.extId?.trim().orEmpty()
+            val extPermitido = permitido.extId?.trim().orEmpty()
+            val coincidePorExtId = extActual.isNotBlank() &&
+                    extPermitido.isNotBlank() &&
+                    extActual == extPermitido
+
+            return coincidePorExtId ||
+                    (
                             permitido.idHeader == header.idHeader &&
                                     permitido.idProgram == header.idProgram &&
                                     permitido.idLocalPlot == header.idLocalPlot
-                        }
+                            )
+        }
+
+        return when {
+            sesion.esAdmin || sesion.esGerente || sesion.esSupervisor -> {
+                uiState.ciaSeleccionada != null &&
+                        uiState.monitoreosEncontrados.any(::esMismoHeader)
             }
 
             sesion.esTecnico || sesion.esInvitado -> {
-                uiState.monitoreosEncontrados.any { permitido ->
-                    permitido.idHeader == header.idHeader &&
-                            permitido.idProgram == header.idProgram &&
-                            permitido.idLocalPlot == header.idLocalPlot
-                }
+                uiState.monitoreosEncontrados.any(::esMismoHeader)
             }
 
             else -> false
@@ -3104,13 +3308,30 @@ class MainViewModel(
             return
         }
 
-        actualizarEstado {
-            it.copy(
-                monitoreoSeleccionadoParaReporte = header,
-                monitoreoSeleccionadoParaMapa = null,
-                puntoSeleccionadoParaRegistro = null,
-                pantallaActual = PantallaActual.REPORTE_MONITOREO
-            )
+        if (uiState.cargando) return
+
+        viewModelScope.launch {
+            try {
+                actualizarEstado { it.copy(cargando = true) }
+
+                val headerPreparado = obtenerHeaderFrescoSeguro(header)
+                actualizarHeaderEnLista(headerPreparado)
+
+                actualizarEstado {
+                    it.copy(
+                        monitoreoSeleccionadoParaReporte = headerPreparado,
+                        monitoreoSeleccionadoParaMapa = null,
+                        puntoSeleccionadoParaRegistro = null,
+                        pantallaActual = PantallaActual.REPORTE_MONITOREO
+                    )
+                }
+            } catch (e: Exception) {
+                mostrarMensaje(
+                    e.message ?: "No se pudo preparar el monitoreo para abrirlo."
+                )
+            } finally {
+                actualizarEstado { it.copy(cargando = false) }
+            }
         }
     }
 
@@ -3118,21 +3339,57 @@ class MainViewModel(
         header: LocalPhytomonitoringHeaderEntity
     ): LocalPhytomonitoringHeaderEntity {
         return withContext(Dispatchers.IO) {
-            database.localphytomonitoringheaderDao()
-                .getAllHeaders()
-                .firstOrNull { headerDb ->
-                    headerDb.idHeader == header.idHeader
-                } ?: header
+            val dao = database.localphytomonitoringheaderDao()
+            val local = header.extId
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { dao.getHeaderByExtId(it) }
+                ?: dao.getHeaderById(header.idHeader)
+
+            if (local != null) {
+                return@withContext local
+            }
+
+            if (!hayConexionInternet()) {
+                throw IllegalStateException(
+                    "Sin internet solo puedes abrir monitoreos guardados del último mes."
+                )
+            }
+
+            when (
+                val preparado = monitoreoSyncRepository.prepararHeaderParaAbrir(header)
+            ) {
+                is ResultadoPrepararHeader.Exito -> preparado.header
+                is ResultadoPrepararHeader.Error -> throw IllegalStateException(
+                    preparado.mensaje
+                )
+            }
         }
     }
 
     private fun actualizarHeaderEnLista(
         headerActualizado: LocalPhytomonitoringHeaderEntity
     ) {
+        headersOnlinePorCia.keys.toList().forEach { idCia ->
+            headersOnlinePorCia[idCia] = headersOnlinePorCia[idCia]
+                .orEmpty()
+                .map { header ->
+                    val mismoExtId = !header.extId.isNullOrBlank() &&
+                            header.extId == headerActualizado.extId
+                    if (header.idHeader == headerActualizado.idHeader || mismoExtId) {
+                        headerActualizado
+                    } else {
+                        header
+                    }
+                }
+        }
+
         actualizarEstado { estado ->
             estado.copy(
                 monitoreosEncontrados = estado.monitoreosEncontrados.map { header ->
-                    if (header.idHeader == headerActualizado.idHeader) {
+                    val mismoExtId = !header.extId.isNullOrBlank() &&
+                            header.extId == headerActualizado.extId
+                    if (header.idHeader == headerActualizado.idHeader || mismoExtId) {
                         headerActualizado
                     } else {
                         header
@@ -3207,6 +3464,7 @@ class MainViewModel(
                         monitoreoSeleccionadoParaMapa = headerActualizado,
                         monitoreoSeleccionadoParaReporte = null,
                         puntoSeleccionadoParaRegistro = null,
+                        mapaMonitoreoPantallaCompleta = false,
                         pantallaActual = PantallaActual.MAPA_MONITOREO
                     )
                 }
@@ -3216,6 +3474,12 @@ class MainViewModel(
             } finally {
                 actualizarEstado { it.copy(cargando = false) }
             }
+        }
+    }
+
+    fun actualizarModoMapaMonitoreo(pantallaCompleta: Boolean) {
+        actualizarEstado {
+            it.copy(mapaMonitoreoPantallaCompleta = pantallaCompleta)
         }
     }
 
@@ -3443,12 +3707,16 @@ class MainViewModel(
                             motivoCancelacion = notaCancelacion
                         )
 
+                    database.localphytomonitoringheaderDao()
+                        .marcarHeaderSincronizado(header.idHeader)
+
                     val actualizado = database.localphytomonitoringheaderDao()
                         .getHeaderById(header.idHeader)
                         ?: header.copy(
                             status = "Cancelado",
                             finishedAt = fechaCancelacion,
-                            additionalNotes = notaCancelacion
+                            additionalNotes = notaCancelacion,
+                            syncPending = false
                         )
 
                     database.localprogramDao()
@@ -3623,10 +3891,11 @@ class MainViewModel(
                         fresco
                     } else {
                         val nuevoHeader = fresco.copy(
-                            status = "Pendiente",
+                            status = "En proceso",
                             startAt = fresco.startAt ?: System.currentTimeMillis(),
                             finishedAt = null,
-                            additionalNotes = "PAUSADO"
+                            additionalNotes = "PAUSADO",
+                            syncPending = true
                         )
 
                         dao.updateHeader(nuevoHeader)
@@ -3686,6 +3955,8 @@ class MainViewModel(
 
                 borrarSesionGuardada()
                 tokenStorage.limpiarTokens()
+                headersOnlinePorCia.clear()
+                ciasConHeadersOnline.clear()
 
                 uiState = MainUiState(
                     pantallaActual = PantallaActual.LOGIN,
@@ -3696,6 +3967,8 @@ class MainViewModel(
 
                 borrarSesionGuardada()
                 tokenStorage.limpiarTokens()
+                headersOnlinePorCia.clear()
+                ciasConHeadersOnline.clear()
 
                 uiState = MainUiState(
                     pantallaActual = PantallaActual.LOGIN,

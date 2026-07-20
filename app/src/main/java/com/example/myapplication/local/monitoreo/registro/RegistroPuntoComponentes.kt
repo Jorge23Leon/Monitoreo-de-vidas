@@ -163,7 +163,7 @@ internal fun ElementoSeleccionadoCard(
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = fito.name,
+                            text = nombreVisibleRegistro(fito.name),
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Black,
                             color = Color(0xFF1D2430),

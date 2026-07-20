@@ -41,6 +41,112 @@ interface LocalPhytomonitoringHeaderDao {
     """)
     suspend fun getAllHeaders(): List<LocalPhytomonitoringHeaderEntity>
 
+    /**
+     * Cache disponible sin conexión. Se limita a 30 días, pero conserva trabajo
+     * activo o pendiente de subir para que una limpieza nunca borre trabajo de campo.
+     */
+    @Query("""
+        SELECT *
+        FROM local_phytomonitoring_headers h
+        WHERE h.est_start_date IS NULL
+           OR h.est_start_date >= :fechaLimite
+           OR h.sync_pending = 1
+           OR LOWER(TRIM(h.status)) IN (
+                'pendiente', 'pending',
+                'en proceso', 'in_progress', 'vigente'
+           )
+           OR EXISTS (
+                SELECT 1
+                FROM local_phytomonitoring_target_points tp
+                WHERE tp.idHeader = h.idHeader
+                  AND (tp.ext_id IS NULL OR TRIM(tp.ext_id) = '')
+           )
+           OR EXISTS (
+                SELECT 1
+                FROM local_phytomonitoring_checkpoints cp
+                WHERE cp.idHeader = h.idHeader
+                  AND (
+                       cp.ext_id IS NULL OR TRIM(cp.ext_id) = ''
+                       OR LOWER(COALESCE(cp.photo_local_path, '')) LIKE '%pending%'
+                  )
+           )
+        ORDER BY h.est_start_date DESC
+    """)
+    suspend fun getHeadersDisponiblesOffline(
+        fechaLimite: Long
+    ): List<LocalPhytomonitoringHeaderEntity>
+
+    @Query("""
+        SELECT h.idHeader
+        FROM local_phytomonitoring_headers h
+        INNER JOIN local_programs p ON p.idProgram = h.idProgram
+        WHERE p.idLocalCia = :idLocalCia
+          AND (
+               h.sync_pending = 1
+               OR LOWER(TRIM(h.status)) IN (
+                    'pendiente', 'pending',
+                    'en proceso', 'in_progress', 'vigente'
+               )
+               OR EXISTS (
+                    SELECT 1
+                    FROM local_phytomonitoring_target_points tp
+                    WHERE tp.idHeader = h.idHeader
+                      AND (tp.ext_id IS NULL OR TRIM(tp.ext_id) = '')
+               )
+               OR EXISTS (
+                    SELECT 1
+                    FROM local_phytomonitoring_checkpoints cp
+                    WHERE cp.idHeader = h.idHeader
+                      AND (
+                           cp.ext_id IS NULL OR TRIM(cp.ext_id) = ''
+                           OR LOWER(COALESCE(cp.photo_local_path, '')) LIKE '%pending%'
+                      )
+               )
+          )
+    """)
+    suspend fun getIdsHeadersProtegidosPorCia(
+        idLocalCia: Long
+    ): List<Long>
+
+    @Query("""
+        SELECT h.idHeader
+        FROM local_phytomonitoring_headers h
+        INNER JOIN local_programs p ON p.idProgram = h.idProgram
+        WHERE p.idLocalCia = :idLocalCia
+          AND h.est_start_date IS NOT NULL
+          AND h.est_start_date < :fechaLimite
+          AND h.sync_pending = 0
+          AND LOWER(TRIM(h.status)) IN (
+               'completado', 'completed', 'finalizado', 'terminado', 'cerrado',
+               'cancelado', 'cancelled', 'canceled'
+          )
+          AND NOT EXISTS (
+               SELECT 1
+               FROM local_phytomonitoring_target_points tp
+               WHERE tp.idHeader = h.idHeader
+                 AND (tp.ext_id IS NULL OR TRIM(tp.ext_id) = '')
+          )
+          AND NOT EXISTS (
+               SELECT 1
+               FROM local_phytomonitoring_checkpoints cp
+               WHERE cp.idHeader = h.idHeader
+                 AND (
+                      cp.ext_id IS NULL OR TRIM(cp.ext_id) = ''
+                      OR LOWER(COALESCE(cp.photo_local_path, '')) LIKE '%pending%'
+                 )
+          )
+    """)
+    suspend fun getIdsHeadersDepurablesPorCia(
+        idLocalCia: Long,
+        fechaLimite: Long
+    ): List<Long>
+
+    @Query("""
+        DELETE FROM local_phytomonitoring_headers
+        WHERE idHeader IN (:idsHeaders)
+    """)
+    suspend fun eliminarHeadersPorIds(idsHeaders: List<Long>): Int
+
     @Query("""
         SELECT *
         FROM local_phytomonitoring_headers
@@ -69,6 +175,25 @@ interface LocalPhytomonitoringHeaderDao {
     LIMIT 1
 """)
     suspend fun getHeaderByExtId(extId: String): LocalPhytomonitoringHeaderEntity?
+
+    @Query("""
+        SELECT h.*
+        FROM local_phytomonitoring_headers h
+        INNER JOIN local_programs p ON p.idProgram = h.idProgram
+        WHERE p.idLocalCia = :idLocalCia
+          AND h.sync_pending = 1
+        ORDER BY h.est_start_date ASC
+    """)
+    suspend fun getHeadersPendingSyncByCia(
+        idLocalCia: Long
+    ): List<LocalPhytomonitoringHeaderEntity>
+
+    @Query("""
+        UPDATE local_phytomonitoring_headers
+        SET sync_pending = 0
+        WHERE idHeader = :idHeader
+    """)
+    suspend fun marcarHeaderSincronizado(idHeader: Long)
 
     @Query("""
         SELECT *
@@ -125,9 +250,10 @@ interface LocalPhytomonitoringHeaderDao {
 
     @Query("""
     UPDATE local_phytomonitoring_headers
-    SET 
-        start_at = :startedAt,
-        status = 'En proceso'
+        SET
+            start_at = :startedAt,
+            status = 'En proceso',
+            sync_pending = 1
     WHERE idHeader = :idHeader
 """)
     suspend fun iniciarMonitoreo(
@@ -137,12 +263,13 @@ interface LocalPhytomonitoringHeaderDao {
 
     @Query("""
     UPDATE local_phytomonitoring_headers
-    SET status = 'En proceso',
+        SET status = 'En proceso',
         start_at = CASE 
             WHEN start_at IS NULL THEN :now 
             ELSE start_at 
         END,
-        finished_at = NULL
+        finished_at = NULL,
+        sync_pending = 1
     WHERE idHeader = :idHeader
       AND LOWER(TRIM(status)) IN ('pendiente', 'pending')
 """)
@@ -154,7 +281,8 @@ interface LocalPhytomonitoringHeaderDao {
     @Query("""
     UPDATE local_phytomonitoring_headers
     SET status = 'En proceso',
-        finished_at = NULL
+        finished_at = NULL,
+        sync_pending = 1
     WHERE idHeader = :idHeader
 """)
     suspend fun dejarMonitoreoEnProceso(
@@ -164,7 +292,8 @@ interface LocalPhytomonitoringHeaderDao {
     @Query("""
     UPDATE local_phytomonitoring_headers
     SET status = 'Completado',
-        finished_at = :finishedAt
+        finished_at = :finishedAt,
+        sync_pending = 1
     WHERE idHeader = :idHeader
 """)
     suspend fun finalizarMonitoreo(
@@ -175,7 +304,8 @@ interface LocalPhytomonitoringHeaderDao {
     @Query("""
     UPDATE local_phytomonitoring_headers
     SET 
-        status = 'Cancelado'
+        status = 'Cancelado',
+        sync_pending = 1
     WHERE idHeader = :idHeader
 """)
     suspend fun cancelarMonitoreo(
@@ -187,7 +317,8 @@ interface LocalPhytomonitoringHeaderDao {
     SET 
         status = 'Pendiente',
         start_at = NULL,
-        finished_at = NULL
+        finished_at = NULL,
+        sync_pending = 1
     WHERE idHeader = :idHeader
 """)
     suspend fun regresarAPendiente(
@@ -200,7 +331,8 @@ interface LocalPhytomonitoringHeaderDao {
         SET
             status = 'Cancelado',
             finished_at = :fechaCancelacion,
-            additional_notes = :motivoCancelacion
+            additional_notes = :motivoCancelacion,
+            sync_pending = 1
         WHERE idHeader = :idHeader
     """)
     suspend fun cancelarMonitoreoConMotivo(
@@ -210,5 +342,3 @@ interface LocalPhytomonitoringHeaderDao {
     ): Int
 
 }
-
-

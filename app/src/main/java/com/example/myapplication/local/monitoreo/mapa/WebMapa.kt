@@ -18,6 +18,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.TextView
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import java.io.ByteArrayInputStream
@@ -31,11 +32,19 @@ internal fun MapaMonitoreoWebViewSeguro(
     modifier: Modifier = Modifier,
     htmlMapa: String,
     ubicacionUsuario: Pair<Double, Double>?,
+    precisionGpsMetros: Float?,
     puntoLibreSeleccionado: Pair<Double, Double>?,
     internetDisponible: Boolean,
     onInternetDisponibleChange: (Boolean) -> Unit,
     onPuntoLibreSeleccionado: (Double, Double) -> Unit
 ) {
+    /*
+     * El WebView se crea una sola vez, pero el GPS y el estado del monitoreo
+     * cambian después. El bridge debe ejecutar siempre la lambda más reciente
+     * para que el mapa pequeño y el completo compartan las mismas validaciones.
+     */
+    val onPuntoLibreSeleccionadoActual = rememberUpdatedState(onPuntoLibreSeleccionado)
+
     AndroidView<View>(
         modifier = modifier,
         factory = { ctx ->
@@ -48,7 +57,7 @@ internal fun MapaMonitoreoWebViewSeguro(
 
                     addJavascriptInterface(
                         MapaBridge { lat, lon ->
-                            onPuntoLibreSeleccionado(lat, lon)
+                            onPuntoLibreSeleccionadoActual.value(lat, lon)
                         },
                         "Android"
                     )
@@ -145,9 +154,17 @@ internal fun MapaMonitoreoWebViewSeguro(
                 }
 
                 ubicacionUsuario?.let { location ->
+                    val precisionJs = precisionGpsMetros
+                        ?.takeIf { it.isFinite() }
+                        ?.toString()
+                        ?: "Number.NaN"
                     val js = """
                         if (window.updateUserLocation) {
-                            window.updateUserLocation(${location.first}, ${location.second});
+                            window.updateUserLocation(
+                                ${location.first},
+                                ${location.second},
+                                $precisionJs
+                            );
                         }
                     """.trimIndent()
 
@@ -190,6 +207,19 @@ private class MapaTileCacheWebViewClient(
     private val context: Context,
     private val internetDisponible: Boolean
 ) : WebViewClient() {
+
+    override fun onPageFinished(view: WebView?, url: String?) {
+        super.onPageFinished(view, url)
+
+        listOf(180L, 550L).forEach { retraso ->
+            view?.postDelayed({
+                view.evaluateJavascript(
+                    "if (window.ajustarMapaMonitoreo) { window.ajustarMapaMonitoreo(); }",
+                    null
+                )
+            }, retraso)
+        }
+    }
 
     override fun shouldInterceptRequest(
         view: WebView?,

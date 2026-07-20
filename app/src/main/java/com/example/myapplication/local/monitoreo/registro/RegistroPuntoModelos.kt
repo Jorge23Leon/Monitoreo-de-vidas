@@ -53,6 +53,32 @@ internal data class EstadoEnfermedadUi(
     val stage: String? = null
 )
 
+/** Formatea nombres únicamente para mostrarlos; no altera el valor guardado. */
+internal fun nombreVisibleRegistro(nombre: String): String {
+    val limpio = nombre.trim().replace('_', ' ')
+    if (limpio.isBlank()) return limpio
+
+    return limpio.replaceFirstChar { caracter ->
+        if (caracter.isLowerCase()) caracter.titlecase() else caracter.toString()
+    }
+}
+
+/** Convierte nombres técnicos de etapas en etiquetas fáciles de leer. */
+internal fun etapaVisibleRegistro(etapa: String): String {
+    val normalizada = etapa
+        .trim()
+        .lowercase()
+        .replace('_', ' ')
+        .replace(Regex("\\s+"), " ")
+
+    return when (normalizada) {
+        "adulto alas", "adulto con alas", "adulto alado", "adulto alados" ->
+            "Adulto con alas"
+
+        else -> nombreVisibleRegistro(normalizada)
+    }
+}
+
 internal fun esEnfermedadRegistro(type: String?): Boolean {
     val tipo = type
         ?.trim()

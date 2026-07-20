@@ -15,7 +15,6 @@ import com.example.myapplication.local.api.phytomonitoring.PhytoHeaderApiItem
 import com.example.myapplication.local.api.phytomonitoring.PhytoMonitoringRepository
 import com.example.myapplication.local.api.phytomonitoring.PhytoTargetPointApiItem
 import com.example.myapplication.local.api.phytomonitoring.ResultadoPhytoHeadersApi
-import com.example.myapplication.local.api.phytomonitoring.ResultadoPhytoTargetPointsApi
 import com.example.myapplication.local.api.phytomonitoring.ResultadoActualizarHeaderApi
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.LocalCropCatalogEntity
@@ -46,6 +45,13 @@ class MonitoreoSyncRepository(
     private val context: Context,
     private val database: AppDatabase
 ) {
+    companion object {
+        private const val PREFS_SYNC_INCREMENTAL = "sync_incremental"
+        private const val KEY_ULTIMA_REVISION_CATALOGOS = "ultima_revision_catalogos"
+        private const val INTERVALO_REVISION_CATALOGOS_MS = 24L * 60L * 60L * 1000L
+        const val VENTANA_OFFLINE_MS = 30L * 24L * 60L * 60L * 1000L
+    }
+
     private val agroCatalogsRepository = AgroCatalogsRepository(
         context = context,
         database = database
@@ -67,7 +73,8 @@ class MonitoreoSyncRepository(
      */
     suspend fun sincronizarMonitoreosFitosanitarios(
         idLocalCia: Long,
-        actualizarCatalogos: Boolean = false
+        actualizarCatalogos: Boolean = false,
+        programasApiPrecargados: List<FieldTaskApiItem>? = null
     ): ResultadoMonitoreoSync {
         return try {
             val inicioSincronizacion = System.currentTimeMillis()
@@ -78,6 +85,8 @@ class MonitoreoSyncRepository(
             var puntosGuardados = 0
             var catalogosConImagenesActualizados = false
             val advertencias = mutableListOf<String>()
+            val headersOnline = mutableListOf<LocalPhytomonitoringHeaderEntity>()
+            val extIdsHeadersPersistidos = linkedSetOf<String>()
 
             fun advertir(mensaje: String, error: Throwable? = null) {
                 if (error == null) {
@@ -117,7 +126,24 @@ class MonitoreoSyncRepository(
                 .getAllCrops()
                 .isNotEmpty()
 
-            if (actualizarCatalogos || !hayCultivosLocales) {
+            val hayCatalogoFitoLocal = database.localphytosanitarycatalogDao()
+                .getAllCatalogo()
+                .isNotEmpty()
+
+            val ultimaRevisionCatalogos = context.applicationContext
+                .getSharedPreferences(PREFS_SYNC_INCREMENTAL, Context.MODE_PRIVATE)
+                .getLong(KEY_ULTIMA_REVISION_CATALOGOS, 0L)
+
+            val tocaRevisionPeriodicaCatalogos =
+                System.currentTimeMillis() - ultimaRevisionCatalogos >=
+                        INTERVALO_REVISION_CATALOGOS_MS
+
+            val revisarCatalogos = actualizarCatalogos ||
+                    !hayCultivosLocales ||
+                    !hayCatalogoFitoLocal ||
+                    tocaRevisionPeriodicaCatalogos
+
+            if (revisarCatalogos) {
                 val resultadoCultivos = kotlinx.coroutines.withTimeoutOrNull(60_000L) {
                     agroCatalogsRepository.obtenerTodosLosCultivos()
                 } ?: return ResultadoMonitoreoSync.Error(
@@ -145,11 +171,7 @@ class MonitoreoSyncRepository(
                 catalogosConImagenesActualizados = true
             }
 
-            val hayCatalogoFitoLocal = database.localphytosanitarycatalogDao()
-                .getAllCatalogo()
-                .isNotEmpty()
-
-            if (actualizarCatalogos || !hayCatalogoFitoLocal) {
+            if (revisarCatalogos) {
                 when (
                     val resultadoCatalogoFito = kotlinx.coroutines.withTimeoutOrNull(120_000L) {
                         agroCatalogsRepository.sincronizarCatalogoFitosanitario()
@@ -167,17 +189,33 @@ class MonitoreoSyncRepository(
                 }
             }
 
-            val resultadoProgramas = kotlinx.coroutines.withTimeoutOrNull(60_000L) {
-                fieldOpsRepository.obtenerTodosLosProgramasCampo(datacentral = ciaExtId)
-            } ?: return ResultadoMonitoreoSync.Error(
-                "Timeout programas: /api/v1/field_ops/tasks/ tardó más de 60 segundos"
-            )
+            if (revisarCatalogos) {
+                context.applicationContext
+                    .getSharedPreferences(PREFS_SYNC_INCREMENTAL, Context.MODE_PRIVATE)
+                    .edit()
+                    .putLong(KEY_ULTIMA_REVISION_CATALOGOS, System.currentTimeMillis())
+                    .apply()
+            }
 
-            val programasApi = when (resultadoProgramas) {
-                is ResultadoFieldOpsApi.Exito -> resultadoProgramas.programas
+            val programasApi = if (programasApiPrecargados != null) {
+                programasApiPrecargados
                     .filter { it.id.isNotBlank() }
                     .distinctBy { it.id }
-                is ResultadoFieldOpsApi.Error -> return ResultadoMonitoreoSync.Error(resultadoProgramas.mensaje)
+            } else {
+                val resultadoProgramas = kotlinx.coroutines.withTimeoutOrNull(60_000L) {
+                    fieldOpsRepository.obtenerTodosLosProgramasCampo(datacentral = ciaExtId)
+                } ?: return ResultadoMonitoreoSync.Error(
+                    "Timeout programas: /api/v1/field_ops/tasks/ tardó más de 60 segundos"
+                )
+
+                when (resultadoProgramas) {
+                    is ResultadoFieldOpsApi.Exito -> resultadoProgramas.programas
+                        .filter { it.id.isNotBlank() }
+                        .distinctBy { it.id }
+                    is ResultadoFieldOpsApi.Error -> return ResultadoMonitoreoSync.Error(
+                        resultadoProgramas.mensaje
+                    )
+                }
             }
 
             val idsProgramasCia = programasApi.map { it.id }.toSet()
@@ -209,77 +247,102 @@ class MonitoreoSyncRepository(
                 )
             }
 
-            // Los headers se piden por field_task para que el servidor no entregue otras CIAs.
-            // Se consultan hasta cuatro programas a la vez para reducir el tiempo total.
-            val resultadosHeaders = coroutineScope {
-                val limiteHeaders = Semaphore(permits = 4)
-
-                idsProgramasCia.map { programaExtId ->
-                    async(Dispatchers.IO) {
-                        limiteHeaders.acquire()
-                        try {
-                            programaExtId to kotlinx.coroutines.withTimeoutOrNull(20_000L) {
-                                phytoMonitoringRepository.obtenerTodosLosHeaders(
-                                    fieldTask = programaExtId
-                                )
-                            }
-                        } finally {
-                            limiteHeaders.release()
-                        }
-                    }
-                }.awaitAll()
-            }
-
             val headersPorExtId = linkedMapOf<String, PhytoHeaderApiItem>()
 
-            resultadosHeaders.forEach { (programaExtId, resultadoHeaders) ->
-                when (resultadoHeaders) {
-                    null -> advertir("Timeout headers para programa $programaExtId")
+            /*
+             * La lista visible de headers se pagina una sola vez. Después se filtra
+             * con los programas de la CIA antes de tocar Room. Antes se hacía una
+             * petición completa por cada programa y la latencia crecía linealmente.
+             */
+            when (
+                val resultadoHeaders = kotlinx.coroutines.withTimeoutOrNull(120_000L) {
+                    phytoMonitoringRepository.obtenerTodosLosHeaders()
+                }
+            ) {
+                null -> return ResultadoMonitoreoSync.Error(
+                    "Timeout headers: el listado tardó más de 120 segundos"
+                )
 
-                    is ResultadoPhytoHeadersApi.Error -> {
-                        advertir(
-                            "No se pudieron cargar headers de $programaExtId: " +
-                                    resultadoHeaders.mensaje
-                        )
-                    }
+                is ResultadoPhytoHeadersApi.Error -> return ResultadoMonitoreoSync.Error(
+                    resultadoHeaders.mensaje
+                )
 
-                    is ResultadoPhytoHeadersApi.Exito -> {
-                        resultadoHeaders.headers.forEach { header ->
-                            if (
-                                header.id.isNotBlank() &&
-                                header.fieldTask == programaExtId
-                            ) {
-                                headersPorExtId[header.id] = header
-                            }
+                is ResultadoPhytoHeadersApi.Exito -> {
+                    resultadoHeaders.headers.forEach { header ->
+                        val programaExtId = header.fieldTask?.trim()
+                        if (
+                            header.id.isNotBlank() &&
+                            !programaExtId.isNullOrBlank() &&
+                            programaExtId in idsProgramasCia
+                        ) {
+                            headersPorExtId[header.id] = header
                         }
                     }
                 }
             }
 
+            val fechaLimiteOffline = System.currentTimeMillis() - VENTANA_OFFLINE_MS
+            val headerDao = database.localphytomonitoringheaderDao()
+            val idsHeadersProtegidos = headerDao
+                .getIdsHeadersProtegidosPorCia(idLocalCia)
+                .toSet()
+
             headersPorExtId.values.forEach { headerApi ->
                 runCatching {
-                    guardarOCrearHeader(
-                        headerApi = headerApi,
-                        idLocalCiaEsperada = idLocalCia,
-                        conservarEstadoLocal = headerApi.id in extIdsConEstadoLocalSinEnviar
-                    )
-                }.onSuccess { idHeaderLocal ->
-                    if (idHeaderLocal == null) {
+                    val existente = headerDao.getHeaderByExtId(headerApi.id)
+                    val conservarEstadoLocal =
+                        headerApi.id in extIdsConEstadoLocalSinEnviar
+                    val fechaReferencia = parseFechaApi(headerApi.estimatedStartDate)
+                        ?: parseFechaApi(headerApi.startedAt)
+                        ?: parseFechaApi(headerApi.createdAt)
+                    val estadoRemoto = normalizarEstado(headerApi.status)
+                    val esTrabajoActivo = estadoRemoto == "Pendiente" ||
+                            estadoRemoto == "En proceso"
+                    val debePersistirOffline = fechaReferencia == null ||
+                            fechaReferencia >= fechaLimiteOffline ||
+                            esTrabajoActivo ||
+                            existente?.idHeader?.let { idHeader ->
+                                idHeader in idsHeadersProtegidos
+                            } == true
+
+                    if (debePersistirOffline) {
+                        val idHeaderLocal = guardarOCrearHeader(
+                            headerApi = headerApi,
+                            idLocalCiaEsperada = idLocalCia,
+                            conservarEstadoLocal = conservarEstadoLocal
+                        ) ?: return@runCatching null
+
+                        extIdsHeadersPersistidos += headerApi.id
+                        headerDao.getHeaderById(idHeaderLocal)
+                    } else {
+                        construirHeaderLocal(
+                            headerApi = headerApi,
+                            idLocalCiaEsperada = idLocalCia,
+                            conservarEstadoLocal = false,
+                            usarIdTemporal = true
+                        )
+                    }
+                }.onSuccess { headerVisible ->
+                    if (headerVisible == null) {
                         advertir("Header ${headerApi.id} omitido: no coincide con la CIA seleccionada o faltan relaciones locales.")
                     } else {
-                        headersGuardados++
-                        headerApi.targetPoints.forEach { puntoApi ->
-                            runCatching {
-                                guardarOCrearTargetPoint(
-                                    puntoApi = puntoApi,
-                                    headerExtIdFallback = headerApi.id,
-                                    idHeaderLocalFallback = idHeaderLocal,
-                                    idLocalCiaEsperada = idLocalCia
-                                )
-                            }.onSuccess { idPunto ->
-                                if (idPunto != null) puntosGuardados++
-                            }.onFailure { error ->
-                                advertir("Error guardando punto del header ${headerApi.id}: ${error.message}", error)
+                        headersOnline += headerVisible
+
+                        if (headerApi.id in extIdsHeadersPersistidos) {
+                            headersGuardados++
+                            headerApi.targetPoints.orEmpty().forEach { puntoApi ->
+                                runCatching {
+                                    guardarOCrearTargetPoint(
+                                        puntoApi = puntoApi,
+                                        headerExtIdFallback = headerApi.id,
+                                        idHeaderLocalFallback = headerVisible.idHeader,
+                                        idLocalCiaEsperada = idLocalCia
+                                    )
+                                }.onSuccess { idPunto ->
+                                    if (idPunto != null) puntosGuardados++
+                                }.onFailure { error ->
+                                    advertir("Error guardando punto del header ${headerApi.id}: ${error.message}", error)
+                                }
                             }
                         }
                     }
@@ -289,54 +352,70 @@ class MonitoreoSyncRepository(
             }
 
             /*
-             * El endpoint de target points es global. Solo se consulta cuando
-             * alguno de los headers descargados no trajo sus puntos embebidos.
-             * Normalmente los headers ya los incluyen y evitamos esa descarga
-             * paginada completa.
+             * target_points = [] significa que el monitoreo realmente no tiene
+             * puntos. Solo null indica que el listado no incluyo ese campo. En ese
+             * caso se pide el detalle de ese header; nunca se vuelve a descargar el
+             * endpoint global de todos los puntos objetivo.
              */
-            val headersSinPuntosEmbebidos = headersPorExtId.values
-                .filter { header -> header.targetPoints.isEmpty() }
-                .map { header -> header.id }
-                .toSet()
-
-            if (headersSinPuntosEmbebidos.isNotEmpty()) {
-                when (
-                    val resultadoTargetPoints = kotlinx.coroutines.withTimeoutOrNull(60_000L) {
-                        phytoMonitoringRepository.obtenerTodosLosTargetPoints()
-                    }
-                ) {
-                    null -> advertir("Timeout cargando puntos objetivo")
-                    is ResultadoPhytoTargetPointsApi.Error -> {
-                        advertir(
-                            "No se pudieron cargar puntos objetivo: " +
-                                    resultadoTargetPoints.mensaje
-                        )
-                    }
-
-                    is ResultadoPhytoTargetPointsApi.Exito -> {
-                        resultadoTargetPoints.puntos
-                            .filter { punto ->
-                                punto.header in headersSinPuntosEmbebidos
-                            }
-                            .forEach { puntoApi ->
-                                runCatching {
-                                    guardarOCrearTargetPoint(
-                                        puntoApi = puntoApi,
-                                        headerExtIdFallback = puntoApi.header,
-                                        idHeaderLocalFallback = null,
-                                        idLocalCiaEsperada = idLocalCia
-                                    )
-                                }.onSuccess { idPunto ->
-                                    if (idPunto != null) puntosGuardados++
-                                }.onFailure { error ->
-                                    advertir(
-                                        "Error guardando punto ${puntoApi.id}: ${error.message}",
-                                        error
-                                    )
+            headersPorExtId.values
+                .filter { header ->
+                    header.id in extIdsHeadersPersistidos &&
+                            header.targetPoints == null
+                }
+                .forEach { header ->
+                    when (
+                        val detalle = kotlinx.coroutines.withTimeoutOrNull(20_000L) {
+                            phytoMonitoringRepository.obtenerHeaderDetalle(header.id)
+                        }
+                    ) {
+                        null -> advertir("Timeout cargando detalle del header ${header.id}")
+                        is ResultadoPhytoHeadersApi.Error -> advertir(detalle.mensaje)
+                        is ResultadoPhytoHeadersApi.Exito -> {
+                            detalle.headers.firstOrNull()
+                                ?.targetPoints
+                                .orEmpty()
+                                .forEach { puntoApi ->
+                                    runCatching {
+                                        guardarOCrearTargetPoint(
+                                            puntoApi = puntoApi,
+                                            headerExtIdFallback = header.id,
+                                            idHeaderLocalFallback = null,
+                                            idLocalCiaEsperada = idLocalCia
+                                        )
+                                    }.onSuccess { idPunto ->
+                                        if (idPunto != null) puntosGuardados++
+                                    }.onFailure { error ->
+                                        advertir(
+                                            "Error guardando punto ${puntoApi.id}: ${error.message}",
+                                            error
+                                        )
+                                    }
                                 }
-                            }
+                        }
                     }
                 }
+
+            /*
+             * La lista histórica completa vive solo en memoria mientras hay red.
+             * Room conserva un mes y cualquier trabajo activo o sin confirmar.
+             */
+            val idsDepurables = headerDao.getIdsHeadersDepurablesPorCia(
+                idLocalCia = idLocalCia,
+                fechaLimite = fechaLimiteOffline
+            )
+
+            if (idsDepurables.isNotEmpty()) {
+                idsDepurables.forEach { idHeader ->
+                    PhytoMediaStorage.eliminarFotosConfirmadasDeHeader(
+                        context = context.applicationContext,
+                        idHeader = idHeader
+                    )
+                }
+                headerDao.eliminarHeadersPorIds(idsDepurables)
+                Log.d(
+                    "SYNC_MON",
+                    "Cache offline depurada: ${idsDepurables.size} headers anteriores a 30 días"
+                )
             }
 
             /*
@@ -372,7 +451,10 @@ class MonitoreoSyncRepository(
                 headers = headersGuardados,
                 targetPoints = puntosGuardados,
                 imagenes = imagenesCacheadas,
-                advertencias = advertencias.distinct()
+                advertencias = advertencias.distinct(),
+                headersOnline = headersOnline
+                    .distinctBy { it.extId }
+                    .sortedByDescending { it.estStartDate ?: 0L }
             )
         } catch (e: Exception) {
             Log.e("SYNC_MON", "Error sincronizando monitoreos", e)
@@ -380,6 +462,74 @@ class MonitoreoSyncRepository(
                 "Error sincronizando monitoreos: ${e.message ?: "detalle no disponible"}"
             )
         }
+    }
+
+    /**
+     * Materializa en Room un header histórico que hasta ahora solo vivía en la
+     * lista online. Esto permite abrir su reporte sin conservar todo el histórico.
+     */
+    suspend fun prepararHeaderParaAbrir(
+        headerVisible: LocalPhytomonitoringHeaderEntity
+    ): ResultadoPrepararHeader {
+        val extId = headerVisible.extId
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: return ResultadoPrepararHeader.Error(
+                "El monitoreo no tiene identificador remoto."
+            )
+
+        database.localphytomonitoringheaderDao()
+            .getHeaderByExtId(extId)
+            ?.let { return ResultadoPrepararHeader.Exito(it) }
+
+        val detalle = when (
+            val resultado = phytoMonitoringRepository.obtenerHeaderDetalle(extId)
+        ) {
+            is ResultadoPhytoHeadersApi.Error -> {
+                return ResultadoPrepararHeader.Error(resultado.mensaje)
+            }
+
+            is ResultadoPhytoHeadersApi.Exito -> resultado.headers.firstOrNull()
+                ?: return ResultadoPrepararHeader.Error(
+                    "La API no devolvió el monitoreo solicitado."
+                )
+        }
+
+        val programaExtId = detalle.fieldTask
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: return ResultadoPrepararHeader.Error(
+                "El monitoreo no tiene programa relacionado."
+            )
+
+        val programa = database.localprogramDao().getProgramByExtId(programaExtId)
+            ?: return ResultadoPrepararHeader.Error(
+                "Primero sincroniza la información de la CIA de este monitoreo."
+            )
+
+        val idHeader = guardarOCrearHeader(
+            headerApi = detalle,
+            idLocalCiaEsperada = programa.idLocalCia,
+            conservarEstadoLocal = false
+        ) ?: return ResultadoPrepararHeader.Error(
+            "No se pudo preparar el monitoreo para abrirlo."
+        )
+
+        detalle.targetPoints.orEmpty().forEach { puntoApi ->
+            guardarOCrearTargetPoint(
+                puntoApi = puntoApi,
+                headerExtIdFallback = extId,
+                idHeaderLocalFallback = idHeader,
+                idLocalCiaEsperada = programa.idLocalCia
+            )
+        }
+
+        val local = database.localphytomonitoringheaderDao().getHeaderById(idHeader)
+            ?: return ResultadoPrepararHeader.Error(
+                "El monitoreo se descargó, pero Room no pudo encontrarlo."
+            )
+
+        return ResultadoPrepararHeader.Exito(local)
     }
 
 
@@ -409,16 +559,18 @@ class MonitoreoSyncRepository(
             ?: existente?.photo
 
         return if (existente != null) {
-            database.localCropCatalogDao().updateCrop(
-                existente.copy(
-                    extId = extId,
-                    name = nombre,
-                    variedad = cultivoApi.variety,
-                    code = cultivoApi.code,
-                    description = cultivoApi.description,
-                    photo = fotoCultivoFinal
-                )
+            val actualizado = existente.copy(
+                extId = extId,
+                name = nombre,
+                variedad = cultivoApi.variety,
+                code = cultivoApi.code,
+                description = cultivoApi.description,
+                photo = fotoCultivoFinal
             )
+
+            if (actualizado != existente) {
+                database.localCropCatalogDao().updateCrop(actualizado)
+            }
 
             existente.idCrop
         } else {
@@ -627,7 +779,9 @@ class MonitoreoSyncRepository(
         )
 
         return if (existente != null) {
-            database.localprogramDao().updateProgram(programaNuevo)
+            if (programaNuevo != existente) {
+                database.localprogramDao().updateProgram(programaNuevo)
+            }
             existente.idProgram
         } else {
             database.localprogramDao().insertProgram(programaNuevo)
@@ -640,6 +794,35 @@ class MonitoreoSyncRepository(
         idLocalCiaEsperada: Long,
         conservarEstadoLocal: Boolean = false
     ): Long? {
+        val headerNuevo = construirHeaderLocal(
+            headerApi = headerApi,
+            idLocalCiaEsperada = idLocalCiaEsperada,
+            conservarEstadoLocal = conservarEstadoLocal,
+            usarIdTemporal = false
+        ) ?: return null
+
+        val existente = database.localphytomonitoringheaderDao()
+            .getHeaderByExtId(headerNuevo.extId.orEmpty())
+
+        val idHeaderLocal = if (existente != null) {
+            if (headerNuevo != existente) {
+                database.localphytomonitoringheaderDao().updateHeader(headerNuevo)
+            }
+            existente.idHeader
+        } else {
+            database.localphytomonitoringheaderDao().insertHeader(headerNuevo)
+        }
+
+        database.localprogramDao().recalcularEstadoDesdeHeaders(headerNuevo.idProgram)
+        return idHeaderLocal
+    }
+
+    private suspend fun construirHeaderLocal(
+        headerApi: PhytoHeaderApiItem,
+        idLocalCiaEsperada: Long,
+        conservarEstadoLocal: Boolean,
+        usarIdTemporal: Boolean
+    ): LocalPhytomonitoringHeaderEntity? {
         val extId = headerApi.id.takeIf { it.isNotBlank() } ?: return null
         val programaExtId = headerApi.fieldTask?.takeIf { it.isNotBlank() } ?: return null
         val parcelaExtId = headerApi.plot?.takeIf { it.isNotBlank() } ?: return null
@@ -665,8 +848,12 @@ class MonitoreoSyncRepository(
             ?.let { database.userDao().getUserByExtId(it) }
 
         val existente = database.localphytomonitoringheaderDao().getHeaderByExtId(extId)
-        val headerNuevo = LocalPhytomonitoringHeaderEntity(
-            idHeader = existente?.idHeader ?: 0L,
+        return LocalPhytomonitoringHeaderEntity(
+            idHeader = if (usarIdTemporal) {
+                idTemporalDesdeExtId(extId)
+            } else {
+                existente?.idHeader ?: 0L
+            },
             extId = extId,
             cycle = programaLocal.cycle,
             estStartDate = parseFechaApi(headerApi.estimatedStartDate),
@@ -696,18 +883,24 @@ class MonitoreoSyncRepository(
             idProgram = programaLocal.idProgram,
             idCrop = cultivoLocal?.idCrop ?: programaLocal.idCrop,
             idLocalPlot = parcelaLocal.idLocalPlot,
-            assignedUserId = usuarioAsignado?.idUser
+            assignedUserId = usuarioAsignado?.idUser,
+            syncPending = if (conservarEstadoLocal) {
+                existente?.syncPending ?: true
+            } else {
+                false
+            }
         )
+    }
 
-        val idHeaderLocal = if (existente != null) {
-            database.localphytomonitoringheaderDao().updateHeader(headerNuevo)
-            existente.idHeader
-        } else {
-            database.localphytomonitoringheaderDao().insertHeader(headerNuevo)
+    private fun idTemporalDesdeExtId(extId: String): Long {
+        var hash = -3750763034362895579L
+        extId.forEach { caracter ->
+            hash = hash xor caracter.code.toLong()
+            hash *= 1099511628211L
         }
 
-        database.localprogramDao().recalcularEstadoDesdeHeaders(programaLocal.idProgram)
-        return idHeaderLocal
+        val positivo = hash and Long.MAX_VALUE
+        return -(positivo.coerceAtLeast(1L))
     }
 
 
@@ -765,7 +958,9 @@ class MonitoreoSyncRepository(
         )
 
         return if (existente != null) {
-            database.LocalPhytomonitoringTargetPointDao().updateTargetPoint(puntoNuevo)
+            if (puntoNuevo != existente) {
+                database.LocalPhytomonitoringTargetPointDao().updateTargetPoint(puntoNuevo)
+            }
             existente.idTargetPoint
         } else {
             database.LocalPhytomonitoringTargetPointDao().insertTargetPoint(puntoNuevo)
@@ -846,17 +1041,13 @@ class MonitoreoSyncRepository(
     ): Set<String> {
         val extIdsConError = linkedSetOf<String>()
 
-        database.localphytomonitoringheaderDao()
-            .getAllHeaders()
+        val headerDao = database.localphytomonitoringheaderDao()
+
+        headerDao
+            .getHeadersPendingSyncByCia(idLocalCia)
             .forEach { headerLocal ->
                 val estadoApi = estadoApiDesdeLocal(headerLocal.status)
                     ?: return@forEach
-
-                val programa = database.localprogramDao()
-                    .getProgramById(headerLocal.idProgram)
-                    ?: return@forEach
-
-                if (programa.idLocalCia != idLocalCia) return@forEach
 
                 val extId = headerLocal.extId
                     ?.trim()
@@ -873,6 +1064,7 @@ class MonitoreoSyncRepository(
                     estadoApi == "completed" &&
                     debeDiferirCierreRemoto(headerLocal)
                 ) {
+                    extIdsConError.add(extId)
                     onAdvertencia(
                         "El cierre de $extId se mantiene localmente hasta subir targets, capturas y evidencias."
                     )
@@ -889,6 +1081,7 @@ class MonitoreoSyncRepository(
                     )
                 ) {
                     is ResultadoActualizarHeaderApi.Exito -> {
+                        headerDao.marcarHeaderSincronizado(headerLocal.idHeader)
                         Log.d("SYNC_MON", "Estado enviado para header $extId: $estadoApi")
                     }
 
@@ -938,6 +1131,7 @@ class MonitoreoSyncRepository(
 
     private fun estadoApiDesdeLocal(status: String): String? {
         return when (status.trim().lowercase(Locale.getDefault())) {
+            "pendiente", "pending" -> "pending"
             "en proceso", "in_progress", "vigente" -> "in_progress"
             "completado", "completed", "finalizado", "terminado", "cerrado" -> "completed"
             "cancelado", "cancelled", "canceled" -> "cancelled"
@@ -1028,10 +1222,21 @@ sealed class ResultadoMonitoreoSync {
         val headers: Int,
         val targetPoints: Int,
         val imagenes: Int = 0,
-        val advertencias: List<String> = emptyList()
+        val advertencias: List<String> = emptyList(),
+        val headersOnline: List<LocalPhytomonitoringHeaderEntity> = emptyList()
     ) : ResultadoMonitoreoSync()
 
     data class Error(
         val mensaje: String
     ) : ResultadoMonitoreoSync()
+}
+
+sealed class ResultadoPrepararHeader {
+    data class Exito(
+        val header: LocalPhytomonitoringHeaderEntity
+    ) : ResultadoPrepararHeader()
+
+    data class Error(
+        val mensaje: String
+    ) : ResultadoPrepararHeader()
 }

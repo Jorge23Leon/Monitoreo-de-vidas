@@ -271,13 +271,13 @@ internal fun InstruccionMapaLibre(
     puntosCapturados: Int
 ) {
     val titulo = if (puntosCapturados <= 0) {
-        "Toca cualquier parte de la parcela"
+        "Abre el mapa y confirma tu ubicación"
     } else {
-        "Sigue caminando y toca el mapa"
+        "Sigue caminando y abre el mapa"
     }
 
     val descripcion = if (puntosCapturados <= 0) {
-        "Confirma el punto elegido para iniciar el monitoreo."
+        "Dentro del mapa completo podrás registrar el primer punto."
     } else {
         "El siguiente punto será el número ${puntosCapturados + 1}."
     }
@@ -354,6 +354,77 @@ internal fun ChipPuntosMonitoreados(
 }
 
 @Composable
+internal fun AbrirMapaCompletoCard(
+    onAbrirMapa: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Color.White)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Button(
+            onClick = onAbrirMapa,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF006B2A)
+            )
+        ) {
+            Text(
+                text = "⛶  Abrir mapa completo",
+                color = Color.White,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Black
+            )
+        }
+    }
+}
+
+@Composable
+internal fun CabeceraMapaCompleto(
+    nombreMonitoreo: String,
+    onCerrar: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        TextButton(onClick = onCerrar) {
+            Text(
+                text = "←",
+                color = Color(0xFF123D1F),
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Black
+            )
+        }
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Mapa del monitoreo",
+                color = Color(0xFF123D1F),
+                fontSize = 19.sp,
+                fontWeight = FontWeight.Black
+            )
+            Text(
+                text = nombreMonitoreo,
+                color = Color(0xFF5F6F64),
+                fontSize = 11.sp,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
 internal fun ConfirmarPuntoLibreCard(
     numeroPunto: Int,
     creandoPunto: Boolean,
@@ -383,8 +454,7 @@ internal fun ConfirmarPuntoLibreCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         shape = RoundedCornerShape(
             topStart = 24.dp,
             topEnd = 24.dp,

@@ -108,10 +108,12 @@ private fun EtapaRowModerna(
         )
 
         Text(
-            text = nombreEtapa,
-            fontSize = 20.sp,
+            text = etapaVisibleRegistro(nombreEtapa),
+            fontSize = 18.sp,
+            lineHeight = 21.sp,
             color = Color(0xFF1D2430),
             fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
             modifier = Modifier.weight(1f)
         )
 
@@ -427,7 +429,7 @@ private fun OpcionFaseEnfermedad(
             Spacer(modifier = Modifier.height(10.dp))
 
             Text(
-                text = etapa.stage,
+                text = etapaVisibleRegistro(etapa.stage),
                 textAlign = TextAlign.Center,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Black,

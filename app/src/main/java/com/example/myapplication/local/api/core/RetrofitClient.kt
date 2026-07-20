@@ -11,8 +11,15 @@ import java.util.concurrent.TimeUnit
 object RetrofitClient {
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
-        level = HttpLoggingInterceptor.Level.BODY
+        // BODY serializaba nuevamente respuestas grandes y hacia mas lenta la sync.
+        level = HttpLoggingInterceptor.Level.BASIC
     }
+
+    @Volatile
+    private var clienteAutenticadoCompartido: OkHttpClient? = null
+
+    @Volatile
+    private var clienteImagenesCompartido: OkHttpClient? = null
 
     private val okHttpClientPublico: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -47,24 +54,31 @@ object RetrofitClient {
      * - sigan redirecciones y compartan los mismos tiempos de espera.
      */
     fun crearClienteAutenticado(context: Context): OkHttpClient {
-        val tokenStorage = TokenStorage(context.applicationContext)
+        clienteAutenticadoCompartido?.let { return it }
 
-        return OkHttpClient.Builder()
-            .addInterceptor(AuthInterceptor(tokenStorage))
-            .authenticator(
-                TokenAuthenticator(
-                    tokenStorage = tokenStorage,
-                    authApiService = authApiService
-                )
-            )
-            .addInterceptor(loggingInterceptor)
-            .followRedirects(true)
-            .followSslRedirects(true)
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(45, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
-            .callTimeout(60, TimeUnit.SECONDS)
-            .build()
+        return synchronized(this) {
+            clienteAutenticadoCompartido ?: run {
+                val tokenStorage = TokenStorage(context.applicationContext)
+
+                OkHttpClient.Builder()
+                    .addInterceptor(AuthInterceptor(tokenStorage))
+                    .authenticator(
+                        TokenAuthenticator(
+                            tokenStorage = tokenStorage,
+                            authApiService = authApiService
+                        )
+                    )
+                    .addInterceptor(loggingInterceptor)
+                    .followRedirects(true)
+                    .followSslRedirects(true)
+                    .connectTimeout(30, TimeUnit.SECONDS)
+                    .readTimeout(45, TimeUnit.SECONDS)
+                    .writeTimeout(30, TimeUnit.SECONDS)
+                    .callTimeout(60, TimeUnit.SECONDS)
+                    .build()
+                    .also { clienteAutenticadoCompartido = it }
+            }
+        }
     }
 
     /**
@@ -74,23 +88,30 @@ object RetrofitClient {
      * y limita el tiempo de cada URL para que una imagen rota no bloquee la sincronización.
      */
     fun crearClienteImagenesAutenticado(context: Context): OkHttpClient {
-        val tokenStorage = TokenStorage(context.applicationContext)
+        clienteImagenesCompartido?.let { return it }
 
-        return OkHttpClient.Builder()
-            .addInterceptor(AuthInterceptor(tokenStorage))
-            .authenticator(
-                TokenAuthenticator(
-                    tokenStorage = tokenStorage,
-                    authApiService = authApiService
-                )
-            )
-            .followRedirects(true)
-            .followSslRedirects(true)
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
-            .callTimeout(20, TimeUnit.SECONDS)
-            .build()
+        return synchronized(this) {
+            clienteImagenesCompartido ?: run {
+                val tokenStorage = TokenStorage(context.applicationContext)
+
+                OkHttpClient.Builder()
+                    .addInterceptor(AuthInterceptor(tokenStorage))
+                    .authenticator(
+                        TokenAuthenticator(
+                            tokenStorage = tokenStorage,
+                            authApiService = authApiService
+                        )
+                    )
+                    .followRedirects(true)
+                    .followSslRedirects(true)
+                    .connectTimeout(10, TimeUnit.SECONDS)
+                    .readTimeout(15, TimeUnit.SECONDS)
+                    .writeTimeout(15, TimeUnit.SECONDS)
+                    .callTimeout(20, TimeUnit.SECONDS)
+                    .build()
+                    .also { clienteImagenesCompartido = it }
+            }
+        }
     }
 
     /**

@@ -36,7 +36,7 @@ data class PhytoHeaderApiItem(
     @SerializedName("additional_notes")
     val additionalNotes: String?,
     @SerializedName("target_points")
-    val targetPoints: List<PhytoTargetPointApiItem> = emptyList(),
+    val targetPoints: List<PhytoTargetPointApiItem>? = null,
     @SerializedName("created_at")
     val createdAt: String?
 )

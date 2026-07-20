@@ -3,9 +3,6 @@ package com.example.myapplication.local.monitoreo.mapa
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.location.Location
-import android.location.LocationListener
-import android.location.LocationManager
 import android.os.Looper
 import android.util.Log
 import android.widget.Toast
@@ -41,6 +38,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import com.example.myapplication.local.common.EncabezadoApp
 import com.example.myapplication.local.api.phytomonitoring.PhytoMonitoringRepository
@@ -51,6 +50,12 @@ import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
 import com.example.myapplication.local.entities.LocalPhytomonitoringTargetPointEntity
 import com.example.myapplication.local.entities.LocalPlotVertexEntity
 import com.example.myapplication.local.entities.LocalPhytosanitaryCatalogEntity
+import com.google.android.gms.location.Granularity
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -67,6 +72,8 @@ fun MonitoreoMapaScreen(
     nombreUsuario: String,
     rolUsuario: String = "",
     nombreMonitoreo: String,
+    mostrarMapaCompletoInicial: Boolean = false,
+    onModoMapaCompletoChange: (Boolean) -> Unit = {},
     onPuntoValidoClick: (Long) -> Unit,
     onMonitoreoActualizado: (String) -> Unit,
     onBackClick: () -> Unit = {},
@@ -106,8 +113,20 @@ fun MonitoreoMapaScreen(
         mutableStateOf<List<LocalPhytosanitaryCatalogEntity>>(emptyList())
     }
 
-    var ubicacionUsuario by remember {
-        mutableStateOf<Pair<Double, Double>?>(null)
+    var ubicacionGps by remember {
+        mutableStateOf<UbicacionGpsMapa?>(null)
+    }
+
+    val ubicacionUsuario = ubicacionGps?.coordenadasVisuales
+
+    var mostrarMapaPantallaCompleta by remember(header.idHeader) {
+        mutableStateOf(mostrarMapaCompletoInicial)
+    }
+
+    fun actualizarModoMapa(completo: Boolean) {
+        if (mostrarMapaPantallaCompleta == completo) return
+        mostrarMapaPantallaCompleta = completo
+        onModoMapaCompletoChange(completo)
     }
 
     var puntoLibreSeleccionado by remember {
@@ -157,7 +176,7 @@ fun MonitoreoMapaScreen(
         tienePermisoUbicacion = granted
 
         if (granted) {
-            ubicacionUsuario = obtenerUltimaUbicacion(context)
+            ubicacionGps = obtenerUltimaUbicacion(context)
         }
     }
 
@@ -247,7 +266,11 @@ fun MonitoreoMapaScreen(
                     additionalNotes = headerLocal.additionalNotes
                 )
             ) {
-                is ResultadoActualizarHeaderApi.Exito -> null
+                is ResultadoActualizarHeaderApi.Exito -> {
+                    database.localphytomonitoringheaderDao()
+                        .marcarHeaderSincronizado(headerLocal.idHeader)
+                    null
+                }
                 is ResultadoActualizarHeaderApi.Error -> resultado.mensaje
             }
         }
@@ -309,7 +332,8 @@ fun MonitoreoMapaScreen(
                         status = "En proceso",
                         startAt = inicioReal,
                         finishedAt = null,
-                        additionalNotes = "PAUSADO"
+                        additionalNotes = "PAUSADO",
+                        syncPending = true
                     )
 
                     database.localphytomonitoringheaderDao().updateHeader(nuevoHeader)
@@ -362,7 +386,8 @@ fun MonitoreoMapaScreen(
                         status = "En proceso",
                         startAt = fresco.startAt ?: System.currentTimeMillis(),
                         finishedAt = null,
-                        additionalNotes = ""
+                        additionalNotes = "",
+                        syncPending = true
                     )
 
                     database.localphytomonitoringheaderDao().updateHeader(nuevoHeader)
@@ -415,7 +440,8 @@ fun MonitoreoMapaScreen(
                     val nuevoHeader = fresco.copy(
                         status = "Completado",
                         finishedAt = terminadoMs,
-                        additionalNotes = notasAlCerrar(fresco.additionalNotes)
+                        additionalNotes = notasAlCerrar(fresco.additionalNotes),
+                        syncPending = true
                     )
 
                     database.localphytomonitoringheaderDao().updateHeader(nuevoHeader)
@@ -485,7 +511,8 @@ fun MonitoreoMapaScreen(
                         val nuevoHeader = fresco.copy(
                             status = "Completado",
                             finishedAt = cierreMs,
-                            additionalNotes = notaFinal
+                            additionalNotes = notaFinal,
+                            syncPending = true
                         )
 
                         database.localphytomonitoringheaderDao().updateHeader(nuevoHeader)
@@ -725,8 +752,75 @@ fun MonitoreoMapaScreen(
             checkpoints = checkpoints,
             catalogo = catalogo,
             ubicacionInicial = null,
-            internetDisponible = internetInicial
+            internetDisponible = internetInicial,
+            modoVistaPrevia = false
         )
+    }
+
+    val htmlMapaVistaPrevia = remember(
+        vertices,
+        puntos,
+        checkpoints,
+        catalogo,
+        nombreMonitoreo,
+        internetInicial
+    ) {
+        crearHtmlMapaMonitoreo(
+            nombreMonitoreo = nombreMonitoreo,
+            vertices = vertices,
+            puntos = puntos,
+            checkpoints = checkpoints,
+            catalogo = catalogo,
+            ubicacionInicial = null,
+            internetDisponible = internetInicial,
+            modoVistaPrevia = true
+        )
+    }
+
+    fun solicitarPuntoDesdeMapa() {
+        if (tiempoAgotado || estaPausado || estaCerrado) {
+            Toast.makeText(
+                context,
+                "Este monitoreo no permite capturar puntos en este estado",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        val ubicacionGpsActual = ubicacionGps
+        if (!ubicacionGpsListaParaCaptura(ubicacionGpsActual)) {
+            val mensajeGps = when {
+                ubicacionGpsActual == null -> {
+                    "Buscando una ubicación GPS precisa. Espera unos segundos e inténtalo nuevamente."
+                }
+
+                ubicacionGpsActual.precisionMetros > PRECISION_GPS_MAXIMA_CAPTURA_M -> {
+                    "La precisión GPS actual es de aproximadamente " +
+                            "${ubicacionGpsActual.precisionMetros.toInt()} m. " +
+                            "Espera a que mejore antes de registrar el punto."
+                }
+
+                else -> {
+                    "La ubicación GPS no es reciente. Espera una nueva lectura."
+                }
+            }
+
+            Toast.makeText(context, mensajeGps, Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val ubicacionGpsConfirmada = ubicacionGpsActual ?: return
+        val coordenadasGps = ubicacionGpsConfirmada.coordenadasCaptura
+        if (!ubicacionGpsEstaDentroDeParcela(coordenadasGps)) {
+            Toast.makeText(
+                context,
+                "Tu ubicación GPS actual está fuera de la parcela. No se puede registrar un punto fuera del área verde.",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
+        puntoLibreSeleccionado = coordenadasGps
     }
 
     fun solicitarRegreso() {
@@ -751,7 +845,7 @@ fun MonitoreoMapaScreen(
         if (!tienePermisoUbicacion) {
             permisoUbicacionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         } else {
-            ubicacionUsuario = obtenerUltimaUbicacion(context)
+            ubicacionGps = obtenerUltimaUbicacion(context)
         }
     }
 
@@ -759,32 +853,44 @@ fun MonitoreoMapaScreen(
         if (!tienePermisoUbicacion) {
             onDispose { }
         } else {
-            val locationManager =
-                context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val fusedLocationClient = LocationServices
+                .getFusedLocationProviderClient(context)
 
-            val listener = object : LocationListener {
-                override fun onLocationChanged(location: Location) {
-                    ubicacionUsuario = Pair(
-                        location.latitude,
-                        location.longitude
-                    )
+            val locationRequest = LocationRequest.Builder(
+                Priority.PRIORITY_HIGH_ACCURACY,
+                1_500L
+            )
+                .setMinUpdateIntervalMillis(900L)
+                .setMinUpdateDistanceMeters(0.5f)
+                .setMaxUpdateAgeMillis(0L)
+                .setWaitForAccurateLocation(true)
+                .setGranularity(Granularity.GRANULARITY_FINE)
+                .build()
+
+            val locationCallback = object : LocationCallback() {
+                override fun onLocationResult(locationResult: LocationResult) {
+                    locationResult.locations.forEach { location ->
+                        filtrarUbicacionGpsMapa(
+                            anterior = ubicacionGps,
+                            nueva = location
+                        )?.let { ubicacionFiltrada ->
+                            ubicacionGps = ubicacionFiltrada
+                        }
+                    }
                 }
             }
 
             try {
-                listOf(
-                    LocationManager.GPS_PROVIDER,
-                    LocationManager.NETWORK_PROVIDER
-                ).forEach { provider ->
-                    if (locationManager.isProviderEnabled(provider)) {
-                        locationManager.requestLocationUpdates(
-                            provider,
-                            1500L,
-                            0.1f,
-                            listener,
-                            Looper.getMainLooper()
-                        )
-                    }
+                fusedLocationClient.requestLocationUpdates(
+                    locationRequest,
+                    locationCallback,
+                    Looper.getMainLooper()
+                ).addOnFailureListener { errorGps ->
+                    Log.e(
+                        "MAPA_GPS",
+                        "No se pudieron iniciar las actualizaciones GPS",
+                        errorGps
+                    )
                 }
             } catch (e: SecurityException) {
                 e.printStackTrace()
@@ -794,11 +900,106 @@ fun MonitoreoMapaScreen(
 
             onDispose {
                 try {
-                    locationManager.removeUpdates(listener)
+                    fusedLocationClient.removeLocationUpdates(locationCallback)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
             }
+        }
+    }
+
+    if (mostrarMapaPantallaCompleta) {
+        Dialog(
+            onDismissRequest = {
+                if (!creandoPuntoLibre) {
+                    puntoLibreSeleccionado = null
+                    actualizarModoMapa(false)
+                }
+            },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.White)
+            ) {
+                CabeceraMapaCompleto(
+                    nombreMonitoreo = nombreMonitoreo,
+                    onCerrar = {
+                        if (!creandoPuntoLibre) {
+                            puntoLibreSeleccionado = null
+                            actualizarModoMapa(false)
+                        }
+                    }
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .background(Color(0xFFEAF5E8))
+                ) {
+                    MapaMonitoreoWebViewSeguro(
+                        modifier = Modifier.fillMaxSize(),
+                        htmlMapa = htmlMapa,
+                        ubicacionUsuario = ubicacionUsuario,
+                        precisionGpsMetros = ubicacionGps?.precisionMetros,
+                        puntoLibreSeleccionado = puntoLibreSeleccionado,
+                        internetDisponible = internetDisponible,
+                        onInternetDisponibleChange = {
+                            // La capa cambia sin reconstruir el WebView.
+                        },
+                        onPuntoLibreSeleccionado = { _, _ ->
+                            solicitarPuntoDesdeMapa()
+                        }
+                    )
+
+                    puntoLibreSeleccionado?.let {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(horizontal = 10.dp, vertical = 8.dp)
+                        ) {
+                            ConfirmarPuntoLibreCard(
+                                numeroPunto = numeroSiguientePunto,
+                                creandoPunto = creandoPuntoLibre,
+                                onConfirmarClick = {
+                                    crearPuntoLibreYRegistrar()
+                                },
+                                onCancelarClick = {
+                                    puntoLibreSeleccionado = null
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /*
+     * El mapa pequeño también puede iniciar el mismo flujo de captura.
+     * La confirmación se muestra como diálogo para que no quede limitada por
+     * la altura de la vista previa ni choque con la navegación del teléfono.
+     */
+    if (puntoLibreSeleccionado != null && !mostrarMapaPantallaCompleta) {
+        Dialog(
+            onDismissRequest = {
+                if (!creandoPuntoLibre) {
+                    puntoLibreSeleccionado = null
+                }
+            }
+        ) {
+            ConfirmarPuntoLibreCard(
+                numeroPunto = numeroSiguientePunto,
+                creandoPunto = creandoPuntoLibre,
+                onConfirmarClick = {
+                    crearPuntoLibreYRegistrar()
+                },
+                onCancelarClick = {
+                    puntoLibreSeleccionado = null
+                }
+            )
         }
     }
 
@@ -906,78 +1107,37 @@ fun MonitoreoMapaScreen(
                         colors = CardDefaults.cardColors(containerColor = Color.White),
                         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color.White)
-                        ) {
-                            MapaMonitoreoWebViewSeguro(
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            Box(
                                 modifier = Modifier
-                                    .fillMaxSize(),
-                                htmlMapa = htmlMapa,
-                                ubicacionUsuario = ubicacionUsuario,
-                                puntoLibreSeleccionado = puntoLibreSeleccionado,
-                                internetDisponible = internetDisponible,
-                                onInternetDisponibleChange = {
-                                    // Se ignora para evitar recargar el WebView.
-                                },
-                                onPuntoLibreSeleccionado = { _, _ ->
-                                    if (tiempoAgotado || estaPausado || estaCerrado) {
-                                        Toast.makeText(
-                                            context,
-                                            "Este monitoreo no permite capturar puntos en este estado",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                        return@MapaMonitoreoWebViewSeguro
-                                    }
-
-                                    /*
-                                     * El mapa solo dispara la acción. Ignoramos sus lat/lon
-                                     * para impedir que se guarde una coordenada elegida con el dedo.
-                                     */
-                                    val ubicacionGpsActual = ubicacionUsuario
-
-                                    if (ubicacionGpsActual == null) {
-                                        Toast.makeText(
-                                            context,
-                                            "Aún no se obtiene tu ubicación GPS. Espera unos segundos e inténtalo de nuevo.",
-                                            Toast.LENGTH_LONG
-                                        ).show()
-                                        return@MapaMonitoreoWebViewSeguro
-                                    }
-
-                                    if (!ubicacionGpsEstaDentroDeParcela(ubicacionGpsActual)) {
-                                        Toast.makeText(
-                                            context,
-                                            "Tu ubicación GPS actual está fuera de la parcela. No se puede registrar un punto fuera del área verde.",
-                                            Toast.LENGTH_LONG
-                                        ).show()
-                                        return@MapaMonitoreoWebViewSeguro
-                                    }
-
-                                    // Esta es la coordenada que verá la confirmación y que se guardará.
-                                    puntoLibreSeleccionado = ubicacionGpsActual
-                                }
-                            )
-
-                            puntoLibreSeleccionado?.let {
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.BottomCenter)
-                                        .padding(horizontal = 4.dp, vertical = 4.dp)
-                                ) {
-                                    ConfirmarPuntoLibreCard(
-                                        numeroPunto = numeroSiguientePunto,
-                                        creandoPunto = creandoPuntoLibre,
-                                        onConfirmarClick = {
-                                            crearPuntoLibreYRegistrar()
+                                    .fillMaxWidth()
+                                    .weight(1f)
+                                    .background(Color(0xFFEAF5E8))
+                            ) {
+                                if (!mostrarMapaPantallaCompleta) {
+                                    MapaMonitoreoWebViewSeguro(
+                                        modifier = Modifier.fillMaxSize(),
+                                        htmlMapa = htmlMapaVistaPrevia,
+                                        ubicacionUsuario = ubicacionUsuario,
+                                        precisionGpsMetros = ubicacionGps?.precisionMetros,
+                                        puntoLibreSeleccionado = puntoLibreSeleccionado,
+                                        internetDisponible = internetDisponible,
+                                        onInternetDisponibleChange = {
+                                            // La capa cambia sin reconstruir el WebView.
                                         },
-                                        onCancelarClick = {
-                                            puntoLibreSeleccionado = null
+                                        onPuntoLibreSeleccionado = { _, _ ->
+                                            solicitarPuntoDesdeMapa()
                                         }
                                     )
                                 }
                             }
+
+                            AbrirMapaCompletoCard(
+                                onAbrirMapa = {
+                                    puntoLibreSeleccionado = null
+                                    actualizarModoMapa(true)
+                                }
+                            )
                         }
                     }
 

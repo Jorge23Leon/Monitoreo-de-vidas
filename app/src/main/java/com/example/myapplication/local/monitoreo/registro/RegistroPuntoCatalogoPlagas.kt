@@ -149,7 +149,7 @@ private fun FitoMiniCard(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = item.name,
+                    text = nombreVisibleRegistro(item.name),
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Black,
                     color = Color(0xFF1D2430),

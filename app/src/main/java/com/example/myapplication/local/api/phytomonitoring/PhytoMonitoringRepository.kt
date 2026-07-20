@@ -59,6 +59,33 @@ class PhytoMonitoringRepository(
         }
     }
 
+    suspend fun obtenerHeaderDetalle(
+        id: String
+    ): ResultadoPhytoHeadersApi {
+        return try {
+            val response = api.obtenerHeaderDetalle(id)
+
+            if (!response.isSuccessful) {
+                val error = response.errorBody()?.string()
+                return ResultadoPhytoHeadersApi.Error(
+                    "Error detalle header $id: ${response.code()} ${error ?: response.message()}"
+                )
+            }
+
+            val header = response.body()
+                ?: return ResultadoPhytoHeadersApi.Error(
+                    "El servidor respondio vacio al consultar el header $id"
+                )
+
+            ResultadoPhytoHeadersApi.Exito(listOf(header))
+        } catch (e: Exception) {
+            ResultadoPhytoHeadersApi.Error(
+                "No se pudo cargar el detalle del header $id: " +
+                        (e.message ?: e.javaClass.simpleName)
+            )
+        }
+    }
+
     /**
      * Crea la sesión fitosanitaria remota, vinculada a un Programa ya creado.
      */

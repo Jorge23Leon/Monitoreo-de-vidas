@@ -101,6 +101,11 @@ class PhytoCheckpointSyncRepository(
             .getTargetPointsByHeader(headerLocal.idHeader)
             .associateBy { it.idTargetPoint }
 
+        val idsPuntosQueNecesitanVinculoRemoto = puntos.values
+            .filter { it.extId.isNullOrBlank() }
+            .map { it.idTargetPoint }
+            .toSet()
+
         val catalogo = database.localphytosanitarycatalogDao()
             .getAllCatalogo()
             .associateBy { it.idPhytosanitary }
@@ -134,7 +139,17 @@ class PhytoCheckpointSyncRepository(
          * quedaron sin target porque CSV solo conserva pcp_oid local.
          */
         checkpointsLocales
-            .filter { !it.extId.isNullOrBlank() }
+            .filter { checkpoint ->
+                if (checkpoint.extId.isNullOrBlank()) return@filter false
+
+                val necesitaTarget = checkpoint.idTargetPoint in
+                        idsPuntosQueNecesitanVinculoRemoto
+                val photoRef = obtenerPhotoRefLocal(checkpoint)
+                val necesitaPhotoRef = !photoRef.isNullOrBlank() &&
+                        photoRef in nombresFotosPendientes
+
+                necesitaTarget || necesitaPhotoRef
+            }
             .forEach { checkpoint ->
                 val targetExtId = targetExtPorPunto[checkpoint.idTargetPoint] ?: return@forEach
 
@@ -254,15 +269,7 @@ class PhytoCheckpointSyncRepository(
                 creadosJson++
             }
 
-        val descargaPosterior = descargarCheckpointsHeaderDesdeApi(headerLocal)
-        if (descargaPosterior.error != null) {
-            return@withContext ResultadoCheckpointSync.Error(
-                "Las capturas se enviaron, pero no se pudieron reconciliar en Room. " +
-                        "${descargaPosterior.error}"
-            )
-        }
-
-        var descargadosFinales = descargaPosterior.cantidad
+        val descargadosFinales = descargaInicial.cantidad + creadosJson
 
         val fotos = subirFotosPendientes(
             headerExtId = headerExtId,
@@ -296,22 +303,6 @@ class PhytoCheckpointSyncRepository(
                     fotosPendientes = true
                     mensajes += "El servidor no confirmó estas fotos; se conservaron para reintentar: ${fotos.pendientesSinConfirmar.joinToString()}"
                 }
-            }
-        }
-
-        /*
-         * Cuando el ZIP ya quedó confirmado, bajamos los checkpoints una vez más para
-         * recibir la ruta real del campo `photo` y guardarla como photoUrl en Room.
-         * Si esta descarga falla, la evidencia YA está segura en servidor y también
-         * quedó en uploaded local; no se vuelve a marcar como pendiente.
-         */
-        if (fotos is ResultadoFotosZip.Exito && fotos.movidas > 0) {
-            val descargaConFotos = descargarCheckpointsHeaderDesdeApi(headerLocal)
-
-            if (descargaConFotos.error != null) {
-                mensajes += "Las fotos se confirmaron, pero no se pudo actualizar su URL local: ${descargaConFotos.error}"
-            } else {
-                descargadosFinales = descargaConFotos.cantidad
             }
         }
 
@@ -369,6 +360,9 @@ class PhytoCheckpointSyncRepository(
             )
             return false
         }
+
+        database.localphytomonitoringheaderDao()
+            .marcarHeaderSincronizado(headerLocal.idHeader)
 
         return true
     }
@@ -794,8 +788,11 @@ class PhytoCheckpointSyncRepository(
         )
 
         if (existentePorExtId != null) {
-            database.localphytomonitoringcheckpointDao()
-                .updateCheckpoint(nuevo.copy(idCheckpoint = existentePorExtId.idCheckpoint))
+            val actualizado = nuevo.copy(idCheckpoint = existentePorExtId.idCheckpoint)
+            if (actualizado != existentePorExtId) {
+                database.localphytomonitoringcheckpointDao()
+                    .updateCheckpoint(actualizado)
+            }
         } else {
             val mismaCapturaLocalExacta = database.localphytomonitoringcheckpointDao()
                 .buscarCheckpointLocalMismaCaptura(
@@ -813,25 +810,35 @@ class PhytoCheckpointSyncRepository(
             if (mismaCapturaLocalFlexible != null && mismaCapturaLocalFlexible.extId.isNullOrBlank()) {
                 // El import CSV no regresa los IDs creados. Al descargar se conserva la
                 // referencia y la ruta local que ya tenía la captura offline.
-                database.localphytomonitoringcheckpointDao()
-                    .updateCheckpoint(
-                        nuevo.copy(
-                            idCheckpoint = mismaCapturaLocalFlexible.idCheckpoint,
-                            photoRef = photoRefApi ?: mismaCapturaLocalFlexible.photoRef,
-                            photoLocalPath = mismaCapturaLocalFlexible.photoLocalPath,
-                            photoUrl = photoUrlApi ?: mismaCapturaLocalFlexible.photoUrl
-                        )
-                    )
+                val actualizado = nuevo.copy(
+                    idCheckpoint = mismaCapturaLocalFlexible.idCheckpoint,
+                    photoRef = photoRefApi ?: mismaCapturaLocalFlexible.photoRef,
+                    photoLocalPath = mismaCapturaLocalFlexible.photoLocalPath,
+                    photoUrl = photoUrlApi ?: mismaCapturaLocalFlexible.photoUrl
+                )
+                if (actualizado != mismaCapturaLocalFlexible) {
+                    database.localphytomonitoringcheckpointDao()
+                        .updateCheckpoint(actualizado)
+                }
             } else {
                 database.localphytomonitoringcheckpointDao()
                     .upsertCheckpointFromApi(nuevo)
             }
         }
-        database.LocalPhytomonitoringTargetPointDao()
-            .actualizarStatusPunto(
-                idTargetPoint = targetLocal.idTargetPoint,
-                status = "Completado"
-            )
+        if (!targetLocal.status.equals("Completado", ignoreCase = true)) {
+            database.LocalPhytomonitoringTargetPointDao()
+                .actualizarStatusPunto(
+                    idTargetPoint = targetLocal.idTargetPoint,
+                    status = "Completado"
+                )
+
+            val indiceTarget = puntosHeader.indexOfFirst {
+                it.idTargetPoint == targetLocal.idTargetPoint
+            }
+            if (indiceTarget >= 0) {
+                puntosHeader[indiceTarget] = targetLocal.copy(status = "Completado")
+            }
+        }
 
         return true
     }
@@ -1208,7 +1215,7 @@ class PhytoCheckpointSyncRepository(
                     fileName = photoRef
                 )
 
-                if (file != null) {
+                if (file != null && checkpoint.photoLocalPath != file.absolutePath) {
                     dao.updateCheckpoint(
                         checkpoint.copy(photoLocalPath = file.absolutePath)
                     )

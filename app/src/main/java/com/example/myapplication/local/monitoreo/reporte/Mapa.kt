@@ -770,8 +770,8 @@ internal fun crearHtmlMapaReporteUi(
 
                 .marcador-pe {
                     position: relative;
-                    width: 44px;
-                    height: 48px;
+                    width: 28px;
+                    height: 32px;
                     user-select: none;
                     -webkit-user-select: none;
                 }
@@ -779,13 +779,13 @@ internal fun crearHtmlMapaReporteUi(
                 .marcador-pe-letras {
                     position: absolute;
                     top: 0;
-                    left: 4px;
-                    width: 36px;
+                    left: 5px;
+                    width: 18px;
                     display: flex;
                     justify-content: space-around;
                     color: #FFFFFF;
-                    font-size: 11px;
-                    line-height: 13px;
+                    font-size: 9px;
+                    line-height: 11px;
                     font-weight: 900;
                     text-shadow:
                         -1px -1px 2px #111111,
@@ -796,13 +796,13 @@ internal fun crearHtmlMapaReporteUi(
 
                 .marcador-pe-circulo {
                     position: absolute;
-                    top: 14px;
+                    top: 12px;
                     left: 5px;
                     display: flex;
-                    width: 34px;
-                    height: 34px;
+                    width: 18px;
+                    height: 18px;
                     overflow: hidden;
-                    border: 2.5px solid #17211B;
+                    border: 2px solid #17211B;
                     border-radius: 50%;
                     box-sizing: border-box;
                     background: #16A34A;
@@ -1589,9 +1589,9 @@ internal fun crearHtmlMapaReporteUi(
                     return L.divIcon({
                         className: 'marcador-pe-wrapper',
                         html: html,
-                        iconSize: [44, 48],
-                        iconAnchor: [22, 31],
-                        tooltipAnchor: [0, -22]
+                        iconSize: [28, 32],
+                        iconAnchor: [14, 21],
+                        tooltipAnchor: [0, -16]
                     });
                 }
 
@@ -2212,8 +2212,13 @@ internal fun crearHtmlMapaReporteUi(
                             const colorBase = colorEstado(p.status, p);
                             const colorMancha = colorGlobalPunto(p);
 
-                            L.circle([p.lat, p.lon], {
-                                radius: Math.max(0.5, Number(p.radius || 7.5)),
+                            /*
+                             * Círculo visual fijo en píxeles. L.circle usaba metros y
+                             * cambiaba de tamaño al hacer zoom. El radio real del punto
+                             * se conserva en p.radius para los cálculos de superficie.
+                             */
+                            L.circleMarker([p.lat, p.lon], {
+                                radius: 13,
                                 color: colorMancha,
                                 weight: p.conProblema ? 2 : 1.25,
                                 opacity: 0.92,
