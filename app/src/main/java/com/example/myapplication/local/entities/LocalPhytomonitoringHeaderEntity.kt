@@ -41,7 +41,9 @@ import androidx.room.PrimaryKey
         Index(value = ["idLocalPlot"]),
         Index(value = ["status"]),
         Index(value = ["cycle"]),
-        Index(value = ["assigned_user_id"])
+        Index(value = ["assigned_user_id"]),
+        Index(value = ["est_start_date"]),
+        Index(value = ["sync_pending"])
     ]
 )
 data class LocalPhytomonitoringHeaderEntity(
@@ -83,5 +85,13 @@ data class LocalPhytomonitoringHeaderEntity(
     val idLocalPlot: Long,
 
     @ColumnInfo(name = "assigned_user_id")
-    val assignedUserId: Long? = null
+    val assignedUserId: Long? = null,
+
+    /**
+     * Indica que el estado del header cambio en el telefono y aun no ha sido
+     * confirmado por la API. Evita reenviar todos los monitoreos historicos en
+     * cada sincronizacion.
+     */
+    @ColumnInfo(name = "sync_pending", defaultValue = "0")
+    val syncPending: Boolean = false
 )

@@ -511,7 +511,9 @@ class AgroCatalogsRepository(
         )
 
         return if (existente != null) {
-            dao.updatePhytosanitary(entidad)
+            if (entidad != existente) {
+                dao.updatePhytosanitary(entidad)
+            }
             existente.idPhytosanitary
         } else {
             dao.insertPhytosanitary(entidad)
@@ -542,7 +544,9 @@ class AgroCatalogsRepository(
         )
 
         if (existente != null) {
-            dao.updatePhytostage(entidad)
+            if (entidad != existente) {
+                dao.updatePhytostage(entidad)
+            }
         } else {
             dao.insertPhytostage(entidad)
         }

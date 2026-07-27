@@ -15,6 +15,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +36,10 @@ import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
 import com.example.myapplication.local.entities.LocalPlotEntity
 import com.example.myapplication.local.entities.LocalProgramEntity
 import com.example.myapplication.local.entities.LocalRanchEntity
+import com.example.myapplication.local.monitoreo.estadoMuestraTiempoMonitoreo
+import com.example.myapplication.local.monitoreo.fechaCierreProgramadaMonitoreoMs
+import com.example.myapplication.local.monitoreo.textoResumenTiempoMonitoreo
+import kotlinx.coroutines.delay
 import java.util.Locale
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -81,6 +86,17 @@ fun MonitoreoFiltrosScreen(
     onCancelarMonitoreoClick: (LocalPhytomonitoringHeaderEntity, String) -> Unit = { _, _ -> },
     onPerfilClick: () -> Unit = {}
 ) {
+    var ahoraMs by remember {
+        mutableStateOf(System.currentTimeMillis())
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            ahoraMs = System.currentTimeMillis()
+            delay(1_000L)
+        }
+    }
+
     val rolNormalizado = remember(rolUsuario) {
         normalizarRolVm(rolUsuario)
     }
@@ -130,8 +146,20 @@ fun MonitoreoFiltrosScreen(
     }
 
     var filtrosExpandidos by remember {
-        mutableStateOf(true)
+        /*
+         * Si aun no existen monitoreos, dejamos visibles Productor, Rancho y
+         * Parcela. Los catalogos agricolas son independientes de los headers y
+         * sirven tambien para comprobar que la CIA quedo bien sincronizada.
+        */
+        mutableStateOf(monitoreos.isEmpty())
     }
+
+    LaunchedEffect(monitoreos.isEmpty()) {
+        if (monitoreos.isEmpty()) {
+            filtrosExpandidos = true
+        }
+    }
+
     var monitoreoCanceladoParaVer by remember {
         mutableStateOf<LocalPhytomonitoringHeaderEntity?>(null)
     }
@@ -401,7 +429,7 @@ fun MonitoreoFiltrosScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.White)
-                .padding(18.dp)
+                .padding(14.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -432,7 +460,7 @@ fun MonitoreoFiltrosScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                FiltrosPrincipalesCard(
+                PanelFiltrosConsultaCompacto(
                     filtrosExpandidos = filtrosExpandidos,
                     onExpandChange = {
                         filtrosExpandidos = !filtrosExpandidos
@@ -443,32 +471,22 @@ fun MonitoreoFiltrosScreen(
                     productorSeleccionado = productorSeleccionado,
                     ranchoSeleccionado = ranchoSeleccionado,
                     parcelaSeleccionada = parcelaSeleccionada,
-                    onProductorChange = onProductorChange,
-                    onRanchoChange = onRanchoChange,
-                    onParcelaChange = onParcelaChange
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                FiltrosSecundarios(
                     cicloFiltro = cicloFiltro,
                     programas = programasDisponibles,
                     fechaInicioTexto = fechaInicioTexto,
                     fechaFinTexto = fechaFinTexto,
                     estadoFiltro = estadoFiltro,
-                    onCicloChange = {
-                        cicloFiltro = it
-                    },
-                    onFechaInicioChange = {
-                        fechaInicioTexto = it
-                    },
-                    onFechaFinChange = {
-                        fechaFinTexto = it
-                    },
-                    onEstadoChange = {
-                        estadoFiltro = it
-                    },
+                    onProductorChange = onProductorChange,
+                    onRanchoChange = onRanchoChange,
+                    onParcelaChange = onParcelaChange,
+                    onCicloChange = { cicloFiltro = it },
+                    onFechaInicioChange = { fechaInicioTexto = it },
+                    onFechaFinChange = { fechaFinTexto = it },
+                    onEstadoChange = { estadoFiltro = it },
                     onLimpiarClick = {
+                        onParcelaChange(null)
+                        onRanchoChange(null)
+                        onProductorChange(null)
                         cicloFiltro = null
                         fechaInicioTexto = ""
                         fechaFinTexto = ""
@@ -476,7 +494,7 @@ fun MonitoreoFiltrosScreen(
                     }
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 BarraActualizarMonitoreosFiltros(
                     titulo = "Monitoreos disponibles: ${monitoreosFiltrados.size}",
@@ -537,6 +555,16 @@ fun MonitoreoFiltrosScreen(
                             codigo = header.extId ?: programa?.extId ?: "MON-${header.idHeader}",
                             fotoCultivo = cultivo?.photo,
                             nombreCultivo = cultivo?.name,
+                            textoTiempo = if (estadoMuestraTiempoMonitoreo(header.status)) {
+                                textoResumenTiempoMonitoreo(
+                                    fechaCierreProgramadaMs = fechaCierreProgramadaMonitoreoMs(
+                                        programa = programa
+                                    ),
+                                    ahoraMs = ahoraMs
+                                )
+                            } else {
+                                null
+                            },
 
                             mostrarAbrir = (esAdmin || esGerente || esSupervisor) && !cerrado && !cancelado,
                             mostrarReporte = cerrado && !cancelado,

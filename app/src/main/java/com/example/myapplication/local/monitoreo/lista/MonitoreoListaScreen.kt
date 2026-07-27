@@ -15,6 +15,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +34,10 @@ import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
 import com.example.myapplication.local.entities.LocalPlotEntity
 import com.example.myapplication.local.entities.LocalProgramEntity
 import com.example.myapplication.local.entities.LocalRanchEntity
+import com.example.myapplication.local.monitoreo.estadoMuestraTiempoMonitoreo
+import com.example.myapplication.local.monitoreo.fechaCierreProgramadaMonitoreoMs
+import com.example.myapplication.local.monitoreo.textoResumenTiempoMonitoreo
+import kotlinx.coroutines.delay
 import java.util.Locale
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -66,6 +71,17 @@ fun MonitoreoListaScreen(
     onMonitoreosClick: () -> Unit = {},
     onAdminClick: () -> Unit = {}
 ) {
+    var ahoraMs by remember {
+        mutableStateOf(System.currentTimeMillis())
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            ahoraMs = System.currentTimeMillis()
+            delay(1_000L)
+        }
+    }
+
     val rolNormalizado = remember(rolUsuario) { normalizarRolVm(rolUsuario) }
 
     val rolParaPermisos = remember(rolUsuario, rolNormalizado) {
@@ -178,6 +194,10 @@ fun MonitoreoListaScreen(
 
     var estadoFiltro by remember {
         mutableStateOf("Todos")
+    }
+
+    var filtrosExpandidos by remember {
+        mutableStateOf(false)
     }
 
     val fechaInicioMillis = parseFechaInicioLista(fechaInicioTexto)
@@ -372,7 +392,7 @@ fun MonitoreoListaScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
-            .padding(18.dp)
+            .padding(14.dp)
     ) {
         Column(
             modifier = Modifier
@@ -417,21 +437,18 @@ fun MonitoreoListaScreen(
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            if (esTecnico && parcelasDisponibles.isNotEmpty()) {
-                SelectorParcelaOpcionalMonitoreo(
-                    parcelaSeleccionada = parcelaSeleccionada,
-                    parcelas = parcelasDisponibles,
-                    onParcelaSeleccionada = { parcela ->
-                        idParcelaSeleccionada = parcela?.idLocalPlot
-                        cicloFiltro = null
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            FiltrosCompactosBarra(
+            PanelFiltrosListaCompacto(
+                filtrosExpandidos = filtrosExpandidos,
+                onExpandChange = {
+                    filtrosExpandidos = !filtrosExpandidos
+                },
+                mostrarFiltroParcela = esTecnico && parcelasDisponibles.isNotEmpty(),
+                parcelaSeleccionada = parcelaSeleccionada,
+                parcelas = parcelasDisponibles,
+                onParcelaSeleccionada = { parcela ->
+                    idParcelaSeleccionada = parcela?.idLocalPlot
+                    cicloFiltro = null
+                },
                 cicloFiltro = cicloFiltro,
                 programas = programasPorParcela,
                 fechaInicioTexto = fechaInicioTexto,
@@ -442,6 +459,7 @@ fun MonitoreoListaScreen(
                 onFechaFinChange = { fechaFinTexto = it },
                 onEstadoChange = { estadoFiltro = it },
                 onLimpiarClick = {
+                    idParcelaSeleccionada = null
                     cicloFiltro = null
                     fechaInicioTexto = ""
                     fechaFinTexto = ""
@@ -449,7 +467,7 @@ fun MonitoreoListaScreen(
                 }
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             BarraActualizarMonitoreosLista(
                 titulo = if (esInvitado) {
@@ -513,6 +531,16 @@ fun MonitoreoListaScreen(
                         additionalNotes = header.additionalNotes,
                         fechaInicio = header.estStartDate,
                         fechaFin = header.estFinishDate,
+                        textoTiempo = if (estadoMuestraTiempoMonitoreo(header.status)) {
+                            textoResumenTiempoMonitoreo(
+                                fechaCierreProgramadaMs = fechaCierreProgramadaMonitoreoMs(
+                                    programa = programa
+                                ),
+                                ahoraMs = ahoraMs
+                            )
+                        } else {
+                            null
+                        },
                         puedeAbrir = (esAdmin || esGerente || esSupervisor || esTecnico || esInvitado) && !monitoreoCerrado,
                         soloConsulta = soloConsulta,
                         puedeCancelar = (esAdmin || esGerente || esSupervisor || esTecnico || esInvitado) &&

@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.myapplication.local.common.ImageUriBox
@@ -50,7 +51,7 @@ import androidx.compose.runtime.setValue
 import java.util.Locale
 
 @Composable
-internal fun FiltrosPrincipalesCard(
+internal fun PanelFiltrosConsultaCompacto(
     filtrosExpandidos: Boolean,
     onExpandChange: () -> Unit,
     productores: List<LocalAgroUnitEntity>,
@@ -59,48 +60,144 @@ internal fun FiltrosPrincipalesCard(
     productorSeleccionado: LocalAgroUnitEntity?,
     ranchoSeleccionado: LocalRanchEntity?,
     parcelaSeleccionada: LocalPlotEntity?,
+    cicloFiltro: LocalProgramEntity?,
+    programas: List<LocalProgramEntity>,
+    fechaInicioTexto: String,
+    fechaFinTexto: String,
+    estadoFiltro: String,
     onProductorChange: (LocalAgroUnitEntity?) -> Unit,
     onRanchoChange: (LocalRanchEntity?) -> Unit,
-    onParcelaChange: (LocalPlotEntity?) -> Unit
+    onParcelaChange: (LocalPlotEntity?) -> Unit,
+    onCicloChange: (LocalProgramEntity?) -> Unit,
+    onFechaInicioChange: (String) -> Unit,
+    onFechaFinChange: (String) -> Unit,
+    onEstadoChange: (String) -> Unit,
+    onLimpiarClick: () -> Unit
 ) {
+    val filtrosActivos = listOf(
+        productorSeleccionado != null,
+        ranchoSeleccionado != null,
+        parcelaSeleccionada != null,
+        cicloFiltro != null,
+        fechaInicioTexto.isNotBlank(),
+        fechaFinTexto.isNotBlank(),
+        !estadoFiltro.equals("Todos", ignoreCase = true)
+    ).count { it }
+
+    val resumen = buildList {
+        productorSeleccionado?.commercial_name
+            ?.takeIf { it.isNotBlank() }
+            ?.let { add("Productor: $it") }
+
+        ranchoSeleccionado?.name
+            ?.takeIf { it.isNotBlank() }
+            ?.let { add("Rancho: $it") }
+
+        parcelaSeleccionada?.let {
+            add("Parcela: ${obtenerNombreParcelaFiltro(it)}")
+        }
+
+        cicloFiltro?.let {
+            add("Ciclo: ${textoCicloFiltro(it.cycle)}")
+        }
+
+        fechaInicioTexto.takeIf { it.isNotBlank() }
+            ?.let { add("Desde: $it") }
+
+        fechaFinTexto.takeIf { it.isNotBlank() }
+            ?.let { add("Hasta: $it") }
+
+        estadoFiltro.takeIf { !it.equals("Todos", ignoreCase = true) }
+            ?.let { add("Estado: $it") }
+    }.joinToString(" · ").ifBlank { "Todos los monitoreos" }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp)
+                .padding(horizontal = 14.dp, vertical = 11.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onExpandChange),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Filtros de consulta",
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF163D1D),
-                    modifier = Modifier.weight(1f)
-                )
-
-                TextButton(
-                    onClick = onExpandChange,
-                    contentPadding = PaddingValues(horizontal = 8.dp)
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFE8F5E9)),
+                    contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = if (filtrosExpandidos) "−" else "+",
-                        fontSize = 20.sp,
+                        text = "≡",
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF2E6B2E)
+                        color = Color(0xFF0B6B20)
                     )
                 }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Filtros",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFF173B1A)
+                        )
+
+                        if (filtrosActivos > 0) {
+                            Spacer(modifier = Modifier.width(7.dp))
+                            Text(
+                                text = "$filtrosActivos aplicados",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0B6B20),
+                                modifier = Modifier
+                                    .background(
+                                        color = Color(0xFFE8F5E9),
+                                        shape = RoundedCornerShape(20.dp)
+                                    )
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = resumen,
+                        fontSize = 11.sp,
+                        color = Color(0xFF667064),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                TextButton(onClick = onExpandChange) {
+                    Text(
+                        text = if (filtrosExpandidos) "Cerrar" else "Editar",
+                        color = Color(0xFF0B6B20),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
+
+                Text(
+                    text = if (filtrosExpandidos) "⌃" else "⌄",
+                    color = Color(0xFF173B1A),
+                    fontSize = 17.sp
+                )
             }
 
             if (filtrosExpandidos) {
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 SelectorFiltroConTodos(
                     label = "Productor",
@@ -110,22 +207,20 @@ internal fun FiltrosPrincipalesCard(
                     itemText = { it.commercial_name },
                     enabled = productores.isNotEmpty(),
                     modifier = Modifier.fillMaxWidth(),
-                    onSelected = { productor ->
-                        onProductorChange(productor)
-                    }
+                    onSelected = onProductorChange
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(9.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
                     SelectorFiltroConTodos(
                         label = "Rancho",
                         selected = ranchoSeleccionado,
                         allText = if (productorSeleccionado == null) {
-                            "Primero selecciona productor"
+                            "Selecciona productor"
                         } else {
                             "Todos"
                         },
@@ -133,16 +228,14 @@ internal fun FiltrosPrincipalesCard(
                         itemText = { it.name },
                         enabled = productorSeleccionado != null && ranchos.isNotEmpty(),
                         modifier = Modifier.weight(1f),
-                        onSelected = { rancho ->
-                            onRanchoChange(rancho)
-                        }
+                        onSelected = onRanchoChange
                     )
 
                     SelectorFiltroConTodos(
                         label = "Parcela",
                         selected = parcelaSeleccionada,
                         allText = if (ranchoSeleccionado == null) {
-                            "Primero selecciona rancho"
+                            "Selecciona rancho"
                         } else {
                             "Todas"
                         },
@@ -150,106 +243,66 @@ internal fun FiltrosPrincipalesCard(
                         itemText = { obtenerNombreParcelaFiltro(it) },
                         enabled = ranchoSeleccionado != null && parcelas.isNotEmpty(),
                         modifier = Modifier.weight(1f),
-                        onSelected = { parcela ->
-                            onParcelaChange(parcela)
-                        }
+                        onSelected = onParcelaChange
                     )
                 }
-            } else {
-                Spacer(modifier = Modifier.height(4.dp))
 
-                Text(
-                    text = resumenFiltrosPrincipales(
-                        productor = productorSeleccionado,
-                        rancho = ranchoSeleccionado,
-                        parcela = parcelaSeleccionada
-                    ),
-                    fontSize = 11.sp,
-                    color = Color.DarkGray,
-                    lineHeight = 15.sp
-                )
-            }
-        }
-    }
-}
+                Spacer(modifier = Modifier.height(10.dp))
 
-@Composable
-internal fun FiltrosSecundarios(
-    cicloFiltro: LocalProgramEntity?,
-    programas: List<LocalProgramEntity>,
-    fechaInicioTexto: String,
-    fechaFinTexto: String,
-    estadoFiltro: String,
-    onCicloChange: (LocalProgramEntity?) -> Unit,
-    onFechaInicioChange: (String) -> Unit,
-    onFechaFinChange: (String) -> Unit,
-    onEstadoChange: (String) -> Unit,
-    onLimpiarClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(10.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                SelectorFiltroOpcionalPrograma(
-                    icono = "↻",
-                    label = "Ciclo",
-                    selected = cicloFiltro,
-                    items = programas,
-                    modifier = Modifier.width(142.dp),
-                    onSelected = onCicloChange
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SelectorFiltroOpcionalPrograma(
+                        icono = "↻",
+                        label = "Ciclo",
+                        selected = cicloFiltro,
+                        items = programas,
+                        modifier = Modifier.width(130.dp),
+                        onSelected = onCicloChange
+                    )
 
-                SelectorFechaFiltro(
-                    icono = "📅",
-                    label = "Inicio",
-                    value = fechaInicioTexto,
-                    modifier = Modifier.width(142.dp),
-                    onValueChange = onFechaInicioChange
-                )
+                    SelectorFechaFiltro(
+                        icono = "▣",
+                        label = "Inicio",
+                        value = fechaInicioTexto,
+                        modifier = Modifier.width(130.dp),
+                        onValueChange = onFechaInicioChange
+                    )
 
-                SelectorFechaFiltro(
-                    icono = "📅",
-                    label = "Fin",
-                    value = fechaFinTexto,
-                    modifier = Modifier.width(142.dp),
-                    onValueChange = onFechaFinChange
-                )
+                    SelectorFechaFiltro(
+                        icono = "▣",
+                        label = "Fin",
+                        value = fechaFinTexto,
+                        modifier = Modifier.width(130.dp),
+                        onValueChange = onFechaFinChange
+                    )
 
-                SelectorEstadoFiltro(
-                    icono = "⚑",
-                    label = "Estado",
-                    selected = estadoFiltro,
-                    modifier = Modifier.width(142.dp),
-                    onSelected = onEstadoChange
-                )
-            }
+                    SelectorEstadoFiltro(
+                        icono = "✓",
+                        label = "Estado",
+                        selected = estadoFiltro,
+                        modifier = Modifier.width(130.dp),
+                        onSelected = onEstadoChange
+                    )
+                }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            TextButton(
-                onClick = onLimpiarClick,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            ) {
-                Text(
-                    text = "↻  Limpiar filtros",
-                    color = Color(0xFF1F6D2A),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
-                )
+                if (filtrosActivos > 0) {
+                    TextButton(
+                        onClick = onLimpiarClick,
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text(
+                            text = "↻ Limpiar filtros",
+                            color = Color(0xFF0B6B20),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
             }
         }
     }
@@ -331,6 +384,7 @@ internal fun TarjetaMonitoreoConsulta(
     codigo: String,
     fotoCultivo: String?,
     nombreCultivo: String?,
+    textoTiempo: String? = null,
     mostrarAbrir: Boolean,
     mostrarReporte: Boolean,
     puedeCancelar: Boolean = false,
@@ -487,6 +541,25 @@ internal fun TarjetaMonitoreoConsulta(
                             maxLines = 1
                         )
                     }
+                }
+
+                textoTiempo?.let { tiempo ->
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = "⏱  $tiempo",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                color = Color(0xFFFFF4E5),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        color = Color(0xFFB85C00),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
                 }
 
                 if (estaCancelado) {

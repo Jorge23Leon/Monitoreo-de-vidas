@@ -1,13 +1,9 @@
 package com.example.myapplication.local.admin.monitoreos
 
 import android.content.Context
-import com.example.myapplication.local.api.fieldops.FieldOpsRepository
+import com.example.myapplication.local.api.core.ApiDateParser
 import com.example.myapplication.local.api.fieldops.FieldTaskApiItem
-import com.example.myapplication.local.api.fieldops.FieldTaskCreateRequest
-import com.example.myapplication.local.api.fieldops.FieldTaskPatchRequest
 import com.example.myapplication.local.api.fieldops.MasterProgramApiItem
-import com.example.myapplication.local.api.fieldops.ResultadoCrearFieldTaskApi
-import com.example.myapplication.local.api.fieldops.ResultadoFieldOpsApi
 import com.example.myapplication.local.api.phytomonitoring.PhytoHeaderApiItem
 import com.example.myapplication.local.api.phytomonitoring.PhytoHeaderCreateRequest
 import com.example.myapplication.local.api.phytomonitoring.PhytoMonitoringRepository
@@ -20,28 +16,20 @@ import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
 import com.example.myapplication.local.entities.LocalPlotEntity
 import com.example.myapplication.local.entities.LocalProgramEntity
 import com.example.myapplication.local.entities.LocalRanchEntity
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
-import java.util.TimeZone
 
 /**
- * Crea el monitoreo administrativo en este orden:
+ * Crea únicamente la sesión fitosanitaria (PhytoHeader).
  *
- * 1) FieldTask remoto (Programa).
- * 2) PhytoHeader remoto, enlazado al FieldTask.
- * 3) Copia local de ambos objetos en Room, incluyendo los UUID extId.
- *
- * El repositorio busca primero un Programa/Header igual ya existente en servidor.
- * Esto evita duplicarlo si una petición anterior creó el registro pero la app no
- * alcanzó a recibir la respuesta o se cerró antes de guardar Room.
+ * El Programa Maestro y el Subprograma (FieldTask) deben existir previamente
+ * en Django. La app nunca crea ni modifica esos registros desde esta pantalla.
  */
 class AdminMonitoreoRepository(
     context: Context,
     private val database: AppDatabase
 ) {
-    private val fieldOpsRepository = FieldOpsRepository(context.applicationContext)
-    private val phytoMonitoringRepository = PhytoMonitoringRepository(context.applicationContext)
+    private val phytoMonitoringRepository =
+        PhytoMonitoringRepository(context.applicationContext)
 
     suspend fun crearMonitoreo(
         idLocalCia: Long,
@@ -50,200 +38,138 @@ class AdminMonitoreoRepository(
         parcela: LocalPlotEntity,
         cultivo: LocalCropCatalogEntity,
         programaMaestro: MasterProgramApiItem,
-        ciclo: String,
-        fechaInicioMillis: Long,
-        fechaFinMillis: Long
+        subprograma: FieldTaskApiItem
     ): ResultadoCrearMonitoreoAdmin {
         val productorExtId = productor.ext_Id?.trim().orEmpty()
         val parcelaExtId = parcela.extId?.trim().orEmpty()
         val cultivoExtId = cultivo.extId?.trim().orEmpty()
-        val masterProgramExtId = programaMaestro.id.trim()
+        val programaMaestroExtId = programaMaestro.id.trim()
+        val subprogramaExtId = subprograma.id.trim()
 
         when {
+            idLocalCia <= 0L -> return ResultadoCrearMonitoreoAdmin.Error(
+                "Selecciona una CIA válida."
+            )
+
             productorExtId.isBlank() -> return ResultadoCrearMonitoreoAdmin.Error(
-                "El productor seleccionado no tiene UUID remoto. Sincroniza organizaciones antes de crear el monitoreo."
+                "El productor no tiene UUID remoto. Sincroniza la información de la CIA."
             )
 
             parcelaExtId.isBlank() -> return ResultadoCrearMonitoreoAdmin.Error(
-                "La parcela seleccionada no tiene UUID remoto. Sincroniza parcelas antes de crear el monitoreo."
+                "La parcela del subprograma no tiene UUID remoto. Sincroniza las parcelas."
             )
 
             cultivoExtId.toIntOrNull() == null -> return ResultadoCrearMonitoreoAdmin.Error(
-                "El cultivo seleccionado no tiene ID remoto válido. Actualiza el catálogo de cultivos."
+                "El cultivo del subprograma no tiene ID remoto válido. Sincroniza los catálogos."
             )
 
-            masterProgramExtId.isBlank() -> return ResultadoCrearMonitoreoAdmin.Error(
-                "Selecciona un programa maestro válido."
+            programaMaestroExtId.isBlank() -> return ResultadoCrearMonitoreoAdmin.Error(
+                "Selecciona un programa válido."
+            )
+
+            subprogramaExtId.isBlank() -> return ResultadoCrearMonitoreoAdmin.Error(
+                "Selecciona un subprograma válido."
             )
         }
 
-        /*
-         * Defensa extra: el backend también valida esta relación, pero validarla aquí
-         * evita una petición que terminaría en 400.
-         */
-        val productorDelMaster = programaMaestro.agroUnit?.trim()
-        if (!productorDelMaster.isNullOrBlank() && productorDelMaster != productorExtId) {
+        val productorDelPrograma = programaMaestro.agroUnit?.trim()
+        if (!productorDelPrograma.isNullOrBlank() && productorDelPrograma != productorExtId) {
             return ResultadoCrearMonitoreoAdmin.Error(
-                "El programa maestro elegido no pertenece al productor seleccionado."
+                "El programa seleccionado no pertenece al productor."
             )
         }
 
-        val fechaInicioIso = formatearIsoUtc(fechaInicioMillis)
-        val fechaFinIso = formatearIsoUtc(fechaFinMillis)
-        val fechaInicioSolicitada = formatearSoloFecha(fechaInicioMillis)
-        val fechaFinSolicitada = formatearSoloFecha(fechaFinMillis)
-        val tituloProgramaVisible = crearTituloProgramaVisible(
-            ciclo = ciclo,
-            parcela = parcela,
-            cultivo = cultivo
-        )
-        val codigoProgramaVisible = crearCodigoProgramaVisible(
-            ciclo = ciclo,
-            parcela = parcela,
-            fechaInicio = fechaInicioSolicitada
-        )
-
-        /*
-         * Un intento anterior puede haber creado el Programa remoto y fallar después
-         * al crear el Header. Django no permite otro Programa hijo que se traslape
-         * para la misma parcela y Programa Maestro.
-         *
-         * Por eso, si ya existe uno para el mismo Master + Plot que se traslapa,
-         * se reutiliza ese Programa y se continúa con la creación/recuperación del
-         * Header. Nunca se intenta duplicarlo.
-         */
-        val programaRemotoBase = when (
-            val buscado = fieldOpsRepository.obtenerTodosLosProgramasCampo(
-                masterProgram = masterProgramExtId,
-                plot = parcelaExtId
-            )
+        val programaPadreDelSubprograma = subprograma.masterProgram?.trim()
+        if (
+            !programaPadreDelSubprograma.isNullOrBlank() &&
+            programaPadreDelSubprograma != programaMaestroExtId
         ) {
-            is ResultadoFieldOpsApi.Error -> {
-                return ResultadoCrearMonitoreoAdmin.Error(
-                    "No se pudo revisar si ya existe el programa. ${buscado.mensaje}"
-                )
-            }
-
-            is ResultadoFieldOpsApi.Exito -> {
-                val programaExacto = buscado.programas.firstOrNull { item ->
-                    coincideConMonitoreoSolicitado(
-                        item = item,
-                        masterProgramExtId = masterProgramExtId,
-                        parcelaExtId = parcelaExtId,
-                        ciclo = ciclo,
-                        fechaInicio = fechaInicioSolicitada,
-                        fechaFin = fechaFinSolicitada
-                    )
-                }
-
-                val programaSolapado = buscado.programas
-                    .filter { item ->
-                        esProgramaActivoDelMismoMasterYParcela(
-                            item = item,
-                            masterProgramExtId = masterProgramExtId,
-                            parcelaExtId = parcelaExtId
-                        )
-                    }
-                    .filter { item ->
-                        seTraslapanRangos(
-                            inicioExistente = item.estStartDate?.take(10),
-                            finExistente = item.estFinishDate?.take(10),
-                            inicioSolicitado = fechaInicioSolicitada,
-                            finSolicitado = fechaFinSolicitada
-                        )
-                    }
-                    /*
-                     * Si hay más de un registro histórico, se prefiere primero
-                     * el que tenga el mismo cultivo; después el más reciente.
-                     */
-                    .sortedWith(
-                        compareByDescending<FieldTaskApiItem> {
-                            it.crop?.id == cultivoExtId.toIntOrNull()
-                        }.thenByDescending {
-                            it.estStartDate.orEmpty()
-                        }
-                    )
-                    .firstOrNull()
-
-                programaExacto
-                    ?: programaSolapado
-                    ?: when (
-                        val creado = fieldOpsRepository.crearProgramaCampo(
-                            FieldTaskCreateRequest(
-                                masterProgram = masterProgramExtId,
-                                plot = parcelaExtId,
-                                cropId = cultivoExtId.toInt(),
-                                title = tituloProgramaVisible,
-                                cycle = ciclo,
-                                status = "pending",
-                                estStartDate = fechaInicioIso,
-                                estFinishDate = fechaFinIso
-                            )
-                        )
-                    ) {
-                        is ResultadoCrearFieldTaskApi.Exito -> creado.programa
-                        is ResultadoCrearFieldTaskApi.Error -> {
-                            return ResultadoCrearMonitoreoAdmin.Error(creado.mensaje)
-                        }
-                    }
-            }
-        }
-
-        val programaRemoto = when (
-            val reparado = asegurarProgramaRemotoConDatosVisibles(
-                programa = programaRemotoBase,
-                tituloPrograma = tituloProgramaVisible,
-                codigoPrograma = codigoProgramaVisible,
-                ciclo = ciclo,
-                fechaInicioIso = fechaInicioIso,
-                fechaFinIso = fechaFinIso
-            )
-        ) {
-            is ResultadoProgramaVisible.Exito -> reparado.programa
-            is ResultadoProgramaVisible.Error -> return ResultadoCrearMonitoreoAdmin.Error(reparado.mensaje)
-        }
-
-        val programaExtId = programaRemoto.id.trim()
-        if (programaExtId.isBlank()) {
             return ResultadoCrearMonitoreoAdmin.Error(
-                "El programa remoto no regresó UUID."
+                "El subprograma seleccionado no pertenece al programa."
+            )
+        }
+
+        if (subprograma.plot?.trim() != parcelaExtId) {
+            return ResultadoCrearMonitoreoAdmin.Error(
+                "La parcela seleccionada no coincide con la parcela del subprograma."
+            )
+        }
+
+        if (parcela.idLocalRanch != rancho.idLocalRanch) {
+            return ResultadoCrearMonitoreoAdmin.Error(
+                "La parcela del subprograma no pertenece al rancho mostrado."
+            )
+        }
+
+        if (rancho.idLocalAgroUnit != productor.idLocalAgroUnit) {
+            return ResultadoCrearMonitoreoAdmin.Error(
+                "El rancho del subprograma no pertenece al productor."
+            )
+        }
+
+        val cultivoRemoto = subprograma.crop ?: subprograma.cropVariety
+        val cultivoRemotoId = cultivoRemoto?.id
+        if (cultivoRemotoId != null && cultivoRemotoId != cultivoExtId.toIntOrNull()) {
+            return ResultadoCrearMonitoreoAdmin.Error(
+                "El cultivo mostrado no coincide con el cultivo del subprograma."
+            )
+        }
+
+        val fechaInicio = subprograma.estStartDate
+            ?.trim()
+            ?.takeIf { it.length >= 10 }
+            ?.take(10)
+            ?: return ResultadoCrearMonitoreoAdmin.Error(
+                "El subprograma no tiene fecha de inicio. Complétala en Django."
+            )
+
+        val fechaFin = subprograma.estFinishDate
+            ?.trim()
+            ?.takeIf { it.length >= 10 }
+            ?.take(10)
+            ?: return ResultadoCrearMonitoreoAdmin.Error(
+                "El subprograma no tiene fecha final. Complétala en Django."
+            )
+
+        val fechaInicioMillis = ApiDateParser.parsearMillis(fechaInicio)
+            ?: return ResultadoCrearMonitoreoAdmin.Error(
+                "La fecha de inicio del subprograma no es válida."
+            )
+
+        val fechaFinMillis = ApiDateParser.parsearFinDeDiaMillis(fechaFin)
+            ?: return ResultadoCrearMonitoreoAdmin.Error(
+                "La fecha final del subprograma no es válida."
+            )
+
+        if (fechaInicio > fechaFin) {
+            return ResultadoCrearMonitoreoAdmin.Error(
+                "Las fechas del subprograma son inválidas: el inicio es posterior al final."
             )
         }
 
         val headerRemoto = when (
             val headers = phytoMonitoringRepository.obtenerTodosLosHeaders(
-                fieldTask = programaExtId
+                fieldTask = subprogramaExtId,
+                plot = parcelaExtId
             )
         ) {
             is ResultadoPhytoHeadersApi.Error -> {
                 return ResultadoCrearMonitoreoAdmin.Error(
-                    "El programa remoto se creó, pero no se pudo revisar la sesión fitosanitaria. " +
-                            "Vuelve a intentarlo; la app reutilizará el mismo programa. ${headers.mensaje}"
+                    "No se pudo revisar si el subprograma ya tiene monitoreo. ${headers.mensaje}"
                 )
             }
 
             is ResultadoPhytoHeadersApi.Exito -> {
                 headers.headers.firstOrNull { header ->
-                    header.fieldTask?.trim() == programaExtId &&
+                    header.fieldTask?.trim() == subprogramaExtId &&
                             (header.plot.isNullOrBlank() || header.plot.trim() == parcelaExtId)
                 } ?: when (
                     val creado = phytoMonitoringRepository.crearHeader(
                         PhytoHeaderCreateRequest(
                             plotId = parcelaExtId,
-                            fieldTaskId = programaExtId,
-
-                            /*
-                             * El backend real utiliza estimated_start_date y
-                             * estimated_end_date. Swagger mostraba monitoring_date,
-                             * pero ese campo NO existe en el serializer actual.
-                             */
-                            estimatedStartDate = fechaInicioSolicitada,
-                            estimatedEndDate = fechaFinSolicitada,
-
-                            /*
-                             * Se conserva validación de ubicación en el backend.
-                             * 15 m evita falsos rechazos por la precisión normal del GPS.
-                             */
+                            fieldTaskId = subprogramaExtId,
+                            estimatedStartDate = fechaInicio,
+                            estimatedEndDate = fechaFin,
                             strictMode = true,
                             radiusTolerance = RADIO_TOLERANCIA_METROS
                         )
@@ -252,8 +178,8 @@ class AdminMonitoreoRepository(
                     is ResultadoCrearPhytoHeaderApi.Exito -> creado.header
                     is ResultadoCrearPhytoHeaderApi.Error -> {
                         return ResultadoCrearMonitoreoAdmin.Error(
-                            "El programa remoto ya fue creado, pero la sesión fitosanitaria falló. " +
-                                    "Vuelve a intentarlo; no se duplicará el programa. ${creado.mensaje}"
+                            "El programa y subprograma ya existen, pero no se pudo crear " +
+                                    "la sesión de monitoreo. ${creado.mensaje}"
                         )
                     }
                 }
@@ -263,16 +189,20 @@ class AdminMonitoreoRepository(
         val headerExtId = headerRemoto.id.trim()
         if (headerExtId.isBlank()) {
             return ResultadoCrearMonitoreoAdmin.Error(
-                "La sesión fitosanitaria no regresó UUID."
+                "La sesión de monitoreo no regresó UUID."
             )
         }
 
+        val ciclo = subprograma.cycle
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: "Sin ciclo"
+
         /*
-         * Solo cuando servidor confirmó Programa y Header se escriben en Room.
-         * Así todo punto capturado después ya tendrá header.extId para sincronizar
-         * Target Point -> Checkpoint -> Foto.
+         * Room conserva una copia del subprograma y de la sesión para trabajar
+         * sin conexión. No se crea ningún programa remoto en este punto.
          */
-        val idProgramLocal = guardarProgramaLocal(
+        val idProgramLocal = guardarSubprogramaLocal(
             idLocalCia = idLocalCia,
             productor = productor,
             rancho = rancho,
@@ -281,7 +211,7 @@ class AdminMonitoreoRepository(
             ciclo = ciclo,
             fechaInicioMillis = fechaInicioMillis,
             fechaFinMillis = fechaFinMillis,
-            programaRemoto = programaRemoto
+            subprograma = subprograma
         )
 
         val idHeaderLocal = guardarHeaderLocal(
@@ -297,134 +227,12 @@ class AdminMonitoreoRepository(
         return ResultadoCrearMonitoreoAdmin.Exito(
             idProgramLocal = idProgramLocal,
             idHeaderLocal = idHeaderLocal,
-            programExtId = programaExtId,
+            programExtId = subprogramaExtId,
             headerExtId = headerExtId
         )
     }
 
-    /**
-     * Si el backend creó o reutilizó un Programa sin título visible, se corrige
-     * inmediatamente con PATCH. Así no vuelve a aparecer en Django como Title "-".
-     */
-    private suspend fun asegurarProgramaRemotoConDatosVisibles(
-        programa: FieldTaskApiItem,
-        tituloPrograma: String,
-        codigoPrograma: String,
-        ciclo: String,
-        fechaInicioIso: String,
-        fechaFinIso: String
-    ): ResultadoProgramaVisible {
-        val tituloActual = programa.title?.trim().orEmpty()
-        val cicloActual = programa.cycle?.trim().orEmpty()
-        val inicioActual = programa.estStartDate?.trim().orEmpty()
-        val finActual = programa.estFinishDate?.trim().orEmpty()
-
-        val necesitaTitulo = tituloActual.isBlank() || tituloActual == "-"
-        val necesitaCiclo = cicloActual.isBlank()
-        val necesitaFechas = inicioActual.isBlank() || finActual.isBlank()
-
-        if (!necesitaTitulo && !necesitaCiclo && !necesitaFechas) {
-            return ResultadoProgramaVisible.Exito(programa)
-        }
-
-        val patchPrincipal = FieldTaskPatchRequest(
-            title = if (necesitaTitulo) tituloPrograma else null,
-            cycle = if (necesitaCiclo) ciclo else null,
-            status = programa.status?.takeIf { it.isNotBlank() } ?: "pending",
-            estStartDate = if (necesitaFechas) fechaInicioIso else null,
-            estFinishDate = if (necesitaFechas) fechaFinIso else null
-        )
-
-        val actualizado = when (
-            val resultado = fieldOpsRepository.actualizarProgramaCampo(
-                id = programa.id.trim(),
-                body = patchPrincipal
-            )
-        ) {
-            is ResultadoCrearFieldTaskApi.Exito -> resultado.programa
-            is ResultadoCrearFieldTaskApi.Error -> return ResultadoProgramaVisible.Error(
-                "El programa remoto existe, pero estaba sin título visible y no se pudo corregir. ${resultado.mensaje}"
-            )
-        }
-
-        /*
-         * Code/voucher_code es visual en el admin. Se intenta reparar solo después
-         * de guardar el título. Si el backend no permite editarlo, no se bloquea
-         * el monitoreo porque lo crítico es que Title/Cycle queden correctos.
-         */
-        if (actualizado.voucherCode.isNullOrBlank() || actualizado.voucherCode.trim() == "-") {
-            runCatching {
-                fieldOpsRepository.actualizarProgramaCampo(
-                    id = actualizado.id.trim(),
-                    body = FieldTaskPatchRequest(voucherCode = codigoPrograma)
-                )
-            }
-        }
-
-        val tituloFinal = actualizado.title?.trim().orEmpty()
-        if (tituloFinal.isBlank() || tituloFinal == "-") {
-            return ResultadoProgramaVisible.Error(
-                "El backend respondió creado, pero no guardó el título del programa. Revisa el serializer de FieldTask para aceptar el campo title."
-            )
-        }
-
-        return ResultadoProgramaVisible.Exito(actualizado)
-    }
-
-    private fun crearTituloProgramaVisible(
-        ciclo: String,
-        parcela: LocalPlotEntity,
-        cultivo: LocalCropCatalogEntity
-    ): String {
-        val parcelaTexto = parcela.code
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?: parcela.name.trim()
-
-        return listOf(
-            "Monitoreo",
-            ciclo.trim(),
-            parcelaTexto,
-            cultivo.name.trim()
-        )
-            .filter { it.isNotBlank() }
-            .joinToString(" - ")
-            .take(120)
-    }
-
-    private fun crearCodigoProgramaVisible(
-        ciclo: String,
-        parcela: LocalPlotEntity,
-        fechaInicio: String
-    ): String {
-        val parcelaTexto = parcela.code
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?: parcela.name.trim()
-
-        val base = listOf(
-            "MON",
-            limpiarCodigoPrograma(parcelaTexto),
-            limpiarCodigoPrograma(ciclo),
-            fechaInicio.replace("-", "")
-        )
-            .filter { it.isNotBlank() }
-            .joinToString("-")
-            .replace(Regex("-+"), "-")
-            .trim('-')
-
-        return base.take(48).ifBlank { "MON-${System.currentTimeMillis().toString().takeLast(8)}" }
-    }
-
-    private fun limpiarCodigoPrograma(valor: String): String {
-        return valor
-            .trim()
-            .uppercase(Locale.US)
-            .replace(Regex("[^A-Z0-9]+"), "-")
-            .trim('-')
-    }
-
-    private suspend fun guardarProgramaLocal(
+    private suspend fun guardarSubprogramaLocal(
         idLocalCia: Long,
         productor: LocalAgroUnitEntity,
         rancho: LocalRanchEntity,
@@ -433,24 +241,22 @@ class AdminMonitoreoRepository(
         ciclo: String,
         fechaInicioMillis: Long,
         fechaFinMillis: Long,
-        programaRemoto: FieldTaskApiItem
+        subprograma: FieldTaskApiItem
     ): Long {
         val existente = database.localprogramDao()
-            .getProgramByExtId(programaRemoto.id.trim())
+            .getProgramByExtId(subprograma.id.trim())
 
         val nuevo = LocalProgramEntity(
             idProgram = existente?.idProgram ?: 0L,
-            extId = programaRemoto.id.trim(),
-            cycle = programaRemoto.cycle?.trim().takeUnless { it.isNullOrBlank() } ?: ciclo,
-            /*
-             * Cuando se reutiliza un Programa remoto, Room debe conservar sus
-             * fechas reales y no las que el usuario intentó capturar después.
-             */
-            estStartDate = parseFechaApi(programaRemoto.estStartDate) ?: fechaInicioMillis,
-            estFinishDate = parseFechaApi(programaRemoto.estFinishDate) ?: fechaFinMillis,
-            actStartDate = parseFechaApi(programaRemoto.actualStartDate),
-            actFinishDate = parseFechaApi(programaRemoto.actualFinishDate),
-            status = normalizarEstadoLocal(programaRemoto.status),
+            extId = subprograma.id.trim(),
+            cycle = ciclo,
+            estStartDate = ApiDateParser.parsearMillis(subprograma.estStartDate)
+                ?: fechaInicioMillis,
+            estFinishDate = ApiDateParser.parsearFinDeDiaMillis(subprograma.estFinishDate)
+                ?: fechaFinMillis,
+            actStartDate = ApiDateParser.parsearMillis(subprograma.actualStartDate),
+            actFinishDate = ApiDateParser.parsearMillis(subprograma.actualFinishDate),
+            status = normalizarEstadoLocal(subprograma.status),
             idLocalCia = idLocalCia,
             idLocalAgroUnit = productor.idLocalAgroUnit,
             idLocalRanch = rancho.idLocalRanch,
@@ -489,12 +295,15 @@ class AdminMonitoreoRepository(
             idHeader = existente?.idHeader ?: 0L,
             extId = headerRemoto.id.trim(),
             cycle = ciclo,
-            estStartDate = parseFechaApi(headerRemoto.estimatedStartDate) ?: fechaInicioMillis,
-            estFinishDate = parseFechaApi(headerRemoto.estimatedEndDate) ?: fechaFinMillis,
-            startAt = parseFechaApi(headerRemoto.startedAt),
-            finishedAt = parseFechaApi(headerRemoto.finishedAt),
+            estStartDate = ApiDateParser.parsearMillis(headerRemoto.estimatedStartDate)
+                ?: fechaInicioMillis,
+            estFinishDate = ApiDateParser.parsearFinDeDiaMillis(headerRemoto.estimatedEndDate)
+                ?: fechaFinMillis,
+            startAt = ApiDateParser.parsearMillis(headerRemoto.startedAt),
+            finishedAt = ApiDateParser.parsearMillis(headerRemoto.finishedAt),
             additionalNotes = headerRemoto.additionalNotes.orEmpty(),
-            radiusTolerance = headerRemoto.radiusTolerance ?: RADIO_TOLERANCIA_METROS.toDouble(),
+            radiusTolerance = headerRemoto.radiusTolerance
+                ?: RADIO_TOLERANCIA_METROS.toDouble(),
             status = normalizarEstadoLocal(headerRemoto.status),
             idProgram = idProgramLocal,
             idCrop = cultivo.idCrop,
@@ -510,64 +319,6 @@ class AdminMonitoreoRepository(
         }
     }
 
-    /**
-     * Identifica exactamente el mismo Programa remoto. Es el primer candidato
-     * para reintentos normales.
-     */
-    private fun coincideConMonitoreoSolicitado(
-        item: FieldTaskApiItem,
-        masterProgramExtId: String,
-        parcelaExtId: String,
-        ciclo: String,
-        fechaInicio: String,
-        fechaFin: String
-    ): Boolean {
-        return esProgramaActivoDelMismoMasterYParcela(
-            item = item,
-            masterProgramExtId = masterProgramExtId,
-            parcelaExtId = parcelaExtId
-        ) &&
-                item.cycle?.trim().orEmpty().equals(ciclo.trim(), ignoreCase = true) &&
-                item.estStartDate?.take(10) == fechaInicio &&
-                item.estFinishDate?.take(10) == fechaFin
-    }
-
-    /**
-     * Django rechaza Programas hijos superpuestos para el mismo Master + Plot.
-     * Esta función permite detectar uno ya existente para reutilizarlo.
-     */
-    private fun esProgramaActivoDelMismoMasterYParcela(
-        item: FieldTaskApiItem,
-        masterProgramExtId: String,
-        parcelaExtId: String
-    ): Boolean {
-        val estado = item.status?.trim()?.lowercase(Locale.US)
-        val esCancelado = estado == "cancelled" ||
-                estado == "cancelado" ||
-                estado == "canceled"
-
-        return !esCancelado &&
-                item.masterProgram?.trim() == masterProgramExtId &&
-                item.plot?.trim() == parcelaExtId
-    }
-
-    /**
-     * Las fechas vienen como yyyy-MM-dd o ISO-8601. Al tomar los primeros diez
-     * caracteres se comparan de forma segura como texto porque ese formato es
-     * ordenable cronológicamente.
-     */
-    private fun seTraslapanRangos(
-        inicioExistente: String?,
-        finExistente: String?,
-        inicioSolicitado: String,
-        finSolicitado: String
-    ): Boolean {
-        val inicio = inicioExistente?.trim()?.takeIf { it.length >= 10 } ?: return false
-        val fin = finExistente?.trim()?.takeIf { it.length >= 10 } ?: return false
-
-        return inicio <= finSolicitado && fin >= inicioSolicitado
-    }
-
     private fun normalizarEstadoLocal(status: String?): String {
         return when (status?.trim()?.lowercase(Locale.US)) {
             "pending", "pendiente" -> "Pendiente"
@@ -578,55 +329,9 @@ class AdminMonitoreoRepository(
         }
     }
 
-    /**
-     * Convierte fechas ISO devueltas por Django a milisegundos de Room.
-     * Acepta fecha simple, zona -06:00 y variantes con milisegundos.
-     */
-    private fun parseFechaApi(fecha: String?): Long? {
-        val texto = fecha?.trim()?.takeIf { it.isNotBlank() } ?: return null
-
-        val formatos = listOf(
-            "yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXX",
-            "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
-            "yyyy-MM-dd'T'HH:mm:ssXXX",
-            "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'",
-            "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-            "yyyy-MM-dd'T'HH:mm:ss'Z'",
-            "yyyy-MM-dd"
-        )
-
-        return formatos.firstNotNullOfOrNull { patron ->
-            runCatching {
-                SimpleDateFormat(patron, Locale.US).apply {
-                    isLenient = false
-                    timeZone = TimeZone.getTimeZone("UTC")
-                }.parse(texto)?.time
-            }.getOrNull()
-        }
-    }
-
-    private fun formatearSoloFecha(millis: Long): String {
-        return SimpleDateFormat("yyyy-MM-dd", Locale.US)
-            .format(Date(millis))
-    }
-
-    private fun formatearIsoUtc(millis: Long): String {
-        return SimpleDateFormat(
-            "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-            Locale.US
-        ).apply {
-            timeZone = TimeZone.getTimeZone("UTC")
-        }.format(Date(millis))
-    }
-
     private companion object {
         const val RADIO_TOLERANCIA_METROS = 15
     }
-}
-
-private sealed class ResultadoProgramaVisible {
-    data class Exito(val programa: FieldTaskApiItem) : ResultadoProgramaVisible()
-    data class Error(val mensaje: String) : ResultadoProgramaVisible()
 }
 
 sealed class ResultadoCrearMonitoreoAdmin {

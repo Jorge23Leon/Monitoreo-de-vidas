@@ -162,6 +162,7 @@ internal fun TarjetaMonitoreoUsuario(
     additionalNotes: String = "",
     fechaInicio: Long?,
     fechaFin: Long?,
+    textoTiempo: String? = null,
     puedeAbrir: Boolean,
     soloConsulta: Boolean,
     puedeCancelar: Boolean = false,
@@ -347,6 +348,25 @@ internal fun TarjetaMonitoreoUsuario(
                             maxLines = 1
                         )
                     }
+                }
+
+                textoTiempo?.let { tiempo ->
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = "⏱  $tiempo",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                color = Color(0xFFFFF4E5),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        color = Color(0xFFB85C00),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))

@@ -13,12 +13,14 @@ internal fun crearHtmlMapaMonitoreo(
     checkpoints: List<LocalPhytomonitoringCheckpointEntity>,
     catalogo: List<LocalPhytosanitaryCatalogEntity>,
     ubicacionInicial: Pair<Double, Double>?,
-    internetDisponible: Boolean
+    internetDisponible: Boolean,
+    modoVistaPrevia: Boolean = false
 ): String {
     val verticesJson = crearVerticesJson(vertices)
     val puntosJson = crearPuntosJson(puntos, checkpoints, catalogo)
     val nombreMonitoreoJson = JSONObject.quote(nombreMonitoreo)
     val internetJson = if (internetDisponible) "true" else "false"
+    val modoVistaPreviaJson = if (modoVistaPrevia) "true" else "false"
 
     val usuarioJson = if (ubicacionInicial != null) {
         """
@@ -45,8 +47,11 @@ internal fun crearHtmlMapaMonitoreo(
 
             <style>
                 html, body {
+                    position: fixed;
+                    inset: 0;
                     width: 100%;
                     height: 100%;
+                    min-height: 100%;
                     margin: 0;
                     padding: 0;
                     font-family: Arial, sans-serif;
@@ -55,15 +60,13 @@ internal fun crearHtmlMapaMonitoreo(
                 }
 
                 #map {
+                    display: block;
                     position: absolute;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    bottom: 0;
+                    inset: 0;
                     width: 100%;
-                    height: 100%;
-                    min-height: 430px;
-                    border-radius: 16px;
+                    height: 100vh;
+                    min-height: 100%;
+                    border-radius: 0;
                     overflow: hidden;
                     background:
                         linear-gradient(135deg, rgba(96,125,70,0.22) 25%, transparent 25%) -18px 0,
@@ -72,6 +75,13 @@ internal fun crearHtmlMapaMonitoreo(
                         linear-gradient(45deg, rgba(96,125,70,0.22) 25%, transparent 25%);
                     background-size: 36px 36px;
                     background-color: #dfe8d1;
+                }
+
+                .leaflet-container {
+                    width: 100% !important;
+                    height: 100% !important;
+                    min-height: 100% !important;
+                    background: #dfe8d1;
                 }
 
                 .loading-box,
@@ -159,8 +169,8 @@ internal fun crearHtmlMapaMonitoreo(
 
                 .marcador-pe {
                     position: relative;
-                    width: 44px;
-                    height: 48px;
+                    width: 28px;
+                    height: 32px;
                     user-select: none;
                     -webkit-user-select: none;
                 }
@@ -168,14 +178,14 @@ internal fun crearHtmlMapaMonitoreo(
                 .marcador-pe-letras {
                     position: absolute;
                     top: 0;
-                    left: 4px;
-                    width: 36px;
+                    left: 5px;
+                    width: 18px;
                     display: flex;
                     justify-content: space-around;
                     align-items: center;
                     color: #FFFFFF;
-                    font-size: 11px;
-                    line-height: 13px;
+                    font-size: 9px;
+                    line-height: 11px;
                     font-weight: 900;
                     text-shadow:
                         -1px -1px 2px #1A1A1A,
@@ -186,19 +196,19 @@ internal fun crearHtmlMapaMonitoreo(
 
                 .marcador-pe-circulo {
                     position: absolute;
-                    top: 14px;
+                    top: 12px;
                     left: 5px;
                     display: flex;
-                    width: 34px;
-                    height: 34px;
+                    width: 18px;
+                    height: 18px;
                     overflow: hidden;
-                    border: 2.5px solid #17211B;
+                    border: 2px solid #17211B;
                     border-radius: 50%;
                     box-sizing: border-box;
                     background: #16A34A;
                     box-shadow:
-                        0 2px 6px rgba(0, 0, 0, 0.42),
-                        0 0 0 2px rgba(255, 255, 255, 0.76);
+                        0 2px 7px rgba(0, 0, 0, 0.48),
+                        0 0 0 2px rgba(255, 255, 255, 0.82);
                 }
 
                 .marcador-pe-mitad {
@@ -241,6 +251,7 @@ internal fun crearHtmlMapaMonitoreo(
                 const puntos = $puntosJson;
                 const usuarioInicial = $usuarioJson;
                 const internetDisponible = $internetJson;
+                const modoVistaPrevia = $modoVistaPreviaJson;
 
                 let map = null;
                 let userMarker = null;
@@ -249,6 +260,12 @@ internal fun crearHtmlMapaMonitoreo(
                 let selectedMarker = null;
                 let selectedHalo = null;
                 let polygonLatLng = [];
+
+                window.ajustarMapaMonitoreo = function() {
+                    if (map != null) {
+                        map.invalidateSize(true);
+                    }
+                };
 
                 function limpiarCargando() {
                     const loading = document.querySelector('.loading-box');
@@ -338,9 +355,9 @@ internal fun crearHtmlMapaMonitoreo(
                     return L.divIcon({
                         className: 'marcador-pe-wrapper',
                         html: html,
-                        iconSize: [44, 48],
-                        iconAnchor: [22, 31],
-                        tooltipAnchor: [0, -22]
+                        iconSize: [28, 32],
+                        iconAnchor: [14, 21],
+                        tooltipAnchor: [0, -16]
                     });
                 }
 
@@ -563,6 +580,13 @@ internal fun crearHtmlMapaMonitoreo(
                  * La posición usada es siempre currentUserLocation, recibida del GPS de Android.
                  */
                 function seleccionarDesdeMapa() {
+                    if (modoVistaPrevia) {
+                        if (window.Android && Android.onPuntoLibreSeleccionado) {
+                            Android.onPuntoLibreSeleccionado('0', '0');
+                        }
+                        return;
+                    }
+
                     if (currentUserLocation == null) {
                         alert('Aún no se obtiene tu ubicación GPS. Espera unos segundos e inténtalo de nuevo.');
                         return;
@@ -588,13 +612,18 @@ internal fun crearHtmlMapaMonitoreo(
                     }
                 }
 
-                window.updateUserLocation = function(lat, lon) {
+                window.updateUserLocation = function(lat, lon, accuracy) {
                     if (map == null) return;
 
                     const latNum = Number(lat);
                     const lonNum = Number(lon);
+                    const accuracyNum = Number(accuracy);
 
                     if (isNaN(latNum) || isNaN(lonNum)) return;
+
+                    const radioPrecision = isNaN(accuracyNum)
+                        ? 8
+                        : Math.max(3, Math.min(60, accuracyNum));
 
                     currentUserLocation = {
                         lat: latNum,
@@ -610,7 +639,7 @@ internal fun crearHtmlMapaMonitoreo(
                     }
 
                     userAccuracy = L.circle([latNum, lonNum], {
-                        radius: 8,
+                        radius: radioPrecision,
                         color: '#1E88E5',
                         weight: 2,
                         opacity: 0.35,
@@ -627,7 +656,11 @@ internal fun crearHtmlMapaMonitoreo(
                         fillOpacity: 1
                     }).addTo(map);
 
-                    userMarker.bindTooltip('Tu ubicación actual', {
+                    const textoPrecision = isNaN(accuracyNum)
+                        ? 'Tu ubicación actual'
+                        : 'Tu ubicación · precisión aprox. ' + Math.round(accuracyNum) + ' m';
+
+                    userMarker.bindTooltip(textoPrecision, {
                         permanent: false,
                         direction: 'top'
                     });
@@ -766,6 +799,13 @@ internal fun crearHtmlMapaMonitoreo(
                             );
                         }
 
+                        if (modoVistaPrevia) {
+                            if (window.Android && Android.onPuntoLibreSeleccionado) {
+                                Android.onPuntoLibreSeleccionado('0', '0');
+                            }
+                            return;
+                        }
+
                         if (puntoEstaCompletado(p)) {
                             alert(
                                 'Punto ' + (index + 1) +
@@ -797,7 +837,7 @@ internal fun crearHtmlMapaMonitoreo(
                     }
 
                     map = L.map('map', {
-                        zoomControl: false,
+                        zoomControl: true,
                         preferCanvas: true,
                         zoomSnap: 0.25,
                         zoomDelta: 0.5,

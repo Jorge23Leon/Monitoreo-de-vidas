@@ -57,6 +57,7 @@ data class MainUiState(
     val monitoreoSeleccionadoParaMapa: LocalPhytomonitoringHeaderEntity? = null,
     val monitoreoSeleccionadoParaReporte: LocalPhytomonitoringHeaderEntity? = null,
     val puntoSeleccionadoParaRegistro: LocalPhytomonitoringTargetPointEntity? = null,
+    val mapaMonitoreoPantallaCompleta: Boolean = false,
     val pantallaAntesPerfil: PantallaActual? = null,
 
     val mensaje: String? = null

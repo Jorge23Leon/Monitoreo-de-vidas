@@ -36,6 +36,7 @@ import com.example.myapplication.local.entities.LocalPhytosanitaryCatalogEntity
 internal fun CatalogoPlagasHorizontal(
     catalogo: List<LocalPhytosanitaryCatalogEntity>,
     fitoSeleccionado: LocalPhytosanitaryCatalogEntity?,
+    idsFitosRegistrados: Set<Long>,
     fotosRepresentativas: Map<Long, String?>,
     onSelected: (LocalPhytosanitaryCatalogEntity) -> Unit
 ) {
@@ -45,10 +46,7 @@ internal fun CatalogoPlagasHorizontal(
         elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            SectionTitle(
-                title = "Catálogo fitosanitario",
-                actionText = "Ver todo  ›"
-            )
+            SectionTitle(title = "Catálogo fitosanitario")
 
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -61,6 +59,7 @@ internal fun CatalogoPlagasHorizontal(
                         item = item,
                         fotoRepresentativa = fotosRepresentativas[item.idPhytosanitary],
                         seleccionado = fitoSeleccionado?.idPhytosanitary == item.idPhytosanitary,
+                        registrado = item.idPhytosanitary in idsFitosRegistrados,
                         onClick = { onSelected(item) }
                     )
                 }
@@ -74,21 +73,30 @@ private fun FitoMiniCard(
     item: LocalPhytosanitaryCatalogEntity,
     fotoRepresentativa: String?,
     seleccionado: Boolean,
+    registrado: Boolean,
     onClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
-            .width(132.dp)
-            .height(150.dp)
+            .width(154.dp)
+            .height(180.dp)
             .border(
                 width = if (seleccionado) 2.dp else 1.dp,
-                color = if (seleccionado) Color(0xFF0D47C5) else Color(0xFFE1E5EA),
+                color = when {
+                    seleccionado -> Color(0xFF0D47C5)
+                    registrado -> Color(0xFF9AA0A6)
+                    else -> Color(0xFFE1E5EA)
+                },
                 shape = RoundedCornerShape(16.dp)
             )
             .clickable { onClick() },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (seleccionado) Color(0xFFF4F8FF) else Color.White
+            containerColor = when {
+                seleccionado -> Color(0xFFF4F8FF)
+                registrado -> Color(0xFFE5E7E9)
+                else -> Color.White
+            }
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = if (seleccionado) 5.dp else 1.dp)
     ) {
@@ -103,9 +111,9 @@ private fun FitoMiniCard(
                     ImageUriBox(
                         photo = fotoRepresentativa ?: item.photo,
                         fallbackIcon = iconoTipoFitoRegistro(item.type),
-                        sizeDp = 58,
+                        sizeDp = 88,
                         modifier = Modifier
-                            .size(58.dp)
+                            .size(88.dp)
                             .clip(CircleShape)
                             .background(
                                 if (esEnfermedadRegistro(item.type)) {
@@ -116,13 +124,16 @@ private fun FitoMiniCard(
                             )
                     )
 
-                    if (seleccionado) {
+                    if (seleccionado || registrado) {
                         Box(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
                                 .size(20.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF0D47C5)),
+                                .background(
+                                    if (seleccionado) Color(0xFF0D47C5)
+                                    else Color(0xFF73777B)
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
@@ -138,7 +149,7 @@ private fun FitoMiniCard(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = item.name,
+                    text = nombreVisibleRegistro(item.name),
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Black,
                     color = Color(0xFF1D2430),
