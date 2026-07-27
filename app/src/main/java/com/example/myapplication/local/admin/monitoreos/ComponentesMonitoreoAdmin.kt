@@ -47,6 +47,7 @@ import com.example.myapplication.local.entities.LocalCropCatalogEntity
 import com.example.myapplication.local.entities.LocalPlotEntity
 import com.example.myapplication.local.entities.LocalPlotVertexEntity
 import com.example.myapplication.local.entities.LocalRanchEntity
+import com.example.myapplication.local.api.fieldops.FieldTaskApiItem
 import com.example.myapplication.local.api.fieldops.MasterProgramApiItem
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -70,7 +71,7 @@ fun AdminMonitoreoLoadingCard() {
             CircularProgressIndicator(color = Color(0xFF2E7D32))
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "Cargando productores y cultivos...",
+                text = "Cargando productores...",
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF2E4D22)
             )
@@ -117,7 +118,7 @@ fun AdminMonitorHeroCard(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Crea el monitoreo base. Los puntos se registrarán libremente en campo.",
+                        text = "Elige un programa y subprograma existentes para crear la sesión de campo.",
                         color = Color(0xFFE8F5E9),
                         fontWeight = FontWeight.Medium,
                         fontSize = 12.sp,
@@ -287,6 +288,47 @@ fun <T> AdminSelectorField(
 }
 
 @Composable
+fun AdminReadOnlyField(
+    etiqueta: String,
+    valor: String
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = etiqueta,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF2E4D22),
+            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .border(
+                    width = 1.dp,
+                    color = Color(0xFFD4E0CE),
+                    shape = RoundedCornerShape(16.dp)
+                )
+                .background(Color(0xFFF8FBF6))
+                .padding(horizontal = 14.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = valor,
+                color = Color(0xFF40533A),
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = "🔗",
+                fontSize = 16.sp
+            )
+        }
+    }
+}
+
+@Composable
 fun AdminDatePickerField(
     etiqueta: String,
     valor: String,
@@ -373,6 +415,7 @@ fun PolygonStatusCard(vertices: List<LocalPlotVertexEntity>) {
 fun AdminResumenMonitoreo(
     productor: LocalAgroUnitEntity?,
     programaMaestro: MasterProgramApiItem?,
+    subprograma: FieldTaskApiItem?,
     rancho: LocalRanchEntity?,
     parcela: LocalPlotEntity?,
     cultivo: LocalCropCatalogEntity?,
@@ -400,8 +443,12 @@ fun AdminResumenMonitoreo(
 
             ResumenRow("Productor", productor?.commercial_name ?: "Pendiente")
             ResumenRow(
-                "Programa maestro",
+                "Programa",
                 programaMaestro?.let(::textoProgramaMaestroAdmin) ?: "Pendiente"
+            )
+            ResumenRow(
+                "Subprograma",
+                subprograma?.let { textoSubprogramaAdmin(it, parcela) } ?: "Pendiente"
             )
             ResumenRow("Rancho", rancho?.name ?: "Pendiente")
             ResumenRow("Parcela", parcela?.nombreMostrarAdmin() ?: "Pendiente")
@@ -411,17 +458,20 @@ fun AdminResumenMonitoreo(
                 "Fechas",
                 "${fechaInicio.ifBlank { "Inicio" }} → ${fechaFin.ifBlank { "Fin" }}"
             )
-            ResumenRow("Flujo API", "Programa → Sesión → Puntos GPS → Checkpoints")
+            ResumenRow("Flujo API", "Subprograma existente → Sesión → Puntos GPS")
             ResumenRow("Modo", "Monitoreo libre por punto")
             ResumenRow("Vértices", "$totalVertices registrados")
 
             AnimatedVisibility(
-                visible = programaMaestro == null || totalVertices < 3
+                visible = programaMaestro == null || subprograma == null || totalVertices < 3
             ) {
                 Text(
                     text = when {
                         programaMaestro == null -> {
-                            "Selecciona un programa maestro antes de crear el monitoreo."
+                            "Selecciona un programa antes de crear el monitoreo."
+                        }
+                        subprograma == null -> {
+                            "Selecciona un subprograma existente."
                         }
                         else -> {
                             "No se podrá guardar hasta que la parcela tenga polígono completo."

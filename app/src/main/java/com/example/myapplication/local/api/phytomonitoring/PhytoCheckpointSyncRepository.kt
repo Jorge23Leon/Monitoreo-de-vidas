@@ -5,6 +5,7 @@ package com.example.myapplication.local.api.phytomonitoring
 
 import android.content.Context
 import com.example.myapplication.local.api.core.ApiConfig
+import com.example.myapplication.local.api.core.ApiDateParser
 import com.example.myapplication.local.api.core.RetrofitClient
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.LocalPhytomonitoringCheckpointEntity
@@ -30,6 +31,9 @@ class PhytoCheckpointSyncRepository(
     private val context: Context,
     private val database: AppDatabase
 ) {
+    private companion object {
+        const val MAX_PAGINAS = 500
+    }
     private val api: PhytoMonitoringApiService =
         RetrofitClient.crearServicioAutenticado(
             context = context,
@@ -79,8 +83,8 @@ class PhytoCheckpointSyncRepository(
         val checkpointDao = database.localphytomonitoringcheckpointDao()
 
         /*
-         * Primero recuperamos las referencias de fotos antiguas (h7_p..., h10_p...).
-         * Así el PATCH que sigue ya manda photo_ref al servidor antes de crear el ZIP.
+         * Primero recuperamos las referencias de fotos antiguas (h7_p..., h10_p...)
+         * para relacionarlas con su checkpoint local antes del PATCH multipart.
          */
         val nombresFotosPendientes = PhytoMediaStorage
             .listarNombresFotosPendientes(
@@ -142,21 +146,14 @@ class PhytoCheckpointSyncRepository(
             .filter { checkpoint ->
                 if (checkpoint.extId.isNullOrBlank()) return@filter false
 
-                val necesitaTarget = checkpoint.idTargetPoint in
-                        idsPuntosQueNecesitanVinculoRemoto
-                val photoRef = obtenerPhotoRefLocal(checkpoint)
-                val necesitaPhotoRef = !photoRef.isNullOrBlank() &&
-                        photoRef in nombresFotosPendientes
-
-                necesitaTarget || necesitaPhotoRef
+                checkpoint.idTargetPoint in idsPuntosQueNecesitanVinculoRemoto
             }
             .forEach { checkpoint ->
                 val targetExtId = targetExtPorPunto[checkpoint.idTargetPoint] ?: return@forEach
 
                 val vinculado = vincularCheckpointExistenteConTarget(
                     checkpointExtId = checkpoint.extId!!.trim(),
-                    targetExtId = targetExtId,
-                    photoRef = obtenerPhotoRefLocal(checkpoint)
+                    targetExtId = targetExtId
                 )
 
                 if (!vinculado) {
@@ -485,17 +482,13 @@ class PhytoCheckpointSyncRepository(
 
     private suspend fun vincularCheckpointExistenteConTarget(
         checkpointExtId: String,
-        targetExtId: String,
-        photoRef: String?
+        targetExtId: String
     ): Boolean {
         return try {
             val response = api.actualizarCheckpoint(
                 id = checkpointExtId,
                 body = PhytoCheckpointPatchRequest(
-                    target = targetExtId,
-                    photoRef = photoRef
-                        ?.trim()
-                        ?.takeIf { it.isNotBlank() }
+                    target = targetExtId
                 )
             )
 
@@ -653,6 +646,12 @@ class PhytoCheckpointSyncRepository(
             items.addAll(body.results)
 
             if (body.next.isNullOrBlank()) break
+            if (body.results.isEmpty() || page >= MAX_PAGINAS) {
+                return@withContext ResultadoDescargaCheckpoints(
+                    cantidad = items.size,
+                    error = "La paginación de checkpoints es inválida o excede $MAX_PAGINAS páginas."
+                )
+            }
             page++
         }
 
@@ -1344,19 +1343,22 @@ class PhytoCheckpointSyncRepository(
     }
 
     /**
-     * Flujo oficial de evidencias:
-     * 1) valida/repara photo_ref en Room;
-     * 2) escribe photo_ref en cada checkpoint remoto;
-     * 3) sube UN ZIP por header;
-     * 4) mueve a uploaded solo los nombres confirmados por backend.
+     * Sube cada evidencia directamente al checkpoint remoto mediante PATCH multipart.
      *
-     * No usa PATCH multipart por checkpoint porque una misma evidencia puede estar
-     * asociada a varias fases del mismo punto.
+     * Una misma foto puede pertenecer a varias fases de la misma captura. En ese
+     * caso se envía a cada checkpoint relacionado y solo se mueve a uploaded cuando
+     * todos los PATCH fueron confirmados por el servidor.
      */
     private suspend fun subirFotosPendientes(
         headerExtId: String,
         idHeaderLocal: Long
     ): ResultadoFotosZip {
+        if (headerExtId.isBlank()) {
+            return ResultadoFotosZip.Error(
+                "La sesión no tiene UUID remoto para subir evidencias."
+            )
+        }
+
         val checkpointDao = database.localphytomonitoringcheckpointDao()
 
         val nombresPendientes = PhytoMediaStorage
@@ -1382,7 +1384,7 @@ class PhytoCheckpointSyncRepository(
             nombresPendientes = nombresPendientes
         )
 
-        val referenciasParaZip = linkedSetOf<String>()
+        val confirmadas = linkedSetOf<String>()
         val pendientesSinCheckpoint = linkedSetOf<String>()
         val pendientesSinConfirmar = linkedSetOf<String>()
 
@@ -1407,11 +1409,15 @@ class PhytoCheckpointSyncRepository(
                 continue
             }
 
-            /*
-             * upload-photos/ empareja por photo_ref. Se manda antes el PATCH JSON,
-             * incluso para checkpoints creados por una versión anterior.
-             */
-            var referenciaConfirmadaEnServidor = true
+            val tipoContenido = when (archivo.extension.lowercase(Locale.US)) {
+                "jpg", "jpeg" -> "image/jpeg"
+                "png" -> "image/png"
+                "webp" -> "image/webp"
+                "heic", "heif" -> "image/heic"
+                else -> "application/octet-stream"
+            }.toMediaType()
+
+            var confirmadaEnTodos = true
 
             for (checkpoint in grupo) {
                 val checkpointExtId = checkpoint.extId
@@ -1419,164 +1425,90 @@ class PhytoCheckpointSyncRepository(
                     ?.takeIf { it.isNotBlank() }
 
                 if (checkpointExtId == null) {
-                    referenciaConfirmadaEnServidor = false
+                    confirmadaEnTodos = false
                     break
                 }
 
                 val response = try {
-                    api.actualizarCheckpoint(
+                    val photoBody = archivo.asRequestBody(tipoContenido)
+                    val photoPart = MultipartBody.Part.createFormData(
+                        "photo",
+                        photoRef,
+                        photoBody
+                    )
+
+                    api.subirFotoCheckpoint(
                         id = checkpointExtId,
-                        body = PhytoCheckpointPatchRequest(
-                            photoRef = photoRef
-                        )
+                        photo = photoPart
                     )
                 } catch (e: Exception) {
                     android.util.Log.e(
                         "SYNC_PHYTO_FOTO",
-                        "Error de red al guardar photo_ref=$photoRef en checkpoint=$checkpointExtId",
+                        "Error de red al subir photo=$photoRef en checkpoint=$checkpointExtId",
                         e
                     )
-                    referenciaConfirmadaEnServidor = false
+                    confirmadaEnTodos = false
                     break
                 }
 
                 if (!response.isSuccessful) {
                     android.util.Log.e(
                         "SYNC_PHYTO_FOTO",
-                        "Error HTTP ${response.code()} al guardar photo_ref=$photoRef " +
+                        "Error HTTP ${response.code()} al subir photo=$photoRef " +
                                 "en checkpoint=$checkpointExtId: ${response.errorBody()?.string().orEmpty()}"
                     )
-                    referenciaConfirmadaEnServidor = false
+                    confirmadaEnTodos = false
                     break
+                }
+
+                val remoto = response.body()
+                val photoUrl = normalizarUrlMedia(
+                    remoto?.photoUrl ?: remoto?.photo
+                )
+
+                val actualizado = checkpoint.copy(
+                    photoRef = remoto?.photoRef
+                        ?.trim()
+                        ?.takeIf { it.isNotBlank() }
+                        ?: checkpoint.photoRef
+                        ?: photoRef,
+                    photoUrl = photoUrl ?: checkpoint.photoUrl
+                )
+
+                if (actualizado != checkpoint) {
+                    checkpointDao.updateCheckpoint(actualizado)
                 }
             }
 
-            if (referenciaConfirmadaEnServidor) {
-                referenciasParaZip += photoRef
+            if (confirmadaEnTodos) {
+                confirmadas += photoRef
             } else {
                 pendientesSinConfirmar += photoRef
             }
         }
 
-        val zip = try {
-            PhytoMediaStorage.crearZipPendiente(
+        val movidas = if (confirmadas.isNotEmpty()) {
+            PhytoMediaStorage.confirmarFotosSubidas(
                 context = context,
                 idHeader = idHeaderLocal,
-                fileNamesPermitidos = referenciasParaZip
+                fileNames = confirmadas
             )
-        } catch (e: Exception) {
-            return ResultadoFotosZip.Error(
-                "No se pudo crear el ZIP de evidencias: ${e.message ?: e.javaClass.simpleName}"
+        } else {
+            0
+        }
+
+        if (confirmadas.isNotEmpty()) {
+            actualizarRutasLocalesFotosConfirmadas(
+                idHeaderLocal = idHeaderLocal,
+                fileNames = confirmadas
             )
         }
 
-        if (zip == null) {
-            return ResultadoFotosZip.Exito(
-                movidas = 0,
-                pendientesSinCheckpoint = pendientesSinCheckpoint.toList(),
-                pendientesSinConfirmar = pendientesSinConfirmar.toList()
-            )
-        }
-
-        return try {
-            val headerBody = headerExtId.toRequestBody("text/plain".toMediaType())
-            val zipBody = zip.file.asRequestBody("application/zip".toMediaType())
-            val zipPart = MultipartBody.Part.createFormData(
-                "photos_zip",
-                "phyto_header_${idHeaderLocal}.zip",
-                zipBody
-            )
-
-            val response = api.subirFotosCheckpointsZip(
-                header = headerBody,
-                photosZip = zipPart
-            )
-
-            if (!response.isSuccessful) {
-                val detail = response.errorBody()?.string().orEmpty()
-                return ResultadoFotosZip.Error(
-                    when (response.code()) {
-                        400 -> "El servidor rechazó el ZIP de evidencias (400): $detail"
-                        403 -> "No se pueden subir fotos: el usuario no tiene permiso para esta sesión (403)."
-                        404 -> "No se pueden subir fotos: la sesión no existe o está fuera del alcance del usuario (404)."
-                        409 -> "No se pueden subir fotos: la sesión ya está cerrada (409)."
-                        else -> "Error subiendo ZIP HTTP ${response.code()}: $detail"
-                    }
-                )
-            }
-
-            val body = response.body()
-                ?: return ResultadoFotosZip.Error(
-                    "El servidor respondió sin detalle al subir el ZIP."
-                )
-
-            val noEmparejadas = body.unmatchedFiles
-                .map { it.trim() }
-                .filter { it.isNotBlank() }
-                .toSet()
-
-            /*
-             * El backend devuelve estas referencias cuando sí existía photo_ref,
-             * pero no terminó con archivo `photo` guardado. Por seguridad no se
-             * mueven a uploaded y se reintentan después.
-             */
-            val checkpointsSinFoto = body.checkpointsWithoutPhoto
-                .map { it.trim() }
-                .filter { it.isNotBlank() }
-                .toSet()
-
-            val candidatas = zip.fileNames
-            val confirmadasPorNombre = candidatas -
-                    noEmparejadas -
-                    (checkpointsSinFoto intersect candidatas)
-
-            /*
-             * `matched` puede contar checkpoints, no solo archivos. Aun así, si
-             * viene en cero no movemos nada: evita perder fotos ante una respuesta
-             * incompleta del backend.
-             */
-            val confirmadas = if (body.matched > 0) {
-                confirmadasPorNombre
-            } else {
-                emptySet()
-            }
-
-            val pendientesDeEstaVuelta = candidatas - confirmadas
-
-            val movidas = if (confirmadas.isNotEmpty()) {
-                PhytoMediaStorage.confirmarFotosSubidas(
-                    context = context,
-                    idHeader = idHeaderLocal,
-                    fileNames = confirmadas
-                )
-            } else {
-                0
-            }
-
-            if (confirmadas.isNotEmpty()) {
-                actualizarRutasLocalesFotosConfirmadas(
-                    idHeaderLocal = idHeaderLocal,
-                    fileNames = confirmadas
-                )
-            }
-
-            ResultadoFotosZip.Exito(
-                movidas = movidas,
-                noEmparejadas = noEmparejadas.toList(),
-                checkpointsSinFoto = checkpointsSinFoto.toList(),
-                pendientesSinCheckpoint = pendientesSinCheckpoint.toList(),
-                pendientesSinConfirmar = (
-                        pendientesSinConfirmar +
-                                (pendientesDeEstaVuelta - noEmparejadas - checkpointsSinFoto)
-                        ).distinct()
-            )
-        } catch (e: Exception) {
-            ResultadoFotosZip.Error(
-                "No se pudo enviar el ZIP de evidencias: ${e.message ?: e.javaClass.simpleName}"
-            )
-        } finally {
-            PhytoMediaStorage.eliminarZipTemporal(zip)
-        }
+        return ResultadoFotosZip.Exito(
+            movidas = movidas,
+            pendientesSinCheckpoint = pendientesSinCheckpoint.toList(),
+            pendientesSinConfirmar = pendientesSinConfirmar.toList()
+        )
     }
 
     private fun buscarTargetLocal(
@@ -1745,29 +1677,7 @@ class PhytoCheckpointSyncRepository(
     }
 
     private fun parseFechaApi(fecha: String?): Long? {
-        if (fecha.isNullOrBlank()) return null
-
-        val limpia = fecha.trim()
-        val formatos = listOf(
-            "yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXX",
-            "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
-            "yyyy-MM-dd'T'HH:mm:ssXXX",
-            "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'",
-            "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-            "yyyy-MM-dd'T'HH:mm:ss'Z'",
-            "yyyy-MM-dd"
-        )
-
-        formatos.forEach { patron ->
-            runCatching {
-                SimpleDateFormat(patron, Locale.US).apply {
-                    isLenient = false
-                    timeZone = TimeZone.getTimeZone("UTC")
-                }.parse(limpia)?.time
-            }.getOrNull()?.let { return it }
-        }
-
-        return null
+        return ApiDateParser.parsearMillis(fecha)
     }
 
     private fun escaparCsv(valor: String): String {

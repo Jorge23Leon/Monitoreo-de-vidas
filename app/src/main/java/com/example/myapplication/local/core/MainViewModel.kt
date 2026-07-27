@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import com.example.myapplication.local.entities.AppDatabase
 import com.example.myapplication.local.entities.LocalAgroUnitEntity
 import com.example.myapplication.local.entities.LocalCiaEntity
@@ -194,7 +195,7 @@ class MainViewModel(
             .takeIf { it > 0L }
 
         cargarCredencialesRecordadasEnLogin()
-        insertarDatosInicialesSeguros()
+        prepararSeguridadLocal()
         cargarSesionGuardadaAlIniciar()
     }
 
@@ -217,10 +218,20 @@ class MainViewModel(
             if (!estaEnConsulta) return@launch
 
             if (disponible) {
-                sincronizarInformacionActual(mostrarMensajeFinal = false)
+                mostrarMensaje(
+                    "Internet disponible. Toca Sincronizar para consultar el historial completo."
+                )
+                if (sesion.esTecnico || sesion.esInvitado) {
+                    cargarMonitoreosDirectoPorUsuario(
+                        sesion = sesion,
+                        intentarSincronizacionInicial = false
+                    )
+                } else {
+                    cargarMonitoreosPorFiltrosProgresivos()
+                }
             } else if (sesion.esTecnico || sesion.esInvitado) {
                 mostrarMensaje(
-                    "Sin internet: se muestra el último mes y cualquier trabajo pendiente de enviar."
+                    "Sin internet: se muestra el último mes, los 5 monitoreos más recientes y cualquier trabajo pendiente de enviar."
                 )
                 cargarMonitoreosDirectoPorUsuario(
                     sesion = sesion,
@@ -228,7 +239,7 @@ class MainViewModel(
                 )
             } else {
                 mostrarMensaje(
-                    "Sin internet: se muestra el último mes y cualquier trabajo pendiente de enviar."
+                    "Sin internet: se muestra el último mes, los 5 monitoreos más recientes y cualquier trabajo pendiente de enviar."
                 )
                 cargarMonitoreosPorFiltrosProgresivos()
             }
@@ -669,6 +680,14 @@ class MainViewModel(
     private suspend fun obtenerHeadersFuenteParaCias(
         idsCias: Set<Long>
     ): MainHeadersFuenteTemp {
+        val programasCerrados = cerrarMonitoreosVencidosSiAplica()
+        if (programasCerrados.isNotEmpty()) {
+            idsCias.forEach { idCia ->
+                headersOnlinePorCia.remove(idCia)
+                ciasConHeadersOnline.remove(idCia)
+            }
+        }
+
         val puedeUsarApi = hayConexionInternet() &&
                 idsCias.isNotEmpty() &&
                 idsCias.all { it in ciasConHeadersOnline }
@@ -682,8 +701,47 @@ class MainViewModel(
             )
         }
 
-        val headersOffline = database.localphytomonitoringheaderDao()
+        val headerDao = database.localphytomonitoringheaderDao()
+        val headersDentroDeVentana = headerDao
             .getHeadersDisponiblesOffline(fechaLimiteOffline())
+
+        /*
+         * Aunque el telefono pase meses sin conectarse, la pantalla nunca pierde
+         * su referencia historica: conservamos y mostramos al menos los cinco
+         * monitoreos mas recientes. Los pendientes/en proceso ya se protegen aparte.
+         */
+        val headersRespaldo = if (idsCias.isEmpty()) {
+            headerDao.getAllHeaders()
+                .sortedWith(
+                    compareByDescending<LocalPhytomonitoringHeaderEntity> {
+                        it.estStartDate
+                            ?: it.startAt
+                            ?: it.finishedAt
+                            ?: it.estFinishDate
+                            ?: Long.MIN_VALUE
+                    }.thenByDescending { it.idHeader }
+                )
+                .take(MonitoreoSyncRepository.MINIMO_MONITOREOS_OFFLINE)
+        } else {
+            idsCias.flatMap { idCia ->
+                headerDao.getHeadersMasRecientesPorCia(
+                    idLocalCia = idCia,
+                    limite = MonitoreoSyncRepository.MINIMO_MONITOREOS_OFFLINE
+                )
+            }
+        }
+
+        val headersOffline = (headersDentroDeVentana + headersRespaldo)
+            .distinctBy { it.idHeader }
+            .sortedWith(
+                compareByDescending<LocalPhytomonitoringHeaderEntity> {
+                    it.estStartDate
+                        ?: it.startAt
+                        ?: it.finishedAt
+                        ?: it.estFinishDate
+                        ?: Long.MIN_VALUE
+                }.thenByDescending { it.idHeader }
+            )
 
         if (idsCias.isEmpty()) {
             return MainHeadersFuenteTemp(
@@ -704,6 +762,25 @@ class MainViewModel(
             headers = headersOffline.filter { it.idProgram in idsProgramasPermitidos },
             desdeApi = false
         )
+    }
+
+    private suspend fun cerrarMonitoreosVencidosSiAplica(): Set<Long> {
+        val ahora = System.currentTimeMillis()
+        val headerDao = database.localphytomonitoringheaderDao()
+        val idsProgramas = headerDao
+            .getIdsProgramasConMonitoreosVencidos(ahora)
+            .toSet()
+
+        if (idsProgramas.isEmpty()) return emptySet()
+
+        database.withTransaction {
+            headerDao.cerrarMonitoreosVencidos(ahora)
+            idsProgramas.forEach { idProgram ->
+                database.localprogramDao().recalcularEstadoDesdeHeaders(idProgram)
+            }
+        }
+
+        return idsProgramas
     }
 
     private suspend fun obtenerHeadersFiltradosDeFuente(
@@ -2876,7 +2953,8 @@ class MainViewModel(
 
                     /*
                      * Con red se usa la lista temporal de la API. Sin red se usa
-                     * Room, limitado al último mes y al trabajo aún pendiente.
+                     * Room, limitado al último mes, a los cinco más recientes y
+                     * al trabajo aún pendiente.
                      */
 
                     val ciasPermitidasTecnico = if (sesion.esTecnico) {
@@ -3352,7 +3430,7 @@ class MainViewModel(
 
             if (!hayConexionInternet()) {
                 throw IllegalStateException(
-                    "Sin internet solo puedes abrir monitoreos guardados del último mes."
+                    "Sin internet solo puedes abrir monitoreos del último mes, los 5 más recientes o trabajo pendiente."
                 )
             }
 
@@ -4073,28 +4151,10 @@ class MainViewModel(
             else -> false
         }
     }
-    private fun insertarDatosInicialesSeguros() {
+    private fun prepararSeguridadLocal() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 insertarRolesInicialesSiNoExisten()
-
-                val rolAdmin = database.localRoleDao().getRoleByName("SUPER ADMIN")
-                    ?: return@launch
-
-                val totalUsuarios = database.userDao().countUsers()
-
-                if (totalUsuarios == 0) {
-                    database.userDao().insertUser(
-                        UserEntity(
-                            firstName = "Jorge",
-                            lastName = "Sandoval",
-                            username = "jorge",
-                            email = "jorge@test.com",
-                            password = PasswordHasher.generarHash("1234"),
-                            idRole = rolAdmin.idRole
-                        )
-                    )
-                }
                 val usuarios = database.userDao().getAllUsers()
 
                 usuarios.forEach { usuario ->

@@ -18,6 +18,7 @@ import com.google.gson.JsonObject
 import java.util.Locale
 import retrofit2.Response
 import android.util.Log
+import androidx.room.withTransaction
 
 class AgroSyncRepository(
     private val context: Context,
@@ -81,11 +82,19 @@ class AgroSyncRepository(
                     System.currentTimeMillis() - ultimaEstructura <
                     INTERVALO_ESTRUCTURA_AGRICOLA_MS
 
-            if (estructuraReciente) {
+            val productoresLocalesCache = database.localCiaAgroUnitDao()
+                .getProductoresByCia(idLocalCia)
+
+            /*
+             * Una marca de tiempo reciente no sirve si la estructura local esta
+             * vacia. Esto puede ocurrir tras una sincronizacion anterior donde la
+             * CIA aun no tenia programas o monitoreos. En ese caso se vuelve a
+             * consultar la estructura agricola para que los filtros no queden
+             * bloqueados durante 30 minutos.
+             */
+            if (estructuraReciente && productoresLocalesCache.isNotEmpty()) {
                 return ResultadoAgroSync.Exito(
-                    productores = database.localCiaAgroUnitDao()
-                        .getProductoresByCia(idLocalCia)
-                        .size,
+                    productores = productoresLocalesCache.size,
                     ranchos = 0,
                     parcelas = 0,
                     programasApi = referenciasProgramas.programas
@@ -266,11 +275,13 @@ class AgroSyncRepository(
                 .toSet()
 
             if (nuevosIdsRelacion != relacionesProductoresActuales) {
-                database.localCiaAgroUnitDao()
-                    .eliminarProductoresDeCia(idLocalCia)
+                database.withTransaction {
+                    database.localCiaAgroUnitDao()
+                        .eliminarProductoresDeCia(idLocalCia)
 
-                nuevasRelacionesProductores.forEach { relacion ->
-                    database.localCiaAgroUnitDao().asignarProductorACia(relacion)
+                    nuevasRelacionesProductores.forEach { relacion ->
+                        database.localCiaAgroUnitDao().asignarProductorACia(relacion)
+                    }
                 }
             }
 
@@ -644,6 +655,21 @@ class AgroSyncRepository(
                 "Productores por relación explícita desde endpoint CIA $ciaExtId: ${conRelacionEndpoint.size}"
             )
             return conRelacionEndpoint
+        }
+
+        /*
+         * El endpoint /organizations/ ya fue consultado con el DataCentral de la
+         * CIA. Su resultado es una fuente independiente de los programas y de los
+         * headers de monitoreo, por lo que debe conservarse aunque ambos esten
+         * vacios. La lista general sin filtro sigue sin aceptarse mas abajo; asi
+         * evitamos volver a mezclar productores de otras CIAs.
+         */
+        if (filtradosPorEndpoint.isNotEmpty()) {
+            Log.d(
+                "AGRO_SYNC",
+                "Productores devueltos por endpoint filtrado de CIA $ciaExtId: ${filtradosPorEndpoint.size}"
+            )
+            return filtradosPorEndpoint
         }
 
         /*

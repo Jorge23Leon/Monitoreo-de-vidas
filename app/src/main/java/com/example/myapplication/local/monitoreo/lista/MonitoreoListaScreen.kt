@@ -15,6 +15,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +34,10 @@ import com.example.myapplication.local.entities.LocalPhytomonitoringHeaderEntity
 import com.example.myapplication.local.entities.LocalPlotEntity
 import com.example.myapplication.local.entities.LocalProgramEntity
 import com.example.myapplication.local.entities.LocalRanchEntity
+import com.example.myapplication.local.monitoreo.estadoMuestraTiempoMonitoreo
+import com.example.myapplication.local.monitoreo.fechaCierreProgramadaMonitoreoMs
+import com.example.myapplication.local.monitoreo.textoResumenTiempoMonitoreo
+import kotlinx.coroutines.delay
 import java.util.Locale
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -66,6 +71,17 @@ fun MonitoreoListaScreen(
     onMonitoreosClick: () -> Unit = {},
     onAdminClick: () -> Unit = {}
 ) {
+    var ahoraMs by remember {
+        mutableStateOf(System.currentTimeMillis())
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            ahoraMs = System.currentTimeMillis()
+            delay(1_000L)
+        }
+    }
+
     val rolNormalizado = remember(rolUsuario) { normalizarRolVm(rolUsuario) }
 
     val rolParaPermisos = remember(rolUsuario, rolNormalizado) {
@@ -515,6 +531,16 @@ fun MonitoreoListaScreen(
                         additionalNotes = header.additionalNotes,
                         fechaInicio = header.estStartDate,
                         fechaFin = header.estFinishDate,
+                        textoTiempo = if (estadoMuestraTiempoMonitoreo(header.status)) {
+                            textoResumenTiempoMonitoreo(
+                                fechaCierreProgramadaMs = fechaCierreProgramadaMonitoreoMs(
+                                    programa = programa
+                                ),
+                                ahoraMs = ahoraMs
+                            )
+                        } else {
+                            null
+                        },
                         puedeAbrir = (esAdmin || esGerente || esSupervisor || esTecnico || esInvitado) && !monitoreoCerrado,
                         soloConsulta = soloConsulta,
                         puedeCancelar = (esAdmin || esGerente || esSupervisor || esTecnico || esInvitado) &&

@@ -384,6 +384,7 @@ internal fun TarjetaMonitoreoConsulta(
     codigo: String,
     fotoCultivo: String?,
     nombreCultivo: String?,
+    textoTiempo: String? = null,
     mostrarAbrir: Boolean,
     mostrarReporte: Boolean,
     puedeCancelar: Boolean = false,
@@ -540,6 +541,25 @@ internal fun TarjetaMonitoreoConsulta(
                             maxLines = 1
                         )
                     }
+                }
+
+                textoTiempo?.let { tiempo ->
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = "⏱  $tiempo",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                color = Color(0xFFFFF4E5),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        color = Color(0xFFB85C00),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
                 }
 
                 if (estaCancelado) {

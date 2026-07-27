@@ -43,6 +43,11 @@ fun ImageUriBox(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val objetivoPx = remember(sizeDp, context) {
+        (sizeDp * context.resources.displayMetrics.density * 2f)
+            .toInt()
+            .coerceAtLeast(1)
+    }
 
     var bitmap by remember(photo) {
         mutableStateOf<ImageBitmap?>(null)
@@ -58,7 +63,8 @@ fun ImageUriBox(
 
                 cargarImagenConOrientacion(
                     context = context.applicationContext,
-                    ruta = rutaLocal
+                    ruta = rutaLocal,
+                    objetivoPx = objetivoPx
                 )
             } catch (e: Exception) {
                 Log.w(
@@ -103,7 +109,8 @@ fun ImageUriBox(
 
 private fun cargarImagenConOrientacion(
     context: Context,
-    ruta: String
+    ruta: String,
+    objetivoPx: Int
 ): ImageBitmap? {
     if (
         ruta.startsWith("http://", ignoreCase = true) ||
@@ -114,20 +121,24 @@ private fun cargarImagenConOrientacion(
 
     val bitmapOriginal = when {
         ruta.startsWith("content://", ignoreCase = true) -> {
-            context.contentResolver
-                .openInputStream(Uri.parse(ruta))
-                ?.use { stream ->
-                    BitmapFactory.decodeStream(stream)
+            val uri = Uri.parse(ruta)
+            val opciones = opcionesMuestreadas(objetivoPx) { bounds ->
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    BitmapFactory.decodeStream(stream, null, bounds)
                 }
+            }
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                BitmapFactory.decodeStream(stream, null, opciones)
+            }
         }
 
         ruta.startsWith("file://", ignoreCase = true) -> {
             val path = Uri.parse(ruta).path ?: return null
-            BitmapFactory.decodeFile(path)
+            decodificarArchivoMuestreado(path, objetivoPx)
         }
 
         File(ruta).exists() -> {
-            BitmapFactory.decodeFile(ruta)
+            decodificarArchivoMuestreado(ruta, objetivoPx)
         }
 
         else -> null
@@ -142,6 +153,34 @@ private fun cargarImagenConOrientacion(
         bitmap = bitmapOriginal,
         orientacion = orientacion
     ).asImageBitmap()
+}
+
+private fun decodificarArchivoMuestreado(path: String, objetivoPx: Int): Bitmap? {
+    val opciones = opcionesMuestreadas(objetivoPx) { bounds ->
+        BitmapFactory.decodeFile(path, bounds)
+    }
+    return BitmapFactory.decodeFile(path, opciones)
+}
+
+private inline fun opcionesMuestreadas(
+    objetivoPx: Int,
+    leerDimensiones: (BitmapFactory.Options) -> Unit
+): BitmapFactory.Options {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    leerDimensiones(bounds)
+
+    var muestra = 1
+    while (
+        bounds.outWidth / (muestra * 2) >= objetivoPx ||
+        bounds.outHeight / (muestra * 2) >= objetivoPx
+    ) {
+        muestra *= 2
+    }
+
+    return BitmapFactory.Options().apply {
+        inSampleSize = muestra.coerceAtLeast(1)
+        inPreferredConfig = Bitmap.Config.ARGB_8888
+    }
 }
 
 private fun obtenerOrientacionExif(

@@ -1,7 +1,5 @@
 package com.example.myapplication.local.admin.monitoreos
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,9 +14,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.myapplication.local.api.fieldops.FieldTaskApiItem
 import com.example.myapplication.local.api.fieldops.MasterProgramApiItem
 import com.example.myapplication.local.entities.LocalAgroUnitEntity
 import com.example.myapplication.local.entities.LocalCropCatalogEntity
@@ -26,42 +24,36 @@ import com.example.myapplication.local.entities.LocalPlotEntity
 import com.example.myapplication.local.entities.LocalPlotVertexEntity
 import com.example.myapplication.local.entities.LocalRanchEntity
 
+data class SubprogramaAdminItem(
+    val programa: FieldTaskApiItem,
+    val rancho: LocalRanchEntity,
+    val parcela: LocalPlotEntity,
+    val cultivo: LocalCropCatalogEntity,
+    val fechaInicioMillis: Long,
+    val fechaFinMillis: Long
+)
+
 @Composable
 fun FormularioMonitoreoAdmin(
     guardando: Boolean,
-    cargandoProgramasMaestros: Boolean,
-    cargandoCiclos: Boolean,
+    cargandoProgramas: Boolean,
+    cargandoSubprogramas: Boolean,
     productores: List<LocalAgroUnitEntity>,
-    programasMaestros: List<MasterProgramApiItem>,
-    ciclosDisponibles: List<String>,
-    ranchos: List<LocalRanchEntity>,
-    parcelas: List<LocalPlotEntity>,
-    cultivos: List<LocalCropCatalogEntity>,
+    programas: List<MasterProgramApiItem>,
+    subprogramas: List<SubprogramaAdminItem>,
     vertices: List<LocalPlotVertexEntity>,
     productorSeleccionado: LocalAgroUnitEntity?,
-    programaMaestroSeleccionado: MasterProgramApiItem?,
-    ranchoSeleccionado: LocalRanchEntity?,
-    parcelaSeleccionada: LocalPlotEntity?,
-    cultivoSeleccionado: LocalCropCatalogEntity?,
-    ciclo: String,
-    fechaInicioMillis: Long?,
-    fechaFinMillis: Long?,
+    programaSeleccionado: MasterProgramApiItem?,
+    subprogramaSeleccionado: SubprogramaAdminItem?,
     onProductorSeleccionado: (LocalAgroUnitEntity) -> Unit,
-    onProgramaMaestroSeleccionado: (MasterProgramApiItem) -> Unit,
-    onRanchoSeleccionado: (LocalRanchEntity) -> Unit,
-    onParcelaSeleccionada: (LocalPlotEntity) -> Unit,
-    onCultivoSeleccionado: (LocalCropCatalogEntity) -> Unit,
-    onCicloSeleccionado: (String) -> Unit,
-    onFechaInicioChange: (Long) -> Unit,
-    onFechaFinChange: (Long) -> Unit,
+    onProgramaSeleccionado: (MasterProgramApiItem) -> Unit,
+    onSubprogramaSeleccionado: (SubprogramaAdminItem) -> Unit,
     onGuardarClick: () -> Unit
 ) {
-    val context = LocalContext.current
-
     AdminMonitorSectionCard(
         numero = "1",
-        titulo = "Ubicación y programa maestro",
-        subtitulo = "El programa remoto debe quedar ligado al productor, al programa maestro y a la parcela."
+        titulo = "Programa y subprograma",
+        subtitulo = "Selecciona únicamente registros que ya existen en Django."
     ) {
         AdminSelectorField(
             etiqueta = "Productor",
@@ -75,31 +67,31 @@ fun FormularioMonitoreoAdmin(
         Spacer(modifier = Modifier.height(10.dp))
 
         AdminSelectorField(
-            etiqueta = "Programa maestro",
+            etiqueta = "Programa",
             valor = when {
-                cargandoProgramasMaestros -> "Cargando programas maestros..."
-                programaMaestroSeleccionado != null -> textoProgramaMaestroAdmin(programaMaestroSeleccionado)
+                cargandoProgramas -> "Cargando programas..."
+                programaSeleccionado != null -> textoProgramaMaestroAdmin(programaSeleccionado)
                 productorSeleccionado == null -> "Primero selecciona un productor"
-                programasMaestros.isEmpty() -> "No hay programas maestros activos"
-                else -> "Seleccionar programa maestro"
+                programas.isEmpty() -> "No hay programas activos"
+                else -> "Seleccionar programa"
             },
-            opciones = programasMaestros,
+            opciones = programas,
             textoOpcion = { textoProgramaMaestroAdmin(it) },
             habilitado = !guardando &&
-                    !cargandoProgramasMaestros &&
+                    !cargandoProgramas &&
                     productorSeleccionado != null &&
-                    programasMaestros.isNotEmpty(),
-            onSeleccionar = onProgramaMaestroSeleccionado
+                    programas.isNotEmpty(),
+            onSeleccionar = onProgramaSeleccionado
         )
 
         if (
             productorSeleccionado != null &&
-            !cargandoProgramasMaestros &&
-            programasMaestros.isEmpty()
+            !cargandoProgramas &&
+            programas.isEmpty()
         ) {
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "Este productor no tiene programas maestros activos disponibles desde la API.",
+                text = "Este productor no tiene programas activos disponibles.",
                 color = Color(0xFFE65100),
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(horizontal = 4.dp)
@@ -109,23 +101,96 @@ fun FormularioMonitoreoAdmin(
         Spacer(modifier = Modifier.height(10.dp))
 
         AdminSelectorField(
-            etiqueta = "Rancho",
-            valor = ranchoSeleccionado?.name ?: "Seleccionar rancho",
-            opciones = ranchos,
-            textoOpcion = { "${it.name} (${it.code})" },
-            habilitado = !guardando && productorSeleccionado != null && ranchos.isNotEmpty(),
-            onSeleccionar = onRanchoSeleccionado
+            etiqueta = "Subprograma",
+            valor = when {
+                cargandoSubprogramas -> "Cargando subprogramas..."
+                subprogramaSeleccionado != null -> textoSubprogramaAdmin(
+                    programa = subprogramaSeleccionado.programa,
+                    parcela = subprogramaSeleccionado.parcela
+                )
+                programaSeleccionado == null -> "Primero selecciona un programa"
+                subprogramas.isEmpty() -> "No hay subprogramas disponibles"
+                else -> "Seleccionar subprograma"
+            },
+            opciones = subprogramas,
+            textoOpcion = {
+                textoSubprogramaAdmin(
+                    programa = it.programa,
+                    parcela = it.parcela
+                )
+            },
+            habilitado = !guardando &&
+                    !cargandoSubprogramas &&
+                    programaSeleccionado != null &&
+                    subprogramas.isNotEmpty(),
+            onSeleccionar = onSubprogramaSeleccionado
+        )
+
+        if (
+            programaSeleccionado != null &&
+            !cargandoSubprogramas &&
+            subprogramas.isEmpty()
+        ) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "Solo aparecen subprogramas activos, completos y con una parcela " +
+                        "disponible para este usuario.",
+                color = Color(0xFFE65100),
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(14.dp))
+
+    AdminMonitorSectionCard(
+        numero = "2",
+        titulo = "Datos heredados",
+        subtitulo = "Rancho, parcela, cultivo, ciclo y fechas vienen del subprograma; no se vuelven a capturar."
+    ) {
+        val detalle = subprogramaSeleccionado
+
+        AdminReadOnlyField(
+            etiqueta = "Rancho del subprograma",
+            valor = detalle?.rancho?.let { "${it.name} (${it.code})" }
+                ?: "Pendiente de seleccionar subprograma"
         )
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        AdminSelectorField(
-            etiqueta = "Parcela",
-            valor = parcelaSeleccionada?.nombreMostrarAdmin() ?: "Seleccionar parcela",
-            opciones = parcelas,
-            textoOpcion = { parcela -> parcela.nombreMostrarAdmin() },
-            habilitado = !guardando && ranchoSeleccionado != null && parcelas.isNotEmpty(),
-            onSeleccionar = onParcelaSeleccionada
+        AdminReadOnlyField(
+            etiqueta = "Parcela del subprograma",
+            valor = detalle?.parcela?.nombreMostrarAdmin()
+                ?: "Pendiente de seleccionar subprograma"
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        AdminReadOnlyField(
+            etiqueta = "Cultivo",
+            valor = detalle?.cultivo?.let(::textoCultivoAdmin)
+                ?: "Pendiente de seleccionar subprograma"
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        AdminReadOnlyField(
+            etiqueta = "Ciclo",
+            valor = detalle?.programa?.cycle
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: "Pendiente de seleccionar subprograma"
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        AdminReadOnlyField(
+            etiqueta = "Vigencia",
+            valor = detalle?.let {
+                "${formatearFechaAdmin(it.fechaInicioMillis)} → " +
+                        formatearFechaAdmin(it.fechaFinMillis)
+            } ?: "Pendiente de seleccionar subprograma"
         )
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -136,114 +201,24 @@ fun FormularioMonitoreoAdmin(
     Spacer(modifier = Modifier.height(14.dp))
 
     AdminMonitorSectionCard(
-        numero = "2",
-        titulo = "Datos del programa",
-        subtitulo = "Selecciona cultivo, ciclo existente y fechas. Django validará el rango del programa maestro."
-    ) {
-        AdminSelectorField(
-            etiqueta = "Cultivo",
-            valor = cultivoSeleccionado?.let { cultivo ->
-                if (cultivo.variedad.isNullOrBlank()) cultivo.name else "${cultivo.name} - ${cultivo.variedad}"
-            } ?: "Seleccionar cultivo",
-            opciones = cultivos,
-            textoOpcion = { cultivo ->
-                if (cultivo.variedad.isNullOrBlank()) cultivo.name else "${cultivo.name} - ${cultivo.variedad}"
-            },
-            habilitado = !guardando && cultivos.isNotEmpty(),
-            onSeleccionar = onCultivoSeleccionado
-        )
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        /*
-         * El ciclo se selecciona desde Django. Así se manda exactamente un
-         * formato que el backend ya aceptó, por ejemplo Primavera-2026.
-         */
-        AdminSelectorField(
-            etiqueta = "Ciclo del servidor",
-            valor = when {
-                cargandoCiclos -> "Cargando ciclos disponibles..."
-                ciclo.isNotBlank() -> ciclo
-                programaMaestroSeleccionado == null -> "Primero selecciona un programa maestro"
-                ciclosDisponibles.isEmpty() -> "No hay ciclos válidos disponibles"
-                else -> "Seleccionar ciclo"
-            },
-            opciones = ciclosDisponibles,
-            textoOpcion = { it },
-            habilitado = !guardando &&
-                    !cargandoCiclos &&
-                    programaMaestroSeleccionado != null &&
-                    ciclosDisponibles.isNotEmpty(),
-            onSeleccionar = onCicloSeleccionado
-        )
-
-        if (
-            programaMaestroSeleccionado != null &&
-            !cargandoCiclos &&
-            ciclosDisponibles.isEmpty()
-        ) {
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "El ciclo no se escribe manualmente. Selecciona otro programa maestro " +
-                        "o crea primero un programa con ciclo válido en Django.",
-                color = Color(0xFFE65100),
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(horizontal = 4.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            AdminDatePickerField(
-                etiqueta = "Inicio",
-                valor = formatearFechaAdmin(fechaInicioMillis),
-                habilitado = !guardando,
-                modifier = Modifier.weight(1f),
-                onClick = {
-                    mostrarDatePickerNativoAdmin(
-                        context = context,
-                        fechaActualMillis = fechaInicioMillis,
-                        onSeleccionar = onFechaInicioChange
-                    )
-                }
-            )
-
-            AdminDatePickerField(
-                etiqueta = "Fin",
-                valor = formatearFechaAdmin(fechaFinMillis),
-                habilitado = !guardando,
-                modifier = Modifier.weight(1f),
-                onClick = {
-                    mostrarDatePickerNativoAdmin(
-                        context = context,
-                        fechaActualMillis = fechaFinMillis,
-                        onSeleccionar = onFechaFinChange
-                    )
-                }
-            )
-        }
-    }
-
-    Spacer(modifier = Modifier.height(14.dp))
-
-    AdminMonitorSectionCard(
         numero = "3",
-        titulo = "Crear en servidor",
-        subtitulo = "Se creará primero el Programa y después la sesión fitosanitaria. Los checkpoints se capturan en campo."
+        titulo = "Crear sesión de monitoreo",
+        subtitulo = "No se crearán programas ni subprogramas nuevos. Solo se ligará la sesión fitosanitaria."
     ) {
         AdminResumenMonitoreo(
             productor = productorSeleccionado,
-            programaMaestro = programaMaestroSeleccionado,
-            rancho = ranchoSeleccionado,
-            parcela = parcelaSeleccionada,
-            cultivo = cultivoSeleccionado,
-            ciclo = ciclo,
-            fechaInicio = formatearFechaAdmin(fechaInicioMillis),
-            fechaFin = formatearFechaAdmin(fechaFinMillis),
+            programaMaestro = programaSeleccionado,
+            subprograma = subprogramaSeleccionado?.programa,
+            rancho = subprogramaSeleccionado?.rancho,
+            parcela = subprogramaSeleccionado?.parcela,
+            cultivo = subprogramaSeleccionado?.cultivo,
+            ciclo = subprogramaSeleccionado?.programa?.cycle.orEmpty(),
+            fechaInicio = subprogramaSeleccionado
+                ?.let { formatearFechaAdmin(it.fechaInicioMillis) }
+                .orEmpty(),
+            fechaFin = subprogramaSeleccionado
+                ?.let { formatearFechaAdmin(it.fechaFinMillis) }
+                .orEmpty(),
             totalVertices = vertices.size
         )
 
@@ -266,10 +241,10 @@ fun FormularioMonitoreoAdmin(
                     strokeWidth = 2.dp
                 )
                 Spacer(modifier = Modifier.width(10.dp))
-                Text("Creando en servidor...")
+                Text("Creando sesión...")
             } else {
                 Text(
-                    text = "Crear monitoreo en servidor",
+                    text = "Crear sesión de monitoreo",
                     fontWeight = FontWeight.Black,
                     modifier = Modifier.padding(vertical = 6.dp)
                 )
@@ -285,7 +260,7 @@ fun textoProgramaMaestroAdmin(programa: MasterProgramApiItem): String {
         ?: programa.code
             ?.trim()
             ?.takeIf { it.isNotBlank() }
-        ?: "Programa maestro"
+        ?: "Programa"
 
     val codigo = programa.code
         ?.trim()
@@ -301,4 +276,38 @@ fun textoProgramaMaestroAdmin(programa: MasterProgramApiItem): String {
         codigo?.let { "$titulo ($it)" } ?: titulo,
         fechas.takeIf { it.isNotBlank() }
     ).joinToString(" • ")
+}
+
+fun textoSubprogramaAdmin(
+    programa: FieldTaskApiItem,
+    parcela: LocalPlotEntity? = null
+): String {
+    val titulo = programa.title
+        ?.trim()
+        ?.takeIf { it.isNotBlank() && it != "-" }
+        ?: programa.voucherCode
+            ?.trim()
+            ?.takeIf { it.isNotBlank() && it != "-" }
+        ?: "Subprograma"
+
+    val codigo = programa.voucherCode
+        ?.trim()
+        ?.takeIf { it.isNotBlank() && it != "-" && it != titulo }
+
+    val ubicacion = parcela?.nombreMostrarAdmin()
+    val ciclo = programa.cycle?.trim()?.takeIf { it.isNotBlank() }
+
+    return listOfNotNull(
+        codigo?.let { "$titulo ($it)" } ?: titulo,
+        ubicacion,
+        ciclo
+    ).joinToString(" • ")
+}
+
+private fun textoCultivoAdmin(cultivo: LocalCropCatalogEntity): String {
+    return if (cultivo.variedad.isNullOrBlank()) {
+        cultivo.name
+    } else {
+        "${cultivo.name} - ${cultivo.variedad}"
+    }
 }

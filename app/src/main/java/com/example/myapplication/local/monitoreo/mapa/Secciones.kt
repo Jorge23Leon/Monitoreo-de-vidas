@@ -33,12 +33,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.myapplication.local.monitoreo.estadoMuestraTiempoMonitoreo
+import com.example.myapplication.local.monitoreo.textoResumenTiempoMonitoreo
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
-private const val HORAS_LIMITE_MONITOREO = 24L
-internal const val DURACION_MONITOREO_MS = HORAS_LIMITE_MONITOREO * 60L * 60L * 1000L
 
 internal enum class AccionDialogoMapa {
     REGRESAR,
@@ -87,18 +86,6 @@ internal fun textoEstadoMapa(
     }
 }
 
-internal fun obtenerCierreAutomaticoMs(startAt: Long?): Long? {
-    return startAt?.plus(DURACION_MONITOREO_MS)
-}
-
-internal fun tiempoMonitoreoAgotado(
-    startAt: Long?,
-    ahoraMs: Long
-): Boolean {
-    val cierreAutomaticoMs = obtenerCierreAutomaticoMs(startAt) ?: return false
-    return ahoraMs >= cierreAutomaticoMs
-}
-
 internal fun esCierreAutomaticoMapa(additionalNotes: String): Boolean {
     return additionalNotes.trim().startsWith(
         prefix = "CERRADO_AUTOMATICO",
@@ -107,29 +94,6 @@ internal fun esCierreAutomaticoMapa(additionalNotes: String): Boolean {
         other = "CERRADO_AUTOMATICO",
         ignoreCase = true
     )
-}
-
-internal fun textoTiempoRestanteMonitoreo(
-    startAt: Long?,
-    ahoraMs: Long
-): String {
-    if (startAt == null) return "Inicia al confirmar el primer punto"
-
-    val cierreAutomaticoMs = obtenerCierreAutomaticoMs(startAt)
-        ?: return "Inicia al confirmar el primer punto"
-    val restanteMs = cierreAutomaticoMs - ahoraMs
-
-    if (restanteMs <= 0L) return "Tiempo agotado"
-
-    val totalMinutos = (restanteMs / 60_000L).coerceAtLeast(0L)
-    val horas = totalMinutos / 60L
-    val minutos = totalMinutos % 60L
-
-    return if (horas > 0) {
-        "${horas}h ${minutos}min"
-    } else {
-        "${minutos}min"
-    }
 }
 
 private fun colorEstadoMapa(
@@ -181,7 +145,7 @@ internal fun BarraMapaMonitoreo(
     nombreMonitoreo: String,
     status: String,
     additionalNotes: String,
-    startAt: Long?,
+    fechaCierreProgramadaMs: Long?,
     ahoraMs: Long,
     onRegresarClick: () -> Unit
 ) {
@@ -251,15 +215,20 @@ internal fun BarraMapaMonitoreo(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                if (estadoMuestraTiempoMonitoreo(status)) {
+                    Spacer(modifier = Modifier.height(6.dp))
 
-                Text(
-                    text = "Tiempo restante: ${textoTiempoRestanteMonitoreo(startAt, ahoraMs)}",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFD66B00),
-                    maxLines = 1
-                )
+                    Text(
+                        text = textoResumenTiempoMonitoreo(
+                            fechaCierreProgramadaMs = fechaCierreProgramadaMs,
+                            ahoraMs = ahoraMs
+                        ),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFD66B00),
+                        maxLines = 1
+                    )
+                }
             }
         }
     }

@@ -41,6 +41,51 @@ interface LocalPhytomonitoringHeaderDao {
     """)
     suspend fun getAllHeaders(): List<LocalPhytomonitoringHeaderEntity>
 
+    @Query("""
+        SELECT DISTINCT h.idProgram
+        FROM local_phytomonitoring_headers h
+        INNER JOIN local_programs p ON p.idProgram = h.idProgram
+        WHERE p.est_finish_date > 0
+          AND p.est_finish_date <= :ahora
+          AND LOWER(TRIM(h.status)) IN (
+               'pendiente', 'pending',
+               'en proceso', 'in_progress', 'vigente'
+          )
+    """)
+    suspend fun getIdsProgramasConMonitoreosVencidos(ahora: Long): List<Long>
+
+    @Query("""
+        UPDATE local_phytomonitoring_headers
+        SET status = 'Completado',
+            finished_at = (
+                SELECT p.est_finish_date
+                FROM local_programs p
+                WHERE p.idProgram = local_phytomonitoring_headers.idProgram
+            ),
+            additional_notes = CASE
+                WHEN UPPER(COALESCE(additional_notes, '')) LIKE '%CERRADO_AUTOMATICO%'
+                    THEN additional_notes
+                WHEN TRIM(COALESCE(additional_notes, '')) = ''
+                     OR UPPER(TRIM(COALESCE(additional_notes, ''))) = 'PAUSADO'
+                    THEN 'CERRADO_AUTOMATICO: Se cerró automáticamente porque se agotó el tiempo del monitoreo.'
+                ELSE additional_notes || CHAR(10) ||
+                     'CERRADO_AUTOMATICO: Se cerró automáticamente porque se agotó el tiempo del monitoreo.'
+            END,
+            sync_pending = 1
+        WHERE LOWER(TRIM(status)) IN (
+              'pendiente', 'pending',
+              'en proceso', 'in_progress', 'vigente'
+        )
+          AND EXISTS (
+              SELECT 1
+              FROM local_programs p
+              WHERE p.idProgram = local_phytomonitoring_headers.idProgram
+                AND p.est_finish_date > 0
+                AND p.est_finish_date <= :ahora
+          )
+    """)
+    suspend fun cerrarMonitoreosVencidos(ahora: Long): Int
+
     /**
      * Cache disponible sin conexión. Se limita a 30 días, pero conserva trabajo
      * activo o pendiente de subir para que una limpieza nunca borre trabajo de campo.
@@ -74,6 +119,30 @@ interface LocalPhytomonitoringHeaderDao {
     """)
     suspend fun getHeadersDisponiblesOffline(
         fechaLimite: Long
+    ): List<LocalPhytomonitoringHeaderEntity>
+
+    /**
+     * Respaldo historico minimo por CIA. Estos registros se conservan aunque
+     * hayan quedado fuera de la ventana normal de 30 dias.
+     */
+    @Query("""
+        SELECT h.*
+        FROM local_phytomonitoring_headers h
+        INNER JOIN local_programs p ON p.idProgram = h.idProgram
+        WHERE p.idLocalCia = :idLocalCia
+        ORDER BY COALESCE(
+                     h.est_start_date,
+                     h.start_at,
+                     h.finished_at,
+                     h.est_finish_date,
+                     0
+                 ) DESC,
+                 h.idHeader DESC
+        LIMIT :limite
+    """)
+    suspend fun getHeadersMasRecientesPorCia(
+        idLocalCia: Long,
+        limite: Int
     ): List<LocalPhytomonitoringHeaderEntity>
 
     @Query("""

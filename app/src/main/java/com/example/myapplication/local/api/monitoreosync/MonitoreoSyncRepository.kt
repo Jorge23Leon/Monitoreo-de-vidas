@@ -29,6 +29,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import com.example.myapplication.local.api.agrocatalogs.ResultadoCatalogoFitoSync
 import com.example.myapplication.local.api.core.ApiConfig
+import com.example.myapplication.local.api.core.ApiDateParser
 import com.google.gson.JsonElement
 import com.example.myapplication.local.common.ImageCache
 import com.example.myapplication.local.monitoreo.media.PhytoMediaStorage
@@ -40,6 +41,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
+import androidx.room.withTransaction
 
 class MonitoreoSyncRepository(
     private val context: Context,
@@ -50,6 +52,7 @@ class MonitoreoSyncRepository(
         private const val KEY_ULTIMA_REVISION_CATALOGOS = "ultima_revision_catalogos"
         private const val INTERVALO_REVISION_CATALOGOS_MS = 24L * 60L * 60L * 1000L
         const val VENTANA_OFFLINE_MS = 30L * 24L * 60L * 60L * 1000L
+        const val MINIMO_MONITOREOS_OFFLINE = 5
     }
 
     private val agroCatalogsRepository = AgroCatalogsRepository(
@@ -221,22 +224,24 @@ class MonitoreoSyncRepository(
             val idsProgramasCia = programasApi.map { it.id }.toSet()
 
             // Nunca se usa datacentral = null como respaldo. Eso era la fuga entre CIAs.
-            programasApi.forEach { programaApi ->
-                runCatching {
-                    guardarOCrearPrograma(
-                        programaApi = programaApi,
-                        idLocalCia = idLocalCia
-                    )
-                }.onSuccess { idPrograma ->
-                    if (idPrograma != null) {
-                        programasGuardados++
-                    } else {
-                        advertir(
-                            "Programa ${programaApi.id} omitido: no se pudo relacionar con productor, rancho, parcela o cultivo local."
+            database.withTransaction {
+                programasApi.forEach { programaApi ->
+                    runCatching {
+                        guardarOCrearPrograma(
+                            programaApi = programaApi,
+                            idLocalCia = idLocalCia
                         )
+                    }.onSuccess { idPrograma ->
+                        if (idPrograma != null) {
+                            programasGuardados++
+                        } else {
+                            advertir(
+                                "Programa ${programaApi.id} omitido: no se pudo relacionar con productor, rancho, parcela o cultivo local."
+                            )
+                        }
+                    }.onFailure { error ->
+                        advertir("Error guardando programa ${programaApi.id}: ${error.message}", error)
                     }
-                }.onFailure { error ->
-                    advertir("Error guardando programa ${programaApi.id}: ${error.message}", error)
                 }
             }
 
@@ -286,68 +291,83 @@ class MonitoreoSyncRepository(
             val idsHeadersProtegidos = headerDao
                 .getIdsHeadersProtegidosPorCia(idLocalCia)
                 .toSet()
+            val extIdsCincoMasRecientes = headersPorExtId.values
+                .sortedWith(
+                    compareByDescending<PhytoHeaderApiItem> { header ->
+                        parseFechaApi(header.estimatedStartDate)
+                            ?: parseFechaApi(header.startedAt)
+                            ?: parseFechaApi(header.createdAt)
+                            ?: Long.MIN_VALUE
+                    }.thenByDescending { it.id }
+                )
+                .take(MINIMO_MONITOREOS_OFFLINE)
+                .map { it.id }
+                .toSet()
 
-            headersPorExtId.values.forEach { headerApi ->
-                runCatching {
-                    val existente = headerDao.getHeaderByExtId(headerApi.id)
-                    val conservarEstadoLocal =
-                        headerApi.id in extIdsConEstadoLocalSinEnviar
-                    val fechaReferencia = parseFechaApi(headerApi.estimatedStartDate)
-                        ?: parseFechaApi(headerApi.startedAt)
-                        ?: parseFechaApi(headerApi.createdAt)
-                    val estadoRemoto = normalizarEstado(headerApi.status)
-                    val esTrabajoActivo = estadoRemoto == "Pendiente" ||
-                            estadoRemoto == "En proceso"
-                    val debePersistirOffline = fechaReferencia == null ||
-                            fechaReferencia >= fechaLimiteOffline ||
-                            esTrabajoActivo ||
-                            existente?.idHeader?.let { idHeader ->
-                                idHeader in idsHeadersProtegidos
-                            } == true
+            database.withTransaction {
+                headersPorExtId.values.forEach { headerApi ->
+                    runCatching {
+                        val existente = headerDao.getHeaderByExtId(headerApi.id)
+                        val conservarEstadoLocal =
+                            headerApi.id in extIdsConEstadoLocalSinEnviar
+                        val fechaReferencia = parseFechaApi(headerApi.estimatedStartDate)
+                            ?: parseFechaApi(headerApi.startedAt)
+                            ?: parseFechaApi(headerApi.createdAt)
+                        val estadoRemoto = normalizarEstado(headerApi.status)
+                        val esTrabajoActivo = estadoRemoto == "Pendiente" ||
+                                estadoRemoto == "En proceso"
+                        val debePersistirOffline = fechaReferencia == null ||
+                                fechaReferencia >= fechaLimiteOffline ||
+                                esTrabajoActivo ||
+                                headerApi.id in extIdsCincoMasRecientes ||
+                                existente?.idHeader?.let { idHeader ->
+                                    idHeader in idsHeadersProtegidos
+                                } == true
 
-                    if (debePersistirOffline) {
-                        val idHeaderLocal = guardarOCrearHeader(
-                            headerApi = headerApi,
-                            idLocalCiaEsperada = idLocalCia,
-                            conservarEstadoLocal = conservarEstadoLocal
-                        ) ?: return@runCatching null
+                        if (debePersistirOffline) {
+                            val idHeaderLocal = guardarOCrearHeader(
+                                headerApi = headerApi,
+                                idLocalCiaEsperada = idLocalCia,
+                                conservarEstadoLocal = conservarEstadoLocal
+                            ) ?: return@runCatching null
 
-                        extIdsHeadersPersistidos += headerApi.id
-                        headerDao.getHeaderById(idHeaderLocal)
-                    } else {
-                        construirHeaderLocal(
-                            headerApi = headerApi,
-                            idLocalCiaEsperada = idLocalCia,
-                            conservarEstadoLocal = false,
-                            usarIdTemporal = true
-                        )
-                    }
-                }.onSuccess { headerVisible ->
-                    if (headerVisible == null) {
-                        advertir("Header ${headerApi.id} omitido: no coincide con la CIA seleccionada o faltan relaciones locales.")
-                    } else {
-                        headersOnline += headerVisible
+                            extIdsHeadersPersistidos += headerApi.id
+                            headerDao.getHeaderById(idHeaderLocal)
+                        } else {
+                            construirHeaderLocal(
+                                headerApi = headerApi,
+                                idLocalCiaEsperada = idLocalCia,
+                                conservarEstadoLocal = false,
+                                usarIdTemporal = true
+                            )
+                        }
+                    }.onSuccess { headerVisible ->
+                        if (headerVisible == null) {
+                            advertir("Header ${headerApi.id} omitido: no coincide con la CIA seleccionada o faltan relaciones locales.")
+                        } else {
+                            headersOnline += headerVisible
 
-                        if (headerApi.id in extIdsHeadersPersistidos) {
-                            headersGuardados++
-                            headerApi.targetPoints.orEmpty().forEach { puntoApi ->
-                                runCatching {
-                                    guardarOCrearTargetPoint(
-                                        puntoApi = puntoApi,
-                                        headerExtIdFallback = headerApi.id,
-                                        idHeaderLocalFallback = headerVisible.idHeader,
-                                        idLocalCiaEsperada = idLocalCia
-                                    )
-                                }.onSuccess { idPunto ->
-                                    if (idPunto != null) puntosGuardados++
-                                }.onFailure { error ->
-                                    advertir("Error guardando punto del header ${headerApi.id}: ${error.message}", error)
+                            if (headerApi.id in extIdsHeadersPersistidos) {
+                                headersGuardados++
+                                headerApi.targetPoints.orEmpty().forEach { puntoApi ->
+                                    runCatching {
+                                        guardarOCrearTargetPoint(
+                                            puntoApi = puntoApi,
+                                            headerExtIdFallback = headerApi.id,
+                                            idHeaderLocalFallback = headerVisible.idHeader,
+                                            idLocalCiaEsperada = idLocalCia
+                                        )
+                                    }.onSuccess { idPunto ->
+                                        if (idPunto != null) puntosGuardados++
+                                    }.onFailure { error ->
+                                        advertir("Error guardando punto del header ${headerApi.id}: ${error.message}", error)
+                                    }
                                 }
                             }
                         }
+                    }.onFailure { error ->
+                        advertir("Error guardando header ${headerApi.id}: ${error.message}", error)
                     }
-                }.onFailure { error ->
-                    advertir("Error guardando header ${headerApi.id}: ${error.message}", error)
                 }
             }
 
@@ -397,12 +417,23 @@ class MonitoreoSyncRepository(
 
             /*
              * La lista histórica completa vive solo en memoria mientras hay red.
-             * Room conserva un mes y cualquier trabajo activo o sin confirmar.
+             * Room conserva un mes, los cinco monitoreos más recientes y cualquier
+             * trabajo activo o sin confirmar.
              */
-            val idsDepurables = headerDao.getIdsHeadersDepurablesPorCia(
-                idLocalCia = idLocalCia,
-                fechaLimite = fechaLimiteOffline
-            )
+            val idsCincoMasRecientes = headerDao
+                .getHeadersMasRecientesPorCia(
+                    idLocalCia = idLocalCia,
+                    limite = MINIMO_MONITOREOS_OFFLINE
+                )
+                .map { it.idHeader }
+                .toSet()
+
+            val idsDepurables = headerDao
+                .getIdsHeadersDepurablesPorCia(
+                    idLocalCia = idLocalCia,
+                    fechaLimite = fechaLimiteOffline
+                )
+                .filterNot { it in idsCincoMasRecientes }
 
             if (idsDepurables.isNotEmpty()) {
                 idsDepurables.forEach { idHeader ->
@@ -767,7 +798,8 @@ class MonitoreoSyncRepository(
             extId = extId,
             cycle = programaApi.cycle?.takeIf { it.isNotBlank() } ?: "Sin ciclo",
             estStartDate = parseFechaApi(programaApi.estStartDate) ?: 0L,
-            estFinishDate = parseFechaApi(programaApi.estFinishDate) ?: 0L,
+            estFinishDate = ApiDateParser
+                .parsearFinDeDiaMillis(programaApi.estFinishDate) ?: 0L,
             actStartDate = parseFechaApi(programaApi.actualStartDate),
             actFinishDate = parseFechaApi(programaApi.actualFinishDate),
             status = normalizarEstado(programaApi.status),
@@ -857,7 +889,8 @@ class MonitoreoSyncRepository(
             extId = extId,
             cycle = programaLocal.cycle,
             estStartDate = parseFechaApi(headerApi.estimatedStartDate),
-            estFinishDate = parseFechaApi(headerApi.estimatedEndDate),
+            estFinishDate = ApiDateParser
+                .parsearFinDeDiaMillis(headerApi.estimatedEndDate),
             // Cuando el PATCH no pudo salir, Room conserva el cambio local hasta reintentar.
             startAt = if (conservarEstadoLocal) {
                 existente?.startAt ?: parseFechaApi(headerApi.startedAt)
@@ -1161,33 +1194,7 @@ class MonitoreoSyncRepository(
     }
 
     private fun parseFechaApi(fecha: String?): Long? {
-        if (fecha.isNullOrBlank()) return null
-
-        val limpia = fecha.trim()
-
-        val formatos = listOf(
-            "yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXX",
-            "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
-            "yyyy-MM-dd'T'HH:mm:ssXXX",
-            "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'",
-            "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-            "yyyy-MM-dd'T'HH:mm:ss'Z'",
-            "yyyy-MM-dd"
-        )
-
-        formatos.forEach { patron ->
-            try {
-                val sdf = SimpleDateFormat(patron, Locale.US).apply {
-                    isLenient = false
-                    timeZone = TimeZone.getTimeZone("UTC")
-                }
-
-                return sdf.parse(limpia)?.time
-            } catch (_: Exception) {
-            }
-        }
-
-        return null
+        return ApiDateParser.parsearMillis(fecha)
     }
 
     private fun extraerLatLon(coordinates: List<Double>?): Pair<Double, Double>? {
