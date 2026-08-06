@@ -204,8 +204,29 @@ data class FieldTaskTreeApiItem(
     @SerializedName("est_finish_date")
     val estFinishDate: String? = null,
 
+    /**
+     * Sesiones reales ligadas a este subprograma.
+     *
+     * El árbol de producción ya entrega esta relación. Leerla aquí permite
+     * mostrar todos los subprogramas, incluso los que todavía no tienen una
+     * sesión de aspersión creada.
+     */
+    @SerializedName("aspersion_sessions")
+    val aspersionSessions: List<AspersionSessionSummaryApiItem> = emptyList(),
+
     @SerializedName("phyto_monitoring_headers")
     val phytoMonitoringHeaders: List<PhytoMonitoringHeaderTreeApiItem> = emptyList()
+)
+
+data class AspersionSessionSummaryApiItem(
+    val id: String,
+    val type: String? = null,
+
+    @SerializedName("aspersion_date")
+    val aspersionDate: String? = null,
+
+    @SerializedName("import_status")
+    val importStatus: String? = null
 )
 
 data class PhytoMonitoringHeaderTreeApiItem(

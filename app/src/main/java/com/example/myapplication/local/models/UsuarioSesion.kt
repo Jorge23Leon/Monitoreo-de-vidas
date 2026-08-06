@@ -29,7 +29,8 @@ data class UsuarioSesion(
                 .replace(Regex("\\s+"), " ")
 
             return when (limpio) {
-                "super admin", "admin", "administrador" -> "admin"
+                "superadmin", "super admin", "super administrador",
+                "admin", "administrador" -> "admin"
                 "gerente" -> "gerente"
                 "ingy supervision", "ing y supervision", "supervisor" -> "supervisor"
                 "tecnico", "tecnicos", "técnico", "técnicos" -> "tecnico"
@@ -39,17 +40,21 @@ data class UsuarioSesion(
         }
 
     val esAdmin: Boolean
-        get() = rolNormalizado == "admin"
+        get() = level >= 5 || rolNormalizado == "admin"
 
     val esGerente: Boolean
-        get() = rolNormalizado == "gerente"
+        get() = level == 4 || rolNormalizado == "gerente"
 
     val esSupervisor: Boolean
-        get() = rolNormalizado == "supervisor"
+        get() = level == 3 || rolNormalizado == "supervisor"
 
     val esTecnico: Boolean
-        get() = rolNormalizado == "tecnico"
+        get() = level == 2 || rolNormalizado == "tecnico"
 
     val esInvitado: Boolean
-        get() = rolNormalizado == "invitado"
+        get() = level <= 1 || rolNormalizado == "invitado"
+
+    /** Aspersión contiene información gerencial y solo se expone a estos roles. */
+    val puedeVerAspersion: Boolean
+        get() = esAdmin || esGerente
 }

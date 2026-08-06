@@ -4,8 +4,9 @@ plugins {
     id("org.jetbrains.kotlin.kapt")
 }
 
-val ciagroApiBaseUrl = providers.gradleProperty("CIAGRO_API_BASE_URL")
-    .orElse("https://geology-allocated-predictions-prince.trycloudflare.com/")
+val ciagroApiBaseUrl = providers
+    .gradleProperty("CIAGRO_API_BASE_URL")
+    .orElse("https://emacs-plaza-driving-stages.trycloudflare.com/")
     .get()
 
 android {
@@ -88,6 +89,7 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     kapt("androidx.room:room-compiler:2.6.1")
+
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
@@ -97,14 +99,16 @@ dependencies {
     implementation("com.google.android.gms:play-services-location:21.3.0")
     implementation("androidx.exifinterface:exifinterface:1.4.2")
 
-    // CameraX: vista propia de la app, forzada a cámara trasera.
     val cameraXVersion = "1.4.2"
     implementation("androidx.camera:camera-core:$cameraXVersion")
     implementation("androidx.camera:camera-camera2:$cameraXVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
     implementation("androidx.camera:camera-view:$cameraXVersion")
 
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+
     testImplementation(libs.junit)
+
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
@@ -112,5 +116,4 @@ dependencies {
 
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
 }

@@ -15,6 +15,12 @@ import com.example.myapplication.local.admin.agricola.AdminGestionAgricolaScreen
 import com.example.myapplication.local.admin.catalogos.AdminCatalogosScreen
 import com.example.myapplication.local.admin.home.AdminHomeScreen
 import com.example.myapplication.local.admin.monitoreos.AdminMonitoreoScreen
+import com.example.myapplication.local.aspersion.ui.AspersionDetailScreen
+import com.example.myapplication.local.aspersion.ui.AspersionFullMapScreen
+import com.example.myapplication.local.aspersion.ui.AspersionSessionsScreen
+import com.example.myapplication.local.aspersion.ui.AspersionViewModel
+import com.example.myapplication.local.aspersion.ui.AspersionAccessMode
+import com.example.myapplication.local.aspersion.ui.ModulosTrabajoScreen
 import com.example.myapplication.local.auth.LoginScreen
 import com.example.myapplication.local.auth.RegistroUsuarioScreen
 import com.example.myapplication.local.auth.RecuperarPasswordScreen
@@ -62,9 +68,33 @@ private fun textoAccionMenuTrabajo(accion: AccionMenuTrabajo): String {
 fun MainNavegacion(
     database: AppDatabase,
     mainViewModel: MainViewModel,
+    aspersionViewModel: AspersionViewModel,
     uiState: MainUiState
 ) {
     val context = LocalContext.current
+    val aspersionState = aspersionViewModel.uiState
+
+    LaunchedEffect(aspersionState.message) {
+        aspersionState.message?.let { message ->
+            Toast.makeText(
+                context,
+                message,
+                Toast.LENGTH_SHORT
+            ).show()
+            aspersionViewModel.consumeMessage()
+        }
+    }
+
+    LaunchedEffect(aspersionState.error) {
+        aspersionState.error?.let { error ->
+            Toast.makeText(
+                context,
+                error,
+                Toast.LENGTH_LONG
+            ).show()
+            aspersionViewModel.consumeError()
+        }
+    }
 
 
     fun abrirCorreoRecuperacion(correoUsuario: String) {
@@ -191,6 +221,57 @@ fun MainNavegacion(
                 }
             }
         )
+    }
+
+    /*
+     * Solo administrador y gerente necesitan la pantalla de módulos porque son los
+     * únicos que pueden elegir entre Monitoreo y Aspersión. Los demás roles deben
+     * continuar directamente al flujo fitosanitario.
+     */
+    val debeSaltarPantallaModulos =
+        uiState.pantallaActual == PantallaActual.MODULOS_TRABAJO &&
+                uiState.usuarioSesion != null &&
+                uiState.usuarioSesion?.esAdmin != true &&
+                uiState.usuarioSesion?.esGerente != true
+
+    if (debeSaltarPantallaModulos) {
+        LaunchedEffect(
+            uiState.usuarioSesion?.idUser,
+            uiState.ciaSeleccionada?.idLocalCia
+        ) {
+            mainViewModel.abrirMonitoreosDesdeEncabezado()
+        }
+
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            CircularProgressIndicator()
+            Text("Abriendo monitoreos...")
+        }
+        return
+    }
+
+    val pantallaEsAspersion = when (uiState.pantallaActual) {
+        PantallaActual.ASPERSION_LISTA,
+        PantallaActual.ASPERSION_DETALLE,
+        PantallaActual.ASPERSION_MAPA -> true
+        else -> false
+    }
+    if (pantallaEsAspersion && uiState.usuarioSesion?.puedeVerAspersion != true) {
+        LaunchedEffect(uiState.pantallaActual, uiState.usuarioSesion?.idUser) {
+            mainViewModel.abrirAspersion()
+        }
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            CircularProgressIndicator()
+            Text("Verificando acceso a aspersión...")
+        }
+        return
     }
 
     when (uiState.pantallaActual) {
@@ -326,6 +407,176 @@ fun MainNavegacion(
                     solicitarAccionMenu(AccionMenuTrabajo.PANEL_ADMIN)
                 }
             )
+        }
+
+        PantallaActual.MODULOS_TRABAJO -> {
+            ModulosTrabajoScreen(
+                nombreUsuario = uiState.nombreUsuarioActual,
+                rolUsuario = uiState.rolUsuarioActual,
+                nombreCia = uiState.ciaSeleccionada?.nombre ?: "Sesiones asignadas",
+                onMonitoreoClick = {
+                    mainViewModel.abrirMonitoreosDesdeEncabezado()
+                },
+                onAspersionClick = {
+                    mainViewModel.abrirAspersion()
+                },
+                mostrarAspersion = uiState.usuarioSesion?.puedeVerAspersion == true,
+                onPerfilClick = {
+                    solicitarAccionMenu(AccionMenuTrabajo.PERFIL)
+                },
+                onAdminClick = {
+                    solicitarAccionMenu(AccionMenuTrabajo.PANEL_ADMIN)
+                },
+                onCambiarCiaClick = if (
+                    uiState.usuarioSesion?.esTecnico == true ||
+                    uiState.usuarioSesion?.esInvitado == true
+                ) {
+                    null
+                } else {
+                    cambiarCiaClick
+                },
+                onCerrarSesionClick = cerrarSesionClick
+            )
+        }
+
+        PantallaActual.ASPERSION_LISTA -> {
+            val aspersionAccessMode = if (uiState.usuarioSesion?.esAdmin == true) {
+                AspersionAccessMode.ADMIN
+            } else {
+                AspersionAccessMode.MANAGER
+            }
+
+            LaunchedEffect(
+                uiState.usuarioSesion?.extId,
+                uiState.usuarioSesion?.username,
+                uiState.ciaSeleccionada?.idLocalCia,
+                uiState.ciaSeleccionada?.extId,
+                aspersionAccessMode
+            ) {
+                aspersionViewModel.onModuleOpened(
+                    userExtId = uiState.usuarioSesion?.extId,
+                    username = uiState.usuarioSesion?.username,
+                    ciaLocalId = if (aspersionAccessMode.scopeBySelectedCia) {
+                        uiState.ciaSeleccionada?.idLocalCia
+                    } else {
+                        null
+                    },
+                    ciaExtId = if (aspersionAccessMode.scopeBySelectedCia) {
+                        uiState.ciaSeleccionada?.extId
+                    } else {
+                        null
+                    },
+                    requestedAccessMode = aspersionAccessMode
+                )
+            }
+
+            AspersionSessionsScreen(
+                state = aspersionState,
+                nombreUsuario = uiState.nombreUsuarioActual,
+                rolUsuario = uiState.rolUsuarioActual,
+                onOpenSession = { sessionId ->
+                    aspersionViewModel.selectSession(sessionId)
+                    mainViewModel.irA(PantallaActual.ASPERSION_DETALLE)
+                },
+                onSync = {
+                    aspersionViewModel.syncSessions()
+                },
+                onSearchChange = aspersionViewModel::updateSessionSearch,
+                onProducerFilterChange = aspersionViewModel::selectProducerFilter,
+                onRanchFilterChange = aspersionViewModel::selectRanchFilter,
+                onPlotFilterChange = aspersionViewModel::selectPlotFilter,
+                onProgramFilterChange = aspersionViewModel::selectProgramFilter,
+                onStartDateFilterChange = aspersionViewModel::selectStartDateFilter,
+                onEndDateFilterChange = aspersionViewModel::selectEndDateFilter,
+                onStatusFilterChange = aspersionViewModel::selectStatusFilter,
+                onClearFilters = aspersionViewModel::clearSessionFilters,
+                onToggleFilters = aspersionViewModel::toggleSessionFiltersExpanded,
+                onBackToModules = {
+                    mainViewModel.abrirModulosTrabajo()
+                },
+                onPerfilClick = {
+                    solicitarAccionMenu(AccionMenuTrabajo.PERFIL)
+                },
+                onMonitoreosClick = {
+                    solicitarAccionMenu(AccionMenuTrabajo.MONITOREOS)
+                },
+                onAdminClick = {
+                    solicitarAccionMenu(AccionMenuTrabajo.PANEL_ADMIN)
+                },
+                onCambiarCiaClick = if (
+                    uiState.usuarioSesion?.esTecnico == true ||
+                    uiState.usuarioSesion?.esInvitado == true
+                ) {
+                    null
+                } else {
+                    cambiarCiaClick
+                },
+                onCerrarSesionClick = cerrarSesionClick
+            )
+        }
+
+        PantallaActual.ASPERSION_DETALLE -> {
+            if (aspersionState.selectedSessionId == null) {
+                LaunchedEffect(Unit) {
+                    mainViewModel.irA(PantallaActual.ASPERSION_LISTA)
+                }
+            } else {
+                AspersionDetailScreen(
+                    state = aspersionState,
+                    nombreUsuario = uiState.nombreUsuarioActual,
+                    rolUsuario = uiState.rolUsuarioActual,
+                    onLayerSelected = aspersionViewModel::selectLayer,
+                    onToggleBucket = aspersionViewModel::toggleBucket,
+                    onSyncSession = {
+                        aspersionViewModel.syncSelectedSession()
+                    },
+                    onOpenFullMap = {
+                        mainViewModel.irA(PantallaActual.ASPERSION_MAPA)
+                    },
+                    onBack = {
+                        aspersionViewModel.clearSelectedSession()
+                        mainViewModel.irA(PantallaActual.ASPERSION_LISTA)
+                    },
+                    onPerfilClick = {
+                        solicitarAccionMenu(AccionMenuTrabajo.PERFIL)
+                    },
+                    onMonitoreosClick = {
+                        solicitarAccionMenu(AccionMenuTrabajo.MONITOREOS)
+                    },
+                    onAdminClick = {
+                        solicitarAccionMenu(AccionMenuTrabajo.PANEL_ADMIN)
+                    },
+                    onCambiarCiaClick = if (
+                        uiState.usuarioSesion?.esTecnico == true ||
+                        uiState.usuarioSesion?.esInvitado == true
+                    ) {
+                        null
+                    } else {
+                        cambiarCiaClick
+                    },
+                    onCerrarSesionClick = cerrarSesionClick
+                )
+            }
+        }
+
+        PantallaActual.ASPERSION_MAPA -> {
+            if (aspersionState.selectedSessionId == null) {
+                LaunchedEffect(Unit) {
+                    mainViewModel.irA(PantallaActual.ASPERSION_LISTA)
+                }
+            } else {
+                AspersionFullMapScreen(
+                    state = aspersionState,
+                    onLayerSelected = aspersionViewModel::selectLayer,
+                    onToggleBucket = aspersionViewModel::toggleBucket,
+                    onShowAll = aspersionViewModel::showAllBuckets,
+                    onHideAll = aspersionViewModel::hideAllBuckets,
+                    onToggleFilters = aspersionViewModel::toggleFiltersExpanded,
+                    onBack = {
+                        mainViewModel.irA(PantallaActual.ASPERSION_DETALLE)
+                    }
+                )
+            }
         }
 
         PantallaActual.FILTROS_MONITOREO -> {

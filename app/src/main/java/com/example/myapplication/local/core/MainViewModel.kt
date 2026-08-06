@@ -367,11 +367,11 @@ class MainViewModel(
         val pantallaDestino = uiState.pantallaAntesPerfil
         val pantallaFallback = when {
             uiState.usuarioSesion?.esTecnico == true || uiState.usuarioSesion?.esInvitado == true -> {
-                PantallaActual.LISTA_MONITOREOS
+                PantallaActual.MODULOS_TRABAJO
             }
 
             uiState.ciaSeleccionada != null -> {
-                PantallaActual.FILTROS_MONITOREO
+                PantallaActual.MODULOS_TRABAJO
             }
 
             uiState.parentCiaSeleccionada != null -> {
@@ -619,15 +619,19 @@ class MainViewModel(
 
                 when {
                     sesion.esTecnico || sesion.esInvitado -> {
-                        cargarMonitoreosDirectoPorUsuario(sesion)
+                        // Los roles operativos no tienen acceso a aspersión, por lo que
+                        // no deben detenerse en la pantalla de módulos.
+                        abrirMonitoreosDesdeEncabezado()
                     }
 
                     resultado.ciaGuardada != null -> {
-                        abrirFiltrosMonitoreoConCia(
-                            cia = resultado.ciaGuardada,
-                            idProductorRestaurar = obtenerProductorSesion()
-                        )
-
+                        if (sesion.esAdmin || sesion.esGerente) {
+                            irA(PantallaActual.MODULOS_TRABAJO)
+                        } else {
+                            // Supervisor y cualquier rol inferior entran directamente
+                            // al módulo fitosanitario de la CIA restaurada.
+                            abrirFiltrosMonitoreoConCia(resultado.ciaGuardada)
+                        }
                     }
 
                     else -> {
@@ -636,7 +640,6 @@ class MainViewModel(
                                 pantallaActual = PantallaActual.SELECCION_CIA
                             )
                         }
-
                     }
                 }
 
@@ -1012,10 +1015,10 @@ class MainViewModel(
 
     private fun obtenerPantallaInicialPorRol(usuarioSesion: UsuarioSesion): PantallaActual {
         return when (normalizarRolParaDb(usuarioSesion.roleName)) {
-            // Técnico e invitado no pasan por selección de CIA ni filtros.
-            // Entran directo a sus monitoreos asignados/capturados.
+            // Técnico e invitado no pasan por selección de CIA. Primero eligen
+            // entre el módulo fitosanitario y el módulo de aspersión.
             "tecnico",
-            "invitado" -> PantallaActual.LISTA_MONITOREOS
+            "invitado" -> PantallaActual.MODULOS_TRABAJO
 
             "admin",
             "gerente",
@@ -1664,9 +1667,7 @@ class MainViewModel(
                             ?.takeIf { it.isNotBlank() }
                             ?.let { mostrarMensaje(it) }
 
-                        if (sesion.esTecnico || sesion.esInvitado) {
-                            cargarMonitoreosDirectoPorUsuario(sesion)
-                        } else {
+                        if (!(sesion.esTecnico || sesion.esInvitado)) {
                             when {
                                 sesion.esSupervisor && ciasHijasUsuario.isEmpty() -> {
                                     mostrarMensaje("Login API correcto. No tienes CIAS hijas asignadas localmente")
@@ -1938,11 +1939,40 @@ class MainViewModel(
         cargarCiasHijasDeParent(parentCia)
         irA(PantallaActual.SELECCION_CIA)
     }
+    private fun ciaPermitidaParaUsuario(
+        estado: MainUiState,
+        cia: LocalCiaEntity
+    ): Boolean {
+        val perteneceAListaUsuario = estado.ciasUsuario.any { permitida ->
+            permitida.idLocalCia == cia.idLocalCia
+        }
+
+        val perteneceAlParentSeleccionado =
+            estado.parentCiaSeleccionada?.let { parent ->
+                cia.idParentCia == parent.idParentCia
+            } ?: true
+
+        return perteneceAListaUsuario && perteneceAlParentSeleccionado
+    }
 
     fun onCiaChange(cia: LocalCiaEntity) {
-        val idUser = uiState.idUsuarioActual
+        val estado = uiState
 
-        if (idUser > 0L && uiState.seleccionarPreferente) {
+        if (!ciaPermitidaParaUsuario(estado, cia)) {
+            actualizarEstado {
+                it.copy(
+                    ciaSeleccionada = null,
+                    seleccionarPreferente = false
+                )
+            }
+
+            mostrarMensaje("Esta CIA no está asignada al usuario")
+            return
+        }
+
+        val idUser = estado.idUsuarioActual
+
+        if (idUser > 0L && estado.seleccionarPreferente) {
             guardarCiaPreferente(
                 idUser = idUser,
                 idLocalCia = cia.idLocalCia
@@ -2033,7 +2063,31 @@ class MainViewModel(
                 idLocalCia = cia.idLocalCia
             )
 
-            abrirFiltrosMonitoreoConCia(cia)
+            limpiarFiltros()
+
+            val sesion = estado.usuarioSesion
+            if (sesion == null) {
+                mostrarMensaje("No hay sesión activa")
+                irA(PantallaActual.LOGIN)
+                return
+            }
+
+            if (sesion.esAdmin || sesion.esGerente) {
+                actualizarEstado {
+                    it.copy(
+                        ciaSeleccionada = cia,
+                        pantallaActual = PantallaActual.MODULOS_TRABAJO,
+                        cargando = false
+                    )
+                }
+            } else {
+                /*
+                 * Supervisor y roles inferiores no pueden consultar aspersión.
+                 * La pantalla de módulos no aporta ninguna opción adicional, así que
+                 * se abre directamente la interfaz de filtros fitosanitarios.
+                 */
+                abrirFiltrosMonitoreoConCia(cia)
+            }
         } catch (t: Throwable) {
             mostrarMensaje(
                 "No se pudo seleccionar la CIA: ${t.message ?: "detalle no disponible"}"
@@ -3820,6 +3874,72 @@ class MainViewModel(
         }
     }
 
+    fun abrirModulosTrabajo() {
+        val sesion = uiState.usuarioSesion
+
+        when {
+            sesion == null -> {
+                mostrarMensaje("No hay sesión activa")
+                irA(PantallaActual.LOGIN)
+            }
+
+            sesion.esAdmin || sesion.esGerente -> {
+                if (uiState.ciaSeleccionada != null) {
+                    irA(PantallaActual.MODULOS_TRABAJO)
+                } else {
+                    mostrarMensaje("Selecciona una CIA antes de abrir los módulos")
+                    irA(PantallaActual.SELECCION_CIA)
+                }
+            }
+
+            else -> {
+                /*
+                 * Supervisor, técnico e invitado no deben ver la pantalla de módulos,
+                 * porque no tienen acceso a aspersión. Se abre monitoreo directamente.
+                 * Supervisor entra a FILTROS_MONITOREO; técnico/invitado conservan su
+                 * consulta restringida de monitoreos asignados.
+                 */
+                abrirMonitoreosDesdeEncabezado()
+            }
+        }
+    }
+
+    fun abrirAspersion() {
+        val estado = uiState
+        val sesion = estado.usuarioSesion
+
+        if (sesion == null) {
+            mostrarMensaje("No hay sesión activa")
+            irA(PantallaActual.LOGIN)
+            return
+        }
+
+        if (!sesion.puedeVerAspersion) {
+            mostrarMensaje("Solo administrador y gerente pueden consultar aspersión")
+            irA(PantallaActual.MODULOS_TRABAJO)
+            return
+        }
+
+        val cia = estado.ciaSeleccionada
+
+        if (cia == null) {
+            mostrarMensaje("Selecciona una CIA antes de consultar aspersión")
+            irA(PantallaActual.SELECCION_CIA)
+            return
+        }
+
+        if (!ciaPermitidaParaUsuario(estado, cia)) {
+            actualizarEstado {
+                it.copy(ciaSeleccionada = null)
+            }
+
+            mostrarMensaje("No tienes acceso a la CIA seleccionada")
+            irA(PantallaActual.SELECCION_CIA)
+            return
+        }
+
+        irA(PantallaActual.ASPERSION_LISTA)
+    }
     fun abrirPanelAdministrador() {
         if (puedeVerPanelTrabajoVm(uiState.rolUsuarioActual)) {
             irA(PantallaActual.ADMIN_HOME)
@@ -4070,15 +4190,19 @@ class MainViewModel(
                 mostrarMensaje("Presiona atrás otra vez para salir de la app")
             }
 
+            PantallaActual.MODULOS_TRABAJO -> {
+                mostrarMensaje("Presiona atrás otra vez para salir de la app")
+            }
+
             PantallaActual.FILTROS_MONITOREO -> {
-                mostrarMensaje("Para cambiar de CIA usa el menú: Cambiar de CIA")
+                irA(PantallaActual.MODULOS_TRABAJO)
             }
 
             PantallaActual.LISTA_MONITOREOS -> {
                 val sesion = uiState.usuarioSesion
                 when {
                     sesion != null && (sesion.esTecnico || sesion.esInvitado) -> {
-                        mostrarMensaje("Presiona atrás otra vez para salir de la app")
+                        irA(PantallaActual.MODULOS_TRABAJO)
                     }
 
                     uiState.ciaSeleccionada != null -> {
@@ -4093,6 +4217,18 @@ class MainViewModel(
                         irA(PantallaActual.SELECCION_CIA)
                     }
                 }
+            }
+
+            PantallaActual.ASPERSION_LISTA -> {
+                irA(PantallaActual.MODULOS_TRABAJO)
+            }
+
+            PantallaActual.ASPERSION_DETALLE -> {
+                irA(PantallaActual.ASPERSION_LISTA)
+            }
+
+            PantallaActual.ASPERSION_MAPA -> {
+                irA(PantallaActual.ASPERSION_DETALLE)
             }
 
 
@@ -4114,7 +4250,7 @@ class MainViewModel(
 
             PantallaActual.ADMIN_HOME -> {
                 when {
-                    uiState.ciaSeleccionada != null -> abrirFiltrosMonitoreoConCia(uiState.ciaSeleccionada!!)
+                    uiState.ciaSeleccionada != null -> irA(PantallaActual.MODULOS_TRABAJO)
                     uiState.parentCiaSeleccionada != null -> irA(PantallaActual.SELECCION_CIA)
                     else -> irA(PantallaActual.SELECCION_PARENT_CIA)
                 }

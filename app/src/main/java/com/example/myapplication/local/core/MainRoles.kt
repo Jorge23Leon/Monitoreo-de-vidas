@@ -65,6 +65,10 @@ fun puedeGestionAgricolaVm(rol: String): Boolean {
     return esRolAdministradorVm(rol)
 }
 
+fun puedeVerAspersionVm(rol: String): Boolean {
+    return esRolAdministradorVm(rol) || esRolGerenteVm(rol)
+}
+
 /*
  * Roles de consulta:
  * Gerente y supervisor pueden consultar monitoreos, pero no administrar datos.

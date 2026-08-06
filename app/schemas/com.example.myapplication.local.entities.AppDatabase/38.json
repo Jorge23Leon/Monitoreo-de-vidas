@@ -1,0 +1,2882 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 38,
+    "identityHash": "d4331f37a08b45af0644d12573eef9cd",
+    "entities": [
+      {
+        "tableName": "local_roles",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`idRole` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ext_id` TEXT, `role_name` TEXT NOT NULL, `level` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "idRole",
+            "columnName": "idRole",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "extId",
+            "columnName": "ext_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "roleName",
+            "columnName": "role_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "level",
+            "columnName": "level",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "idRole"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_roles_ext_id",
+            "unique": true,
+            "columnNames": [
+              "ext_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_roles_ext_id` ON `${TABLE_NAME}` (`ext_id`)"
+          },
+          {
+            "name": "index_local_roles_role_name",
+            "unique": true,
+            "columnNames": [
+              "role_name"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_roles_role_name` ON `${TABLE_NAME}` (`role_name`)"
+          },
+          {
+            "name": "index_local_roles_level",
+            "unique": false,
+            "columnNames": [
+              "level"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_roles_level` ON `${TABLE_NAME}` (`level`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "users",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`idUser` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ext_id` TEXT, `first_name` TEXT NOT NULL, `last_name` TEXT, `username` TEXT NOT NULL, `email` TEXT NOT NULL, `password` TEXT NOT NULL, `idRole` INTEGER NOT NULL, FOREIGN KEY(`idRole`) REFERENCES `local_roles`(`idRole`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "idUser",
+            "columnName": "idUser",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "extId",
+            "columnName": "ext_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "firstName",
+            "columnName": "first_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastName",
+            "columnName": "last_name",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "username",
+            "columnName": "username",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "email",
+            "columnName": "email",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "password",
+            "columnName": "password",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idRole",
+            "columnName": "idRole",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "idUser"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_users_ext_id",
+            "unique": true,
+            "columnNames": [
+              "ext_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_users_ext_id` ON `${TABLE_NAME}` (`ext_id`)"
+          },
+          {
+            "name": "index_users_username",
+            "unique": true,
+            "columnNames": [
+              "username"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_users_username` ON `${TABLE_NAME}` (`username`)"
+          },
+          {
+            "name": "index_users_email",
+            "unique": true,
+            "columnNames": [
+              "email"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_users_email` ON `${TABLE_NAME}` (`email`)"
+          },
+          {
+            "name": "index_users_idRole",
+            "unique": false,
+            "columnNames": [
+              "idRole"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_users_idRole` ON `${TABLE_NAME}` (`idRole`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "local_roles",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idRole"
+            ],
+            "referencedColumns": [
+              "idRole"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "local_parent_cias",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`idParentCia` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ext_id` TEXT, `name` TEXT NOT NULL, `slug` TEXT NOT NULL, `description` TEXT, `level` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "idParentCia",
+            "columnName": "idParentCia",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "extId",
+            "columnName": "ext_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "slug",
+            "columnName": "slug",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "level",
+            "columnName": "level",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "idParentCia"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_parent_cias_ext_id",
+            "unique": true,
+            "columnNames": [
+              "ext_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_parent_cias_ext_id` ON `${TABLE_NAME}` (`ext_id`)"
+          },
+          {
+            "name": "index_local_parent_cias_name",
+            "unique": true,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_parent_cias_name` ON `${TABLE_NAME}` (`name`)"
+          },
+          {
+            "name": "index_local_parent_cias_slug",
+            "unique": true,
+            "columnNames": [
+              "slug"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_parent_cias_slug` ON `${TABLE_NAME}` (`slug`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "local_cias",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`idLocalCia` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ext_id` TEXT, `name` TEXT NOT NULL, `slug` TEXT NOT NULL, `description` TEXT, `idParentCia` INTEGER NOT NULL, FOREIGN KEY(`idParentCia`) REFERENCES `local_parent_cias`(`idParentCia`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "idLocalCia",
+            "columnName": "idLocalCia",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "extId",
+            "columnName": "ext_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "nombre",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "slug",
+            "columnName": "slug",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "idParentCia",
+            "columnName": "idParentCia",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "idLocalCia"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_cias_ext_id",
+            "unique": true,
+            "columnNames": [
+              "ext_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_cias_ext_id` ON `${TABLE_NAME}` (`ext_id`)"
+          },
+          {
+            "name": "index_local_cias_name",
+            "unique": true,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_cias_name` ON `${TABLE_NAME}` (`name`)"
+          },
+          {
+            "name": "index_local_cias_slug",
+            "unique": true,
+            "columnNames": [
+              "slug"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_cias_slug` ON `${TABLE_NAME}` (`slug`)"
+          },
+          {
+            "name": "index_local_cias_idParentCia",
+            "unique": false,
+            "columnNames": [
+              "idParentCia"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_cias_idParentCia` ON `${TABLE_NAME}` (`idParentCia`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "local_parent_cias",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idParentCia"
+            ],
+            "referencedColumns": [
+              "idParentCia"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "user_local_parent_cias",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`idUser` INTEGER NOT NULL, `idParentCia` INTEGER NOT NULL, PRIMARY KEY(`idUser`, `idParentCia`), FOREIGN KEY(`idUser`) REFERENCES `users`(`idUser`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`idParentCia`) REFERENCES `local_parent_cias`(`idParentCia`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "idUser",
+            "columnName": "idUser",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idParentCia",
+            "columnName": "idParentCia",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "idUser",
+            "idParentCia"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_user_local_parent_cias_idUser",
+            "unique": false,
+            "columnNames": [
+              "idUser"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_user_local_parent_cias_idUser` ON `${TABLE_NAME}` (`idUser`)"
+          },
+          {
+            "name": "index_user_local_parent_cias_idParentCia",
+            "unique": false,
+            "columnNames": [
+              "idParentCia"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_user_local_parent_cias_idParentCia` ON `${TABLE_NAME}` (`idParentCia`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "users",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idUser"
+            ],
+            "referencedColumns": [
+              "idUser"
+            ]
+          },
+          {
+            "table": "local_parent_cias",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idParentCia"
+            ],
+            "referencedColumns": [
+              "idParentCia"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "local_agro_units",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`idLocalAgroUnit` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ext_Id` TEXT, `commercial_name` TEXT NOT NULL, `slug` TEXT NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "idLocalAgroUnit",
+            "columnName": "idLocalAgroUnit",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ext_Id",
+            "columnName": "ext_Id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "commercial_name",
+            "columnName": "commercial_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "slug",
+            "columnName": "slug",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "idLocalAgroUnit"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_agro_units_ext_Id",
+            "unique": true,
+            "columnNames": [
+              "ext_Id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_agro_units_ext_Id` ON `${TABLE_NAME}` (`ext_Id`)"
+          },
+          {
+            "name": "index_local_agro_units_commercial_name",
+            "unique": true,
+            "columnNames": [
+              "commercial_name"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_agro_units_commercial_name` ON `${TABLE_NAME}` (`commercial_name`)"
+          },
+          {
+            "name": "index_local_agro_units_slug",
+            "unique": true,
+            "columnNames": [
+              "slug"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_agro_units_slug` ON `${TABLE_NAME}` (`slug`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "local_ranches",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`idLocalRanch` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ext_id` TEXT, `name` TEXT NOT NULL, `code` TEXT NOT NULL, `lat` REAL, `lon` REAL, `idLocalAgroUnit` INTEGER NOT NULL, FOREIGN KEY(`idLocalAgroUnit`) REFERENCES `local_agro_units`(`idLocalAgroUnit`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "idLocalRanch",
+            "columnName": "idLocalRanch",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "extId",
+            "columnName": "ext_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lat",
+            "columnName": "lat",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lon",
+            "columnName": "lon",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "idLocalAgroUnit",
+            "columnName": "idLocalAgroUnit",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "idLocalRanch"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_ranches_ext_id",
+            "unique": true,
+            "columnNames": [
+              "ext_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_ranches_ext_id` ON `${TABLE_NAME}` (`ext_id`)"
+          },
+          {
+            "name": "index_local_ranches_idLocalAgroUnit",
+            "unique": false,
+            "columnNames": [
+              "idLocalAgroUnit"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_ranches_idLocalAgroUnit` ON `${TABLE_NAME}` (`idLocalAgroUnit`)"
+          },
+          {
+            "name": "index_local_ranches_idLocalAgroUnit_code",
+            "unique": true,
+            "columnNames": [
+              "idLocalAgroUnit",
+              "code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_ranches_idLocalAgroUnit_code` ON `${TABLE_NAME}` (`idLocalAgroUnit`, `code`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "local_agro_units",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idLocalAgroUnit"
+            ],
+            "referencedColumns": [
+              "idLocalAgroUnit"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "local_crop_catalog",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`idCrop` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ext_id` TEXT, `name` TEXT NOT NULL, `variedad` TEXT, `code` TEXT, `description` TEXT, `photo` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "idCrop",
+            "columnName": "idCrop",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "extId",
+            "columnName": "ext_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "variedad",
+            "columnName": "variedad",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "photo",
+            "columnName": "photo",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "idCrop"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_crop_catalog_ext_id",
+            "unique": true,
+            "columnNames": [
+              "ext_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_crop_catalog_ext_id` ON `${TABLE_NAME}` (`ext_id`)"
+          },
+          {
+            "name": "index_local_crop_catalog_name",
+            "unique": false,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_crop_catalog_name` ON `${TABLE_NAME}` (`name`)"
+          },
+          {
+            "name": "index_local_crop_catalog_variedad",
+            "unique": false,
+            "columnNames": [
+              "variedad"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_crop_catalog_variedad` ON `${TABLE_NAME}` (`variedad`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "local_plots",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`idLocalPlot` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ext_id` TEXT, `name` TEXT NOT NULL, `code` TEXT, `lat` REAL, `lon` REAL, `idLocalRanch` INTEGER NOT NULL, `assigned_user_id` INTEGER, FOREIGN KEY(`idLocalRanch`) REFERENCES `local_ranches`(`idLocalRanch`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`assigned_user_id`) REFERENCES `users`(`idUser`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "idLocalPlot",
+            "columnName": "idLocalPlot",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "extId",
+            "columnName": "ext_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lat",
+            "columnName": "lat",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lon",
+            "columnName": "lon",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "idLocalRanch",
+            "columnName": "idLocalRanch",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assignedUserId",
+            "columnName": "assigned_user_id",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "idLocalPlot"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_plots_ext_id",
+            "unique": true,
+            "columnNames": [
+              "ext_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_plots_ext_id` ON `${TABLE_NAME}` (`ext_id`)"
+          },
+          {
+            "name": "index_local_plots_idLocalRanch",
+            "unique": false,
+            "columnNames": [
+              "idLocalRanch"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_plots_idLocalRanch` ON `${TABLE_NAME}` (`idLocalRanch`)"
+          },
+          {
+            "name": "index_local_plots_assigned_user_id",
+            "unique": false,
+            "columnNames": [
+              "assigned_user_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_plots_assigned_user_id` ON `${TABLE_NAME}` (`assigned_user_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "local_ranches",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idLocalRanch"
+            ],
+            "referencedColumns": [
+              "idLocalRanch"
+            ]
+          },
+          {
+            "table": "users",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "assigned_user_id"
+            ],
+            "referencedColumns": [
+              "idUser"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "local_plot_vertexes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`idLocalPlotVertex` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ext_id` TEXT, `level` INTEGER NOT NULL, `lat` REAL NOT NULL, `lon` REAL NOT NULL, `idLocalPlot` INTEGER NOT NULL, FOREIGN KEY(`idLocalPlot`) REFERENCES `local_plots`(`idLocalPlot`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "idLocalPlotVertex",
+            "columnName": "idLocalPlotVertex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "extId",
+            "columnName": "ext_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "level",
+            "columnName": "level",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lat",
+            "columnName": "lat",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lon",
+            "columnName": "lon",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idLocalPlot",
+            "columnName": "idLocalPlot",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "idLocalPlotVertex"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_plot_vertexes_ext_id",
+            "unique": true,
+            "columnNames": [
+              "ext_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_plot_vertexes_ext_id` ON `${TABLE_NAME}` (`ext_id`)"
+          },
+          {
+            "name": "index_local_plot_vertexes_idLocalPlot",
+            "unique": false,
+            "columnNames": [
+              "idLocalPlot"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_plot_vertexes_idLocalPlot` ON `${TABLE_NAME}` (`idLocalPlot`)"
+          },
+          {
+            "name": "index_local_plot_vertexes_idLocalPlot_level",
+            "unique": true,
+            "columnNames": [
+              "idLocalPlot",
+              "level"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_plot_vertexes_idLocalPlot_level` ON `${TABLE_NAME}` (`idLocalPlot`, `level`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "local_plots",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idLocalPlot"
+            ],
+            "referencedColumns": [
+              "idLocalPlot"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "local_programs",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`idProgram` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ext_id` TEXT, `cycle` TEXT NOT NULL, `est_start_date` INTEGER NOT NULL, `est_finish_date` INTEGER NOT NULL, `act_start_date` INTEGER, `act_finish_date` INTEGER, `status` TEXT NOT NULL, `idLocalCia` INTEGER NOT NULL, `idLocalAgroUnit` INTEGER NOT NULL, `idLocalRanch` INTEGER NOT NULL, `idCrop` INTEGER NOT NULL, `idLocalPlot` INTEGER NOT NULL, FOREIGN KEY(`idLocalCia`) REFERENCES `local_cias`(`idLocalCia`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`idLocalAgroUnit`) REFERENCES `local_agro_units`(`idLocalAgroUnit`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`idLocalRanch`) REFERENCES `local_ranches`(`idLocalRanch`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`idCrop`) REFERENCES `local_crop_catalog`(`idCrop`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`idLocalPlot`) REFERENCES `local_plots`(`idLocalPlot`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "idProgram",
+            "columnName": "idProgram",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "extId",
+            "columnName": "ext_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "cycle",
+            "columnName": "cycle",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "estStartDate",
+            "columnName": "est_start_date",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "estFinishDate",
+            "columnName": "est_finish_date",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actStartDate",
+            "columnName": "act_start_date",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "actFinishDate",
+            "columnName": "act_finish_date",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idLocalCia",
+            "columnName": "idLocalCia",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idLocalAgroUnit",
+            "columnName": "idLocalAgroUnit",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idLocalRanch",
+            "columnName": "idLocalRanch",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idCrop",
+            "columnName": "idCrop",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idLocalPlot",
+            "columnName": "idLocalPlot",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "idProgram"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_programs_ext_id",
+            "unique": true,
+            "columnNames": [
+              "ext_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_programs_ext_id` ON `${TABLE_NAME}` (`ext_id`)"
+          },
+          {
+            "name": "index_local_programs_idLocalCia",
+            "unique": false,
+            "columnNames": [
+              "idLocalCia"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_programs_idLocalCia` ON `${TABLE_NAME}` (`idLocalCia`)"
+          },
+          {
+            "name": "index_local_programs_idLocalAgroUnit",
+            "unique": false,
+            "columnNames": [
+              "idLocalAgroUnit"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_programs_idLocalAgroUnit` ON `${TABLE_NAME}` (`idLocalAgroUnit`)"
+          },
+          {
+            "name": "index_local_programs_idLocalRanch",
+            "unique": false,
+            "columnNames": [
+              "idLocalRanch"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_programs_idLocalRanch` ON `${TABLE_NAME}` (`idLocalRanch`)"
+          },
+          {
+            "name": "index_local_programs_idCrop",
+            "unique": false,
+            "columnNames": [
+              "idCrop"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_programs_idCrop` ON `${TABLE_NAME}` (`idCrop`)"
+          },
+          {
+            "name": "index_local_programs_idLocalPlot",
+            "unique": false,
+            "columnNames": [
+              "idLocalPlot"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_programs_idLocalPlot` ON `${TABLE_NAME}` (`idLocalPlot`)"
+          },
+          {
+            "name": "index_local_programs_cycle",
+            "unique": false,
+            "columnNames": [
+              "cycle"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_programs_cycle` ON `${TABLE_NAME}` (`cycle`)"
+          },
+          {
+            "name": "index_local_programs_status",
+            "unique": false,
+            "columnNames": [
+              "status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_programs_status` ON `${TABLE_NAME}` (`status`)"
+          },
+          {
+            "name": "index_local_programs_idLocalCia_idLocalAgroUnit_idLocalRanch_idLocalPlot",
+            "unique": false,
+            "columnNames": [
+              "idLocalCia",
+              "idLocalAgroUnit",
+              "idLocalRanch",
+              "idLocalPlot"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_programs_idLocalCia_idLocalAgroUnit_idLocalRanch_idLocalPlot` ON `${TABLE_NAME}` (`idLocalCia`, `idLocalAgroUnit`, `idLocalRanch`, `idLocalPlot`)"
+          },
+          {
+            "name": "index_local_programs_idLocalCia_idLocalAgroUnit_idLocalRanch_idLocalPlot_idCrop_cycle",
+            "unique": false,
+            "columnNames": [
+              "idLocalCia",
+              "idLocalAgroUnit",
+              "idLocalRanch",
+              "idLocalPlot",
+              "idCrop",
+              "cycle"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_programs_idLocalCia_idLocalAgroUnit_idLocalRanch_idLocalPlot_idCrop_cycle` ON `${TABLE_NAME}` (`idLocalCia`, `idLocalAgroUnit`, `idLocalRanch`, `idLocalPlot`, `idCrop`, `cycle`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "local_cias",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idLocalCia"
+            ],
+            "referencedColumns": [
+              "idLocalCia"
+            ]
+          },
+          {
+            "table": "local_agro_units",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idLocalAgroUnit"
+            ],
+            "referencedColumns": [
+              "idLocalAgroUnit"
+            ]
+          },
+          {
+            "table": "local_ranches",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idLocalRanch"
+            ],
+            "referencedColumns": [
+              "idLocalRanch"
+            ]
+          },
+          {
+            "table": "local_crop_catalog",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idCrop"
+            ],
+            "referencedColumns": [
+              "idCrop"
+            ]
+          },
+          {
+            "table": "local_plots",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idLocalPlot"
+            ],
+            "referencedColumns": [
+              "idLocalPlot"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "local_phytomonitoring_headers",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`idHeader` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ext_id` TEXT, `cycle` TEXT NOT NULL, `est_start_date` INTEGER, `est_finish_date` INTEGER, `start_at` INTEGER, `finished_at` INTEGER, `additional_notes` TEXT NOT NULL DEFAULT '', `radius_tolerance` REAL NOT NULL DEFAULT 50.0, `status` TEXT NOT NULL, `idProgram` INTEGER NOT NULL, `idCrop` INTEGER NOT NULL, `idLocalPlot` INTEGER NOT NULL, `assigned_user_id` INTEGER, `sync_pending` INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(`idProgram`) REFERENCES `local_programs`(`idProgram`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`idCrop`) REFERENCES `local_crop_catalog`(`idCrop`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`idLocalPlot`) REFERENCES `local_plots`(`idLocalPlot`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`assigned_user_id`) REFERENCES `users`(`idUser`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "idHeader",
+            "columnName": "idHeader",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "extId",
+            "columnName": "ext_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "cycle",
+            "columnName": "cycle",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "estStartDate",
+            "columnName": "est_start_date",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "estFinishDate",
+            "columnName": "est_finish_date",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "startAt",
+            "columnName": "start_at",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "finishedAt",
+            "columnName": "finished_at",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "additionalNotes",
+            "columnName": "additional_notes",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "radiusTolerance",
+            "columnName": "radius_tolerance",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "50.0"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idProgram",
+            "columnName": "idProgram",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idCrop",
+            "columnName": "idCrop",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idLocalPlot",
+            "columnName": "idLocalPlot",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assignedUserId",
+            "columnName": "assigned_user_id",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "syncPending",
+            "columnName": "sync_pending",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "idHeader"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_phytomonitoring_headers_ext_id",
+            "unique": true,
+            "columnNames": [
+              "ext_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_phytomonitoring_headers_ext_id` ON `${TABLE_NAME}` (`ext_id`)"
+          },
+          {
+            "name": "index_local_phytomonitoring_headers_idProgram",
+            "unique": false,
+            "columnNames": [
+              "idProgram"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytomonitoring_headers_idProgram` ON `${TABLE_NAME}` (`idProgram`)"
+          },
+          {
+            "name": "index_local_phytomonitoring_headers_idCrop",
+            "unique": false,
+            "columnNames": [
+              "idCrop"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytomonitoring_headers_idCrop` ON `${TABLE_NAME}` (`idCrop`)"
+          },
+          {
+            "name": "index_local_phytomonitoring_headers_idLocalPlot",
+            "unique": false,
+            "columnNames": [
+              "idLocalPlot"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytomonitoring_headers_idLocalPlot` ON `${TABLE_NAME}` (`idLocalPlot`)"
+          },
+          {
+            "name": "index_local_phytomonitoring_headers_status",
+            "unique": false,
+            "columnNames": [
+              "status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytomonitoring_headers_status` ON `${TABLE_NAME}` (`status`)"
+          },
+          {
+            "name": "index_local_phytomonitoring_headers_cycle",
+            "unique": false,
+            "columnNames": [
+              "cycle"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytomonitoring_headers_cycle` ON `${TABLE_NAME}` (`cycle`)"
+          },
+          {
+            "name": "index_local_phytomonitoring_headers_assigned_user_id",
+            "unique": false,
+            "columnNames": [
+              "assigned_user_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytomonitoring_headers_assigned_user_id` ON `${TABLE_NAME}` (`assigned_user_id`)"
+          },
+          {
+            "name": "index_local_phytomonitoring_headers_est_start_date",
+            "unique": false,
+            "columnNames": [
+              "est_start_date"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytomonitoring_headers_est_start_date` ON `${TABLE_NAME}` (`est_start_date`)"
+          },
+          {
+            "name": "index_local_phytomonitoring_headers_sync_pending",
+            "unique": false,
+            "columnNames": [
+              "sync_pending"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytomonitoring_headers_sync_pending` ON `${TABLE_NAME}` (`sync_pending`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "local_programs",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idProgram"
+            ],
+            "referencedColumns": [
+              "idProgram"
+            ]
+          },
+          {
+            "table": "local_crop_catalog",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idCrop"
+            ],
+            "referencedColumns": [
+              "idCrop"
+            ]
+          },
+          {
+            "table": "local_plots",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idLocalPlot"
+            ],
+            "referencedColumns": [
+              "idLocalPlot"
+            ]
+          },
+          {
+            "table": "users",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "assigned_user_id"
+            ],
+            "referencedColumns": [
+              "idUser"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "local_phytomonitoring_target_points",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`idTargetPoint` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ext_id` TEXT, `label` TEXT NOT NULL DEFAULT '', `radius_m` INTEGER NOT NULL, `lat` REAL NOT NULL, `lon` REAL NOT NULL, `status` TEXT NOT NULL, `idHeader` INTEGER NOT NULL, `idLocalPlot` INTEGER NOT NULL, FOREIGN KEY(`idHeader`) REFERENCES `local_phytomonitoring_headers`(`idHeader`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`idLocalPlot`) REFERENCES `local_plots`(`idLocalPlot`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "idTargetPoint",
+            "columnName": "idTargetPoint",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "extId",
+            "columnName": "ext_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "radiusM",
+            "columnName": "radius_m",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lat",
+            "columnName": "lat",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lon",
+            "columnName": "lon",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idHeader",
+            "columnName": "idHeader",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idLocalPlot",
+            "columnName": "idLocalPlot",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "idTargetPoint"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_phytomonitoring_target_points_ext_id",
+            "unique": true,
+            "columnNames": [
+              "ext_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_phytomonitoring_target_points_ext_id` ON `${TABLE_NAME}` (`ext_id`)"
+          },
+          {
+            "name": "index_local_phytomonitoring_target_points_idHeader",
+            "unique": false,
+            "columnNames": [
+              "idHeader"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytomonitoring_target_points_idHeader` ON `${TABLE_NAME}` (`idHeader`)"
+          },
+          {
+            "name": "index_local_phytomonitoring_target_points_idLocalPlot",
+            "unique": false,
+            "columnNames": [
+              "idLocalPlot"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytomonitoring_target_points_idLocalPlot` ON `${TABLE_NAME}` (`idLocalPlot`)"
+          },
+          {
+            "name": "index_local_phytomonitoring_target_points_status",
+            "unique": false,
+            "columnNames": [
+              "status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytomonitoring_target_points_status` ON `${TABLE_NAME}` (`status`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "local_phytomonitoring_headers",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idHeader"
+            ],
+            "referencedColumns": [
+              "idHeader"
+            ]
+          },
+          {
+            "table": "local_plots",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idLocalPlot"
+            ],
+            "referencedColumns": [
+              "idLocalPlot"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "local_phytosanitary_catalog",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`idPhytosanitary` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ext_id` TEXT, `name` TEXT NOT NULL, `type` TEXT NOT NULL, `min_ref_value` INTEGER, `max_ref_value` INTEGER, `description` TEXT, `photo` TEXT, `idDefaultCrop` INTEGER, FOREIGN KEY(`idDefaultCrop`) REFERENCES `local_crop_catalog`(`idCrop`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "idPhytosanitary",
+            "columnName": "idPhytosanitary",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "extId",
+            "columnName": "ext_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "minRefValue",
+            "columnName": "min_ref_value",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "maxRefValue",
+            "columnName": "max_ref_value",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "photo",
+            "columnName": "photo",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "idDefaultCrop",
+            "columnName": "idDefaultCrop",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "idPhytosanitary"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_phytosanitary_catalog_ext_id",
+            "unique": true,
+            "columnNames": [
+              "ext_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_phytosanitary_catalog_ext_id` ON `${TABLE_NAME}` (`ext_id`)"
+          },
+          {
+            "name": "index_local_phytosanitary_catalog_name",
+            "unique": false,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytosanitary_catalog_name` ON `${TABLE_NAME}` (`name`)"
+          },
+          {
+            "name": "index_local_phytosanitary_catalog_type",
+            "unique": false,
+            "columnNames": [
+              "type"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytosanitary_catalog_type` ON `${TABLE_NAME}` (`type`)"
+          },
+          {
+            "name": "index_local_phytosanitary_catalog_idDefaultCrop",
+            "unique": false,
+            "columnNames": [
+              "idDefaultCrop"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytosanitary_catalog_idDefaultCrop` ON `${TABLE_NAME}` (`idDefaultCrop`)"
+          },
+          {
+            "name": "index_local_phytosanitary_catalog_idDefaultCrop_name_type",
+            "unique": true,
+            "columnNames": [
+              "idDefaultCrop",
+              "name",
+              "type"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_phytosanitary_catalog_idDefaultCrop_name_type` ON `${TABLE_NAME}` (`idDefaultCrop`, `name`, `type`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "local_crop_catalog",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idDefaultCrop"
+            ],
+            "referencedColumns": [
+              "idCrop"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "local_phytostages",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`idLocalPhytostage` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ext_id` TEXT, `stage` TEXT NOT NULL, `photo` TEXT, `idPhytosanitary` INTEGER NOT NULL, FOREIGN KEY(`idPhytosanitary`) REFERENCES `local_phytosanitary_catalog`(`idPhytosanitary`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "idLocalPhytostage",
+            "columnName": "idLocalPhytostage",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ext_id",
+            "columnName": "ext_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "stage",
+            "columnName": "stage",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "photo",
+            "columnName": "photo",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "idPhytosanitary",
+            "columnName": "idPhytosanitary",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "idLocalPhytostage"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_phytostages_ext_id",
+            "unique": true,
+            "columnNames": [
+              "ext_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_phytostages_ext_id` ON `${TABLE_NAME}` (`ext_id`)"
+          },
+          {
+            "name": "index_local_phytostages_idPhytosanitary",
+            "unique": false,
+            "columnNames": [
+              "idPhytosanitary"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytostages_idPhytosanitary` ON `${TABLE_NAME}` (`idPhytosanitary`)"
+          },
+          {
+            "name": "index_local_phytostages_idPhytosanitary_stage",
+            "unique": true,
+            "columnNames": [
+              "idPhytosanitary",
+              "stage"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_phytostages_idPhytosanitary_stage` ON `${TABLE_NAME}` (`idPhytosanitary`, `stage`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "local_phytosanitary_catalog",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idPhytosanitary"
+            ],
+            "referencedColumns": [
+              "idPhytosanitary"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "local_phytomonitoring_checkpoints",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`idCheckpoint` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ext_id` TEXT, `qty` INTEGER, `presence_status` INTEGER, `stage` TEXT, `notes` TEXT, `photo_ref` TEXT, `photo_local_path` TEXT, `photo_url` TEXT, `captured_at` INTEGER, `captured_by_user_id` INTEGER, `idTargetPoint` INTEGER NOT NULL, `idHeader` INTEGER NOT NULL, `idPhytosanitary` INTEGER, `idLocalPlot` INTEGER NOT NULL, FOREIGN KEY(`idTargetPoint`) REFERENCES `local_phytomonitoring_target_points`(`idTargetPoint`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`idHeader`) REFERENCES `local_phytomonitoring_headers`(`idHeader`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`idPhytosanitary`) REFERENCES `local_phytosanitary_catalog`(`idPhytosanitary`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`idLocalPlot`) REFERENCES `local_plots`(`idLocalPlot`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`captured_by_user_id`) REFERENCES `users`(`idUser`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "idCheckpoint",
+            "columnName": "idCheckpoint",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "extId",
+            "columnName": "ext_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "qty",
+            "columnName": "qty",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "presenceStatus",
+            "columnName": "presence_status",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "stage",
+            "columnName": "stage",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "notes",
+            "columnName": "notes",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "photoRef",
+            "columnName": "photo_ref",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "photoLocalPath",
+            "columnName": "photo_local_path",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "photoUrl",
+            "columnName": "photo_url",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "capturedAt",
+            "columnName": "captured_at",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "capturedByUserId",
+            "columnName": "captured_by_user_id",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "idTargetPoint",
+            "columnName": "idTargetPoint",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idHeader",
+            "columnName": "idHeader",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idPhytosanitary",
+            "columnName": "idPhytosanitary",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "idLocalPlot",
+            "columnName": "idLocalPlot",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "idCheckpoint"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_phytomonitoring_checkpoints_ext_id",
+            "unique": true,
+            "columnNames": [
+              "ext_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_phytomonitoring_checkpoints_ext_id` ON `${TABLE_NAME}` (`ext_id`)"
+          },
+          {
+            "name": "index_local_phytomonitoring_checkpoints_idTargetPoint",
+            "unique": false,
+            "columnNames": [
+              "idTargetPoint"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytomonitoring_checkpoints_idTargetPoint` ON `${TABLE_NAME}` (`idTargetPoint`)"
+          },
+          {
+            "name": "index_local_phytomonitoring_checkpoints_idHeader",
+            "unique": false,
+            "columnNames": [
+              "idHeader"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytomonitoring_checkpoints_idHeader` ON `${TABLE_NAME}` (`idHeader`)"
+          },
+          {
+            "name": "index_local_phytomonitoring_checkpoints_idPhytosanitary",
+            "unique": false,
+            "columnNames": [
+              "idPhytosanitary"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytomonitoring_checkpoints_idPhytosanitary` ON `${TABLE_NAME}` (`idPhytosanitary`)"
+          },
+          {
+            "name": "index_local_phytomonitoring_checkpoints_idLocalPlot",
+            "unique": false,
+            "columnNames": [
+              "idLocalPlot"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytomonitoring_checkpoints_idLocalPlot` ON `${TABLE_NAME}` (`idLocalPlot`)"
+          },
+          {
+            "name": "index_local_phytomonitoring_checkpoints_captured_at",
+            "unique": false,
+            "columnNames": [
+              "captured_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytomonitoring_checkpoints_captured_at` ON `${TABLE_NAME}` (`captured_at`)"
+          },
+          {
+            "name": "index_local_phytomonitoring_checkpoints_photo_ref",
+            "unique": false,
+            "columnNames": [
+              "photo_ref"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytomonitoring_checkpoints_photo_ref` ON `${TABLE_NAME}` (`photo_ref`)"
+          },
+          {
+            "name": "index_local_phytomonitoring_checkpoints_captured_by_user_id",
+            "unique": false,
+            "columnNames": [
+              "captured_by_user_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_phytomonitoring_checkpoints_captured_by_user_id` ON `${TABLE_NAME}` (`captured_by_user_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "local_phytomonitoring_target_points",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idTargetPoint"
+            ],
+            "referencedColumns": [
+              "idTargetPoint"
+            ]
+          },
+          {
+            "table": "local_phytomonitoring_headers",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idHeader"
+            ],
+            "referencedColumns": [
+              "idHeader"
+            ]
+          },
+          {
+            "table": "local_phytosanitary_catalog",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idPhytosanitary"
+            ],
+            "referencedColumns": [
+              "idPhytosanitary"
+            ]
+          },
+          {
+            "table": "local_plots",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idLocalPlot"
+            ],
+            "referencedColumns": [
+              "idLocalPlot"
+            ]
+          },
+          {
+            "table": "users",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "captured_by_user_id"
+            ],
+            "referencedColumns": [
+              "idUser"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "user_local_cias",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`idUser` INTEGER NOT NULL, `idLocalCia` INTEGER NOT NULL, PRIMARY KEY(`idUser`, `idLocalCia`), FOREIGN KEY(`idUser`) REFERENCES `users`(`idUser`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`idLocalCia`) REFERENCES `local_cias`(`idLocalCia`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "idUser",
+            "columnName": "idUser",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idLocalCia",
+            "columnName": "idLocalCia",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "idUser",
+            "idLocalCia"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_user_local_cias_idUser",
+            "unique": false,
+            "columnNames": [
+              "idUser"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_user_local_cias_idUser` ON `${TABLE_NAME}` (`idUser`)"
+          },
+          {
+            "name": "index_user_local_cias_idLocalCia",
+            "unique": false,
+            "columnNames": [
+              "idLocalCia"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_user_local_cias_idLocalCia` ON `${TABLE_NAME}` (`idLocalCia`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "users",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idUser"
+            ],
+            "referencedColumns": [
+              "idUser"
+            ]
+          },
+          {
+            "table": "local_cias",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idLocalCia"
+            ],
+            "referencedColumns": [
+              "idLocalCia"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "local_cia_agro_units",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`idLocalCia` INTEGER NOT NULL, `idLocalAgroUnit` INTEGER NOT NULL, `ext_id` TEXT, PRIMARY KEY(`idLocalCia`, `idLocalAgroUnit`), FOREIGN KEY(`idLocalCia`) REFERENCES `local_cias`(`idLocalCia`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`idLocalAgroUnit`) REFERENCES `local_agro_units`(`idLocalAgroUnit`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "idLocalCia",
+            "columnName": "idLocalCia",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idLocalAgroUnit",
+            "columnName": "idLocalAgroUnit",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "extId",
+            "columnName": "ext_id",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "idLocalCia",
+            "idLocalAgroUnit"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_cia_agro_units_idLocalCia",
+            "unique": false,
+            "columnNames": [
+              "idLocalCia"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_cia_agro_units_idLocalCia` ON `${TABLE_NAME}` (`idLocalCia`)"
+          },
+          {
+            "name": "index_local_cia_agro_units_idLocalAgroUnit",
+            "unique": false,
+            "columnNames": [
+              "idLocalAgroUnit"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_cia_agro_units_idLocalAgroUnit` ON `${TABLE_NAME}` (`idLocalAgroUnit`)"
+          },
+          {
+            "name": "index_local_cia_agro_units_ext_id",
+            "unique": true,
+            "columnNames": [
+              "ext_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_cia_agro_units_ext_id` ON `${TABLE_NAME}` (`ext_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "local_cias",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idLocalCia"
+            ],
+            "referencedColumns": [
+              "idLocalCia"
+            ]
+          },
+          {
+            "table": "local_agro_units",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idLocalAgroUnit"
+            ],
+            "referencedColumns": [
+              "idLocalAgroUnit"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "local_aspersion_sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`session_id` TEXT NOT NULL, `program_id` TEXT, `program_name` TEXT, `program_cycle` TEXT, `plot_id` TEXT, `plot_name` TEXT, `plot_code` TEXT, `ranch_id` TEXT, `ranch_name` TEXT, `producer_id` TEXT, `producer_name` TEXT, `data_central_ids` TEXT, `evaluation_id` TEXT, `aspersion_date` TEXT, `status` TEXT, `assigned_to_id` TEXT, `assigned_to_username` TEXT, `est_start_date` TEXT, `est_finish_date` TEXT, `act_start_date` TEXT, `act_finish_date` TEXT, `import_status` TEXT, `import_errors_json` TEXT, `imported_at` TEXT, `last_template_id` TEXT, `points_count` INTEGER, `created_at` TEXT, `updated_at` TEXT, `downloaded_points_count` INTEGER NOT NULL DEFAULT 0, `points_download_complete` INTEGER NOT NULL DEFAULT 0, `last_synced_at` INTEGER, PRIMARY KEY(`session_id`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "programId",
+            "columnName": "program_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "programName",
+            "columnName": "program_name",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "programCycle",
+            "columnName": "program_cycle",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "plotId",
+            "columnName": "plot_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "plotName",
+            "columnName": "plot_name",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "plotCode",
+            "columnName": "plot_code",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "ranchId",
+            "columnName": "ranch_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "ranchName",
+            "columnName": "ranch_name",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "producerId",
+            "columnName": "producer_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "producerName",
+            "columnName": "producer_name",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dataCentralIds",
+            "columnName": "data_central_ids",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "evaluationId",
+            "columnName": "evaluation_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "aspersionDate",
+            "columnName": "aspersion_date",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "assignedToId",
+            "columnName": "assigned_to_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "assignedToUsername",
+            "columnName": "assigned_to_username",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "estStartDate",
+            "columnName": "est_start_date",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "estFinishDate",
+            "columnName": "est_finish_date",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "actStartDate",
+            "columnName": "act_start_date",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "actFinishDate",
+            "columnName": "act_finish_date",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "importStatus",
+            "columnName": "import_status",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "importErrorsJson",
+            "columnName": "import_errors_json",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "importedAt",
+            "columnName": "imported_at",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastTemplateId",
+            "columnName": "last_template_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "pointsCount",
+            "columnName": "points_count",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "downloadedPointsCount",
+            "columnName": "downloaded_points_count",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "pointsDownloadComplete",
+            "columnName": "points_download_complete",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "lastSyncedAt",
+            "columnName": "last_synced_at",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "session_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_aspersion_sessions_program_id",
+            "unique": false,
+            "columnNames": [
+              "program_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_aspersion_sessions_program_id` ON `${TABLE_NAME}` (`program_id`)"
+          },
+          {
+            "name": "index_local_aspersion_sessions_plot_id",
+            "unique": false,
+            "columnNames": [
+              "plot_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_aspersion_sessions_plot_id` ON `${TABLE_NAME}` (`plot_id`)"
+          },
+          {
+            "name": "index_local_aspersion_sessions_assigned_to_id",
+            "unique": false,
+            "columnNames": [
+              "assigned_to_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_aspersion_sessions_assigned_to_id` ON `${TABLE_NAME}` (`assigned_to_id`)"
+          },
+          {
+            "name": "index_local_aspersion_sessions_aspersion_date",
+            "unique": false,
+            "columnNames": [
+              "aspersion_date"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_aspersion_sessions_aspersion_date` ON `${TABLE_NAME}` (`aspersion_date`)"
+          },
+          {
+            "name": "index_local_aspersion_sessions_status",
+            "unique": false,
+            "columnNames": [
+              "status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_aspersion_sessions_status` ON `${TABLE_NAME}` (`status`)"
+          },
+          {
+            "name": "index_local_aspersion_sessions_import_status",
+            "unique": false,
+            "columnNames": [
+              "import_status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_aspersion_sessions_import_status` ON `${TABLE_NAME}` (`import_status`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "local_aspersion_points",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`point_id` TEXT NOT NULL, `session_id` TEXT NOT NULL, `plot_id` TEXT, `geom_type` TEXT, `longitude` REAL NOT NULL, `latitude` REAL NOT NULL, `timestamp` TEXT, `pass_number` INTEGER, `elevation_m` REAL, `course_deg` REAL, `vehicle_heading` REAL, `distance_m` REAL, `duration_s` INTEGER, `speed_kmh` REAL, `satellites` INTEGER, `gnss_hdop` REAL, `gnss_vdop` REAL, `gnss_pdop` REAL, `is_diff_active` INTEGER, `diff_mode` TEXT, `xte_implement` REAL, `xte_vehicle` REAL, `is_steering_active` INTEGER, `is_area_counting` INTEGER, `active_rows` INTEGER, `app_status` TEXT, `boom_width_m` REAL, `liquid_flow_ls` REAL, `boom_pressure_bar` REAL, `press_ag_kpa` REAL, `press_aux_kpa` REAL, `production_hah` REAL, `droplet_size` TEXT, `nozzle_color` TEXT, `nozzle_capacity` REAL, `nozzle_ref_pressure` REAL, `target_rate_l` REAL, `applied_rate_l` REAL, `product_quantity` REAL, `area_ha` REAL, `rate_quality` TEXT, `evaluation_id` TEXT, `extra_raw_json` TEXT, `created_at` TEXT, PRIMARY KEY(`point_id`), FOREIGN KEY(`session_id`) REFERENCES `local_aspersion_sessions`(`session_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "pointId",
+            "columnName": "point_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "plotId",
+            "columnName": "plot_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "geomType",
+            "columnName": "geom_type",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "longitude",
+            "columnName": "longitude",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "latitude",
+            "columnName": "latitude",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "passNumber",
+            "columnName": "pass_number",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "elevationM",
+            "columnName": "elevation_m",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "courseDeg",
+            "columnName": "course_deg",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "vehicleHeading",
+            "columnName": "vehicle_heading",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "distanceM",
+            "columnName": "distance_m",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "durationS",
+            "columnName": "duration_s",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "speedKmh",
+            "columnName": "speed_kmh",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "satellites",
+            "columnName": "satellites",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "gnssHdop",
+            "columnName": "gnss_hdop",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "gnssVdop",
+            "columnName": "gnss_vdop",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "gnssPdop",
+            "columnName": "gnss_pdop",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "isDiffActive",
+            "columnName": "is_diff_active",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "diffMode",
+            "columnName": "diff_mode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "xteImplement",
+            "columnName": "xte_implement",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "xteVehicle",
+            "columnName": "xte_vehicle",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "isSteeringActive",
+            "columnName": "is_steering_active",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "isAreaCounting",
+            "columnName": "is_area_counting",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "activeRows",
+            "columnName": "active_rows",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "appStatus",
+            "columnName": "app_status",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "boomWidthM",
+            "columnName": "boom_width_m",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "liquidFlowLs",
+            "columnName": "liquid_flow_ls",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "boomPressureBar",
+            "columnName": "boom_pressure_bar",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "pressAgKpa",
+            "columnName": "press_ag_kpa",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "pressAuxKpa",
+            "columnName": "press_aux_kpa",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "productionHah",
+            "columnName": "production_hah",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dropletSize",
+            "columnName": "droplet_size",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "nozzleColor",
+            "columnName": "nozzle_color",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "nozzleCapacity",
+            "columnName": "nozzle_capacity",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "nozzleRefPressure",
+            "columnName": "nozzle_ref_pressure",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "targetRateL",
+            "columnName": "target_rate_l",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "appliedRateL",
+            "columnName": "applied_rate_l",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "productQuantity",
+            "columnName": "product_quantity",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "areaHa",
+            "columnName": "area_ha",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "rateQuality",
+            "columnName": "rate_quality",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "evaluationId",
+            "columnName": "evaluation_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "extraRawJson",
+            "columnName": "extra_raw_json",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "point_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_aspersion_points_session_id",
+            "unique": false,
+            "columnNames": [
+              "session_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_aspersion_points_session_id` ON `${TABLE_NAME}` (`session_id`)"
+          },
+          {
+            "name": "index_local_aspersion_points_plot_id",
+            "unique": false,
+            "columnNames": [
+              "plot_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_aspersion_points_plot_id` ON `${TABLE_NAME}` (`plot_id`)"
+          },
+          {
+            "name": "index_local_aspersion_points_timestamp",
+            "unique": false,
+            "columnNames": [
+              "timestamp"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_aspersion_points_timestamp` ON `${TABLE_NAME}` (`timestamp`)"
+          },
+          {
+            "name": "index_local_aspersion_points_rate_quality",
+            "unique": false,
+            "columnNames": [
+              "rate_quality"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_aspersion_points_rate_quality` ON `${TABLE_NAME}` (`rate_quality`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "local_aspersion_sessions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "session_id"
+            ],
+            "referencedColumns": [
+              "session_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "local_aspersion_stats",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`session_id` TEXT NOT NULL, `plot_id` TEXT, `points_count` INTEGER, `area_total_ha` REAL, `mean_target_l` REAL, `mean_applied_l` REAL, `ratio_applied` REAL, `pct_below` REAL, `pct_in_range` REAL, `pct_above` REAL, `last_refresh` TEXT, `cached_at` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`session_id`), FOREIGN KEY(`session_id`) REFERENCES `local_aspersion_sessions`(`session_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "plotId",
+            "columnName": "plot_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "pointsCount",
+            "columnName": "points_count",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "areaTotalHa",
+            "columnName": "area_total_ha",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "meanTargetL",
+            "columnName": "mean_target_l",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "meanAppliedL",
+            "columnName": "mean_applied_l",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "ratioApplied",
+            "columnName": "ratio_applied",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "pctBelow",
+            "columnName": "pct_below",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "pctInRange",
+            "columnName": "pct_in_range",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "pctAbove",
+            "columnName": "pct_above",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastRefresh",
+            "columnName": "last_refresh",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "cachedAt",
+            "columnName": "cached_at",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "session_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_aspersion_stats_plot_id",
+            "unique": false,
+            "columnNames": [
+              "plot_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_aspersion_stats_plot_id` ON `${TABLE_NAME}` (`plot_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "local_aspersion_sessions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "session_id"
+            ],
+            "referencedColumns": [
+              "session_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "local_aspersion_variable_stats",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`session_id` TEXT NOT NULL, `variable_key` TEXT NOT NULL, `label` TEXT NOT NULL, `count` INTEGER NOT NULL, `mean_value` REAL, `min_value` REAL, `max_value` REAL, `stddev` REAL, `cached_at` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`session_id`, `variable_key`), FOREIGN KEY(`session_id`) REFERENCES `local_aspersion_sessions`(`session_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "variableKey",
+            "columnName": "variable_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "count",
+            "columnName": "count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "meanValue",
+            "columnName": "mean_value",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "minValue",
+            "columnName": "min_value",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "maxValue",
+            "columnName": "max_value",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "stddev",
+            "columnName": "stddev",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "cachedAt",
+            "columnName": "cached_at",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "session_id",
+            "variable_key"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_aspersion_variable_stats_variable_key",
+            "unique": false,
+            "columnNames": [
+              "variable_key"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_aspersion_variable_stats_variable_key` ON `${TABLE_NAME}` (`variable_key`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "local_aspersion_sessions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "session_id"
+            ],
+            "referencedColumns": [
+              "session_id"
+            ]
+          }
+        ]
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'd4331f37a08b45af0644d12573eef9cd')"
+    ]
+  }
+}

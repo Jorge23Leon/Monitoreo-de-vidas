@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -41,7 +42,8 @@ fun EncabezadoApp(
     onCambiarCiaClick: (() -> Unit)? = null,
     onMonitoreosClick: (() -> Unit)? = null,
     onAdminClick: (() -> Unit)? = null,
-    onCerrarSesionClick: () -> Unit
+    onCerrarSesionClick: () -> Unit,
+
 )  {
     val context = LocalContext.current
     val logoAgroindustryId = remember(context) {
@@ -139,6 +141,8 @@ fun EncabezadoApp(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = 8.dp)
+                .systemBarsPadding() // 👈 ESTA ES LA ÚNICA LÍNEA QUE NECESITAS
+
         ) {
             Text(
                 text = "☰",

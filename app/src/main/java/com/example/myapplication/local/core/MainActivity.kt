@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.myapplication.local.aspersion.ui.AspersionViewModel
 import com.example.myapplication.local.entities.AppDatabase
 
 class MainActivity : ComponentActivity() {
@@ -31,6 +32,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 val mainViewModel: MainViewModel = viewModel()
+                val aspersionViewModel: AspersionViewModel = viewModel()
                 val uiState = mainViewModel.uiState
 
                 var mostrarDialogSalirApp by remember {
@@ -56,7 +58,7 @@ class MainActivity : ComponentActivity() {
                     when (uiState.pantallaActual) {
                         PantallaActual.SELECCION_PARENT_CIA,
                         PantallaActual.SELECCION_CIA,
-                        PantallaActual.FILTROS_MONITOREO -> {
+                        PantallaActual.MODULOS_TRABAJO -> {
                             mostrarDialogSalirApp = true
                         }
 
@@ -65,13 +67,7 @@ class MainActivity : ComponentActivity() {
                         }
 
                         PantallaActual.LISTA_MONITOREOS -> {
-                            val sesion = uiState.usuarioSesion
-
-                            if (sesion != null && (sesion.esTecnico || sesion.esInvitado)) {
-                                mostrarDialogSalirApp = true
-                            } else {
-                                mainViewModel.manejarBack()
-                            }
+                            mainViewModel.manejarBack()
                         }
 
                         else -> {
@@ -128,6 +124,7 @@ class MainActivity : ComponentActivity() {
                 MainNavegacion(
                     database = database,
                     mainViewModel = mainViewModel,
+                    aspersionViewModel = aspersionViewModel,
                     uiState = uiState
                 )
             }

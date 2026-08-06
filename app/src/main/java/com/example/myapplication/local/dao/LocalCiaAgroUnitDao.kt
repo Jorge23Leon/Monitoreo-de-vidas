@@ -11,6 +11,9 @@ import com.example.myapplication.local.entities.LocalCiaEntity
 @Dao
 interface LocalCiaAgroUnitDao {
 
+    @Query("SELECT * FROM local_cia_agro_units")
+    suspend fun getAllAssignments(): List<LocalCiaAgroUnitCrossRef>
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun asignarProductorACia(asignacion: LocalCiaAgroUnitCrossRef)
 
