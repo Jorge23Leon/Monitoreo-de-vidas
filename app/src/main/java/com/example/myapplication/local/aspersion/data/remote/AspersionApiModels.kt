@@ -201,3 +201,27 @@ data class AspersionPointDto(
     @SerializedName("created_at")
     val createdAt: String?
 )
+
+data class AspersionSessionReportDto(
+    val id: String,
+    @SerializedName("session_type")
+    val sessionType: String?,
+    @SerializedName("object_id")
+    val objectId: String,
+    @SerializedName("activity_label")
+    val activityLabel: String?,
+    @SerializedName("resume_text")
+    val resumeText: String?,
+    @SerializedName("report_date")
+    val reportDate: String?,
+    val status: String?,
+    @SerializedName("status_display")
+    val statusDisplay: String?,
+    @SerializedName("map_snapshot")
+    val mapSnapshot: String?,
+    @SerializedName("created_at")
+    val createdAt: String?,
+    @SerializedName("updated_at")
+    val updatedAt: String?
+)
+

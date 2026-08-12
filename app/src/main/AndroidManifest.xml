@@ -18,6 +18,14 @@
         android:name="android.hardware.camera"
         android:required="false" />
 
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <data android:mimeType="application/pdf" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="false"
         android:hardwareAccelerated="true"

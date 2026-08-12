@@ -530,6 +530,15 @@ fun MainNavegacion(
                     onSyncSession = {
                         aspersionViewModel.syncSelectedSession()
                     },
+                    onRefreshReport = {
+                        aspersionViewModel.refreshSessionReport()
+                    },
+                    onViewReport = {
+                        aspersionViewModel.viewSessionReportPdf()
+                    },
+                    onDownloadReport = {
+                        aspersionViewModel.downloadSessionReportPdf()
+                    },
                     onOpenFullMap = {
                         mainViewModel.irA(PantallaActual.ASPERSION_MAPA)
                     },

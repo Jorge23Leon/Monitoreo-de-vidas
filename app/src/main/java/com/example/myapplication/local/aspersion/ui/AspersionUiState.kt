@@ -101,6 +101,19 @@ data class AspersionProgramItem(
     val sessions: List<AspersionProgramSessionItem> = emptyList()
 )
 
+
+
+data class AspersionReportUi(
+    val reportId: String,
+    val objectId: String,
+    val activityLabel: String,
+    val reportDate: String?,
+    val status: String?,
+    val statusDisplay: String,
+    val resumeText: String?,
+    val hasMapSnapshot: Boolean
+)
+
 data class AspersionUiState(
     val programs: List<AspersionProgramItem> = emptyList(),
     val totalProgramsBeforeFilters: Int = 0,
@@ -132,6 +145,12 @@ data class AspersionUiState(
 
     val syncingSessions: Boolean = false,
     val syncingSelectedSession: Boolean = false,
+
+    val sessionReport: AspersionReportUi? = null,
+    val loadingSessionReport: Boolean = false,
+    val downloadingSessionReport: Boolean = false,
+    val sessionReportError: String? = null,
+
     val message: String? = null,
     val error: String? = null
 )

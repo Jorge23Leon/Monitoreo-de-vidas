@@ -7,6 +7,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.myapplication.local.aspersion.data.AspersionRepository
+import com.example.myapplication.local.aspersion.data.AspersionPdfDownloadResult
+import com.example.myapplication.local.aspersion.data.AspersionReportLookupResult
 import com.example.myapplication.local.aspersion.data.AspersionSyncResult
 import com.example.myapplication.local.api.fieldops.FieldOpsRepository
 import com.example.myapplication.local.api.fieldops.MasterProgramTreeApiItem
@@ -23,6 +25,8 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+
+import com.example.myapplication.local.aspersion.report.AspersionReportFileManager
 /**
  * Estado exclusivo del módulo de aspersión.
  *
@@ -47,6 +51,7 @@ class AspersionViewModel(
 
     private var selectedSessionJob: Job? = null
     private var selectedSessionSyncJob: Job? = null
+    private var selectedSessionReportJob: Job? = null
     private var sessionsSyncJob: Job? = null
     private var scopeVersion = 0L
     private var hierarchyVersion = 0L
@@ -402,6 +407,10 @@ class AspersionViewModel(
                 visibleBucketKeys = emptySet(),
                 filtersExpanded = true,
                 syncingSelectedSession = false,
+                sessionReport = null,
+                loadingSessionReport = true,
+                downloadingSessionReport = false,
+                sessionReportError = null,
                 message = null,
                 error = null
             )
@@ -474,6 +483,8 @@ class AspersionViewModel(
                 }
             }
         }
+
+        loadSessionReport(cleanId)
 
         if (syncIfNeeded) {
             val cachedSession = uiState.sessions.firstOrNull { session ->
@@ -551,6 +562,158 @@ class AspersionViewModel(
         }
     }
 
+    fun refreshSessionReport() {
+        val sessionId = uiState.selectedSessionId ?: return
+        loadSessionReport(sessionId)
+    }
+
+    private fun loadSessionReport(sessionId: String) {
+        val cleanSessionId = sessionId.trim()
+        if (cleanSessionId.isEmpty()) return
+
+        selectedSessionReportJob?.cancel()
+        selectedSessionReportJob = viewModelScope.launch {
+            updateState {
+                it.copy(
+                    loadingSessionReport = true,
+                    sessionReportError = null
+                )
+            }
+
+            when (val result = repository.fetchSessionReport(cleanSessionId)) {
+                is AspersionReportLookupResult.Available -> {
+                    val dto = result.report
+                    updateState {
+                        if (it.selectedSessionId != cleanSessionId) {
+                            it
+                        } else {
+                            it.copy(
+                                sessionReport = AspersionReportUi(
+                                    reportId = dto.id.trim(),
+                                    objectId = dto.objectId.trim(),
+                                    activityLabel = dto.activityLabel
+                                        ?.trim()
+                                        ?.takeIf(String::isNotEmpty)
+                                        ?: "Reporte de aspersión",
+                                    reportDate = dto.reportDate?.trim(),
+                                    status = dto.status?.trim(),
+                                    statusDisplay = dto.statusDisplay
+                                        ?.trim()
+                                        ?.takeIf(String::isNotEmpty)
+                                        ?: dto.status
+                                            ?.replace('_', ' ')
+                                            ?.replaceFirstChar { char -> char.uppercase() }
+                                            .orEmpty()
+                                            .ifBlank { "Disponible" },
+                                    resumeText = dto.resumeText?.trim(),
+                                    hasMapSnapshot = !dto.mapSnapshot.isNullOrBlank()
+                                ),
+                                loadingSessionReport = false,
+                                sessionReportError = null
+                            )
+                        }
+                    }
+                }
+
+                AspersionReportLookupResult.NotAvailable -> {
+                    updateState {
+                        if (it.selectedSessionId != cleanSessionId) it else it.copy(
+                            sessionReport = null,
+                            loadingSessionReport = false,
+                            sessionReportError = null
+                        )
+                    }
+                }
+
+                is AspersionReportLookupResult.Error -> {
+                    updateState {
+                        if (it.selectedSessionId != cleanSessionId) it else it.copy(
+                            sessionReport = null,
+                            loadingSessionReport = false,
+                            sessionReportError = result.message
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun viewSessionReportPdf() {
+        downloadAndHandleSessionReport(openAfterDownload = true)
+    }
+
+    fun downloadSessionReportPdf() {
+        downloadAndHandleSessionReport(openAfterDownload = false)
+    }
+
+    private fun downloadAndHandleSessionReport(openAfterDownload: Boolean) {
+        val report = uiState.sessionReport ?: return
+        if (uiState.downloadingSessionReport) return
+
+        viewModelScope.launch {
+            updateState {
+                it.copy(
+                    downloadingSessionReport = true,
+                    sessionReportError = null
+                )
+            }
+
+            when (val result = repository.downloadSessionReportPdf(report.reportId)) {
+                is AspersionPdfDownloadResult.Success -> {
+                    val context = getApplication<Application>().applicationContext
+                    val operation: Result<String> = runCatching {
+                        if (openAfterDownload) {
+                            val uri = AspersionReportFileManager.saveForViewing(
+                                context = context,
+                                bytes = result.bytes,
+                                fileName = result.fileName
+                            )
+
+                            AspersionReportFileManager.openReadOnlyPdf(
+                                context = context,
+                                pdfUri = uri
+                            )
+
+                            "Reporte abierto en modo lectura."
+                        } else {
+                            AspersionReportFileManager.saveToDownloads(
+                                context = context,
+                                bytes = result.bytes,
+                                fileName = result.fileName
+                            )
+
+                            "Reporte descargado en Descargas/Reportes CIAgro."
+                        }
+                    }
+
+                    updateState {
+                        it.copy(
+                            downloadingSessionReport = false,
+                            message = operation.getOrNull(),
+                            sessionReportError = operation.exceptionOrNull()?.let { error ->
+                                if (openAfterDownload) {
+                                    "El PDF se descargó, pero no hay una aplicación disponible para abrirlo."
+                                } else {
+                                    "No se pudo guardar el PDF: " +
+                                            (error.message ?: error.javaClass.simpleName)
+                                }
+                            }
+                        )
+                    }
+                }
+
+                is AspersionPdfDownloadResult.Error -> {
+                    updateState {
+                        it.copy(
+                            downloadingSessionReport = false,
+                            sessionReportError = result.message
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     fun selectLayer(layer: AspersionLayer) {
         if (uiState.selectedLayer == layer) return
 
@@ -613,6 +776,8 @@ class AspersionViewModel(
         selectedSessionJob = null
         selectedSessionSyncJob?.cancel()
         selectedSessionSyncJob = null
+        selectedSessionReportJob?.cancel()
+        selectedSessionReportJob = null
         updateState {
             it.copy(
                 selectedSessionId = null,
@@ -627,6 +792,10 @@ class AspersionViewModel(
                 legendItems = emptyList(),
                 visibleBucketKeys = emptySet(),
                 syncingSelectedSession = false,
+                sessionReport = null,
+                loadingSessionReport = false,
+                downloadingSessionReport = false,
+                sessionReportError = null,
                 error = null
             )
         }

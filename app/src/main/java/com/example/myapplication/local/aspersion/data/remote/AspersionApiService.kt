@@ -1,9 +1,11 @@
 package com.example.myapplication.local.aspersion.data.remote
 
+import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.GET
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 interface AspersionApiService {
 
@@ -44,4 +46,17 @@ interface AspersionApiService {
         @Query("page") page: Int = 1,
         @Query("page_size") pageSize: Int = 2_000
     ): Response<AspersionPaginatedResponse<AspersionPointDto>>
+
+    @GET("api/v1/field_ops/session-reports/")
+    suspend fun listarReportesSesion(
+        @Query("session_type") sessionType: String = "aspersion",
+        @Query("object_id") objectId: String
+    ): Response<AspersionPaginatedResponse<AspersionSessionReportDto>>
+
+    @Streaming
+    @GET("api/v1/field_ops/session-reports/{id}/pdf/")
+    suspend fun descargarReportePdf(
+        @Path("id") reportId: String
+    ): Response<ResponseBody>
+
 }

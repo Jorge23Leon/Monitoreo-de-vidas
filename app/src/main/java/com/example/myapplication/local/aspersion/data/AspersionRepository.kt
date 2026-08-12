@@ -6,6 +6,7 @@ import com.example.myapplication.local.aspersion.data.remote.AspersionApiService
 import com.example.myapplication.local.aspersion.data.remote.AspersionPaginatedResponse
 import com.example.myapplication.local.aspersion.data.remote.AspersionPointDto
 import com.example.myapplication.local.aspersion.data.remote.AspersionSessionDto
+import com.example.myapplication.local.aspersion.data.remote.AspersionSessionReportDto
 import com.example.myapplication.local.aspersion.data.remote.AspersionStatsDto
 import com.example.myapplication.local.aspersion.data.remote.AspersionVariableStatsDto
 import com.example.myapplication.local.api.core.RetrofitClient
@@ -322,6 +323,104 @@ class AspersionRepository(
             throw cancelled
         } catch (error: Exception) {
             AspersionSyncResult.Error(error.toUserMessage())
+        }
+    }
+
+
+
+    suspend fun fetchSessionReport(
+        sessionId: String
+    ): AspersionReportLookupResult = withContext(Dispatchers.IO) {
+        val cleanSessionId = sessionId.trim()
+        if (cleanSessionId.isEmpty()) {
+            return@withContext AspersionReportLookupResult.Error(
+                "Falta el UUID de la sesión para consultar el reporte."
+            )
+        }
+
+        try {
+            val body = requireBody(
+                response = api.listarReportesSesion(
+                    sessionType = "aspersion",
+                    objectId = cleanSessionId
+                ),
+                resourceName = "El reporte de la sesión"
+            )
+
+            val report = body.results.firstOrNull { item ->
+                item.objectId.trim() == cleanSessionId
+            } ?: body.results.firstOrNull()
+
+            if (report == null) {
+                AspersionReportLookupResult.NotAvailable
+            } else {
+                AspersionReportLookupResult.Available(report)
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            AspersionReportLookupResult.Error(error.toUserMessage())
+        }
+    }
+
+    suspend fun downloadSessionReportPdf(
+        reportId: String
+    ): AspersionPdfDownloadResult = withContext(Dispatchers.IO) {
+        val cleanReportId = reportId.trim()
+        if (cleanReportId.isEmpty()) {
+            return@withContext AspersionPdfDownloadResult.Error(
+                "El reporte no tiene un UUID válido."
+            )
+        }
+
+        try {
+            val response = api.descargarReportePdf(cleanReportId)
+            if (!response.isSuccessful) {
+                val detail = response.errorBody()
+                    ?.string()
+                    ?.trim()
+                    ?.take(MAX_ERROR_BODY_LENGTH)
+                    ?.extractApiDetail()
+
+                return@withContext AspersionPdfDownloadResult.Error(
+                    detail ?: "No se pudo generar el PDF. HTTP ${response.code()}."
+                )
+            }
+
+            val body = response.body()
+                ?: return@withContext AspersionPdfDownloadResult.Error(
+                    "El servidor respondió sin el archivo PDF."
+                )
+            val bytes = body.bytes()
+            if (bytes.isEmpty()) {
+                return@withContext AspersionPdfDownloadResult.Error(
+                    "El PDF descargado está vacío."
+                )
+            }
+
+            val contentType = response.headers()["Content-Type"].orEmpty()
+            if (!contentType.contains("pdf", ignoreCase = true) &&
+                !bytes.startsWithPdfSignature()
+            ) {
+                return@withContext AspersionPdfDownloadResult.Error(
+                    "El servidor no devolvió un archivo PDF válido."
+                )
+            }
+
+            AspersionPdfDownloadResult.Success(
+                bytes = bytes,
+                fileName = response.headers()["Content-Disposition"]
+                    .extractPdfFileName()
+                    ?: "reporte-aspersion-$cleanReportId.pdf"
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            AspersionPdfDownloadResult.Error(
+                "No se pudo descargar el PDF: " +
+                        (error.message?.takeIf(String::isNotBlank)
+                            ?: error.javaClass.simpleName)
+            )
         }
     }
 
@@ -711,3 +810,67 @@ private fun Double?.finiteOrNull(): Double? = this?.takeIf(Double::isFinite)
 
 private fun List<Double>.averageOrNull(): Double? =
     takeIf(List<Double>::isNotEmpty)?.average()
+
+sealed class AspersionReportLookupResult {
+    data class Available(
+        val report: AspersionSessionReportDto
+    ) : AspersionReportLookupResult()
+
+    object NotAvailable : AspersionReportLookupResult()
+
+    data class Error(
+        val message: String
+    ) : AspersionReportLookupResult()
+}
+
+sealed class AspersionPdfDownloadResult {
+    data class Success(
+        val bytes: ByteArray,
+        val fileName: String
+    ) : AspersionPdfDownloadResult()
+
+    data class Error(
+        val message: String
+    ) : AspersionPdfDownloadResult()
+}
+
+private fun ByteArray.startsWithPdfSignature(): Boolean {
+    return size >= 4 &&
+            this[0] == '%'.code.toByte() &&
+            this[1] == 'P'.code.toByte() &&
+            this[2] == 'D'.code.toByte() &&
+            this[3] == 'F'.code.toByte()
+}
+
+private fun String?.extractPdfFileName(): String? {
+    val header = this?.trim()?.takeIf(String::isNotEmpty) ?: return null
+    val utf8 = Regex("""filename\*=UTF-8''([^;]+)""", RegexOption.IGNORE_CASE)
+        .find(header)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+    val regular = Regex("""filename="?([^";]+)"?""", RegexOption.IGNORE_CASE)
+        .find(header)
+        ?.groupValues
+        ?.getOrNull(1)
+    return (utf8 ?: regular)
+        ?.substringAfterLast('/')
+        ?.substringAfterLast('\\')
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { name -> if (name.endsWith(".pdf", true)) name else "$name.pdf" }
+}
+
+private fun String.extractApiDetail(): String? {
+    val clean = trim()
+    if (clean.isEmpty()) return null
+    return Regex("\"detail\"\\s*:\\s*\"([^\"]+)\"")
+        .find(clean)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.replace("\\n", " ")
+        ?.replace("\\\"", "\"")
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+        ?: clean.takeIf { !it.startsWith("{") }
+}

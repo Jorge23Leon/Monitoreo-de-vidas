@@ -14,7 +14,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -23,6 +26,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.Divider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -44,6 +48,9 @@ fun AspersionDetailScreen(
     onLayerSelected: (AspersionLayer) -> Unit,
     onToggleBucket: (String) -> Unit,
     onSyncSession: () -> Unit,
+    onRefreshReport: () -> Unit,
+    onViewReport: () -> Unit,
+    onDownloadReport: () -> Unit,
     onOpenFullMap: () -> Unit,
     onBack: () -> Unit,
     onPerfilClick: () -> Unit,
@@ -277,7 +284,240 @@ fun AspersionDetailScreen(
 
                 AspersionRangeSummary(state)
 
+                AspersionReportCard(
+                    state = state,
+                    onRefreshReport = onRefreshReport,
+                    onViewReport = onViewReport,
+                    onDownloadReport = onDownloadReport
+                )
+
                 Spacer(modifier = Modifier.height(18.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun AspersionReportCard(
+    state: AspersionUiState,
+    onRefreshReport: () -> Unit,
+    onViewReport: () -> Unit,
+    onDownloadReport: () -> Unit
+) {
+    val report = state.sessionReport
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(15.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PictureAsPdf,
+                    contentDescription = null,
+                    tint = Color(0xFFD32F2F)
+                )
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 10.dp)
+                ) {
+                    Text(
+                        text = "Reporte de sesión",
+                        color = AspersionText,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                    Text(
+                        text = "Consulta y descarga el PDF sin modificarlo.",
+                        color = Color(0xFF6C766F),
+                        fontSize = 11.sp
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onRefreshReport,
+                    enabled = !state.loadingSessionReport &&
+                            !state.downloadingSessionReport,
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    if (state.loadingSessionReport) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.height(17.dp),
+                            strokeWidth = 2.dp,
+                            color = AspersionGreen
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Actualizar reporte"
+                        )
+                    }
+                }
+            }
+
+            Divider(color = Color(0xFFE7EBE8))
+
+            when {
+                state.loadingSessionReport -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.height(20.dp),
+                            strokeWidth = 2.dp,
+                            color = AspersionGreen
+                        )
+                        Text(
+                            text = "  Consultando reporte…",
+                            color = Color(0xFF59655D),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                state.sessionReportError != null -> {
+                    Text(
+                        text = state.sessionReportError,
+                        color = Color(0xFFB3261E),
+                        fontSize = 12.sp
+                    )
+                }
+
+                report == null -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                color = Color(0xFFF6F8F6),
+                                shape = RoundedCornerShape(14.dp)
+                            )
+                            .padding(13.dp)
+                    ) {
+                        Text(
+                            text = "Reporte aún no disponible",
+                            color = AspersionGreenDark,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            text = "Cuando el reporte se genere desde el sistema web, " +
+                                    "aparecerá aquí para consulta y descarga.",
+                            color = Color(0xFF667168),
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp
+                        )
+                    }
+                }
+
+                else -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                color = Color(0xFFF3F8F4),
+                                shape = RoundedCornerShape(14.dp)
+                            )
+                            .padding(13.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = report.activityLabel,
+                            color = AspersionGreenDark,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 13.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "Estado: ${report.statusDisplay}",
+                            color = Color(0xFF526057),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        report.reportDate?.takeIf(String::isNotBlank)?.let { date ->
+                            Text(
+                                text = "Fecha del reporte: $date",
+                                color = Color(0xFF667168),
+                                fontSize = 11.sp
+                            )
+                        }
+                        if (!report.hasMapSnapshot) {
+                            Text(
+                                text = "El servidor puede impedir el PDF hasta que el reporte " +
+                                        "tenga la captura del mapa.",
+                                color = Color(0xFF9A6200),
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = onViewReport,
+                            enabled = !state.downloadingSessionReport,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AspersionBlue
+                            ),
+                            shape = RoundedCornerShape(13.dp)
+                        ) {
+                            if (state.downloadingSessionReport) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.height(17.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Color.White
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Visibility,
+                                    contentDescription = null
+                                )
+                            }
+                            Text(
+                                text = "  Ver PDF",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        OutlinedButton(
+                            onClick = onDownloadReport,
+                            enabled = !state.downloadingSessionReport,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(13.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = null,
+                                tint = AspersionGreenDark
+                            )
+                            Text(
+                                text = "  Descargar",
+                                color = AspersionGreenDark,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
             }
         }
     }

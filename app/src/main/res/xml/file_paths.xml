@@ -29,4 +29,9 @@
         name="archivos_internos_app"
         path="." />
 
+    <!-- Reportes PDF temporales de aspersión -->
+    <cache-path
+        name="aspersion_reports"
+        path="aspersion_reports/" />
+
 </paths>
