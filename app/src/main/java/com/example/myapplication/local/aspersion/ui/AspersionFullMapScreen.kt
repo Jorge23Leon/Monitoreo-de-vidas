@@ -27,6 +27,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.myapplication.local.aspersion.map.AspersionMapCanvas
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 
 @Composable
 fun AspersionFullMapScreen(
@@ -69,11 +71,13 @@ fun AspersionFullMapScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF111A14))
+            .navigationBarsPadding()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color.White)
+                .statusBarsPadding()
                 .padding(horizontal = 9.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -141,7 +145,12 @@ fun AspersionFullMapScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color.White)
-                    .padding(horizontal = 8.dp)
+                    .padding(
+                        start = 8.dp,
+                        end = 8.dp,
+                        top = 5.dp,
+                        bottom = 10.dp
+                    )
             ) {
                 AspersionLayerSelector(
                     selectedLayer = state.selectedLayer,

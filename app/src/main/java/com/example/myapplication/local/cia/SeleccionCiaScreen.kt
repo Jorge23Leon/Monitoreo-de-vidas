@@ -38,6 +38,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.res.painterResource
 import com.example.myapplication.local.R
+import androidx.compose.foundation.layout.navigationBarsPadding
 
 @Composable
 fun SeleccionCiaScreen(
@@ -76,7 +77,13 @@ fun SeleccionCiaScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
-            .padding(horizontal = 14.dp, vertical = 8.dp)
+            .navigationBarsPadding()
+            .padding(
+                start = 14.dp,
+                end = 14.dp,
+                top = 8.dp,
+                bottom = 10.dp
+            )
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             EncabezadoApp(

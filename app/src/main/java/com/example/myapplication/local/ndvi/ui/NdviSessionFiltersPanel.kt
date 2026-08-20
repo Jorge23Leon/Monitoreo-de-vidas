@@ -1,4 +1,4 @@
-package com.example.myapplication.local.aspersion.ui
+package com.example.myapplication.local.ndvi.ui
 
 import android.app.DatePickerDialog
 import androidx.compose.foundation.background
@@ -42,23 +42,19 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-private val AspersionFilterGreen = Color(0xFF0B6B20)
-private val AspersionFilterGreenDark = Color(0xFF173B1A)
-private val AspersionFilterGreenSoft = Color(0xFFE8F5E9)
-private val AspersionFilterSecondary = Color(0xFF667064)
+private val NdviFilterGreen = Color(0xFF0B6B20)
+private val NdviFilterGreenDark = Color(0xFF173B1A)
+private val NdviFilterGreenSoft = Color(0xFFE8F5E9)
+private val NdviFilterSecondary = Color(0xFF667064)
 
 @Composable
-@Suppress("UNUSED_PARAMETER")
-internal fun AspersionSessionFiltersPanel(
-    state: AspersionUiState,
-    onSearchChange: (String) -> Unit,
+internal fun NdviSessionFiltersPanel(
+    state: NdviUiState,
     onProducerChange: (String?) -> Unit,
     onRanchChange: (String?) -> Unit,
     onPlotChange: (String?) -> Unit,
-    onProgramChange: (String?) -> Unit,
     onStartDateChange: (Long?) -> Unit,
     onEndDateChange: (Long?) -> Unit,
-    onStatusChange: (String?) -> Unit,
     onClear: () -> Unit,
     onToggle: () -> Unit
 ) {
@@ -111,19 +107,19 @@ internal fun AspersionSessionFiltersPanel(
 
         state.filters.startDateMillis?.let {
             add(
-                "Desde: ${formatAspersionFilterDate(it)}"
+                "Desde: ${formatNdviFilterDate(it)}"
             )
         }
 
         state.filters.endDateMillis?.let {
             add(
-                "Hasta: ${formatAspersionFilterDate(it)}"
+                "Hasta: ${formatNdviFilterDate(it)}"
             )
         }
 
     }.joinToString(" · ")
         .ifBlank {
-            "Todas las sesiones de aspersión"
+            "Todas las sesiones NDVI"
         }
 
     Card(
@@ -147,9 +143,7 @@ internal fun AspersionSessionFiltersPanel(
         ) {
 
             /*
-             * ENCABEZADO DE FILTROS
-             *
-             * MISMO ESTILO QUE PLAGAS Y ENFERMEDADES
+             * CABECERA DEL PANEL
              */
             Row(
                 modifier = Modifier
@@ -165,7 +159,7 @@ internal fun AspersionSessionFiltersPanel(
                         .size(38.dp)
                         .clip(CircleShape)
                         .background(
-                            AspersionFilterGreenSoft
+                            NdviFilterGreenSoft
                         ),
                     contentAlignment = Alignment.Center
                 ) {
@@ -174,7 +168,7 @@ internal fun AspersionSessionFiltersPanel(
                         text = "≡",
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
-                        color = AspersionFilterGreen
+                        color = NdviFilterGreen
                     )
                 }
 
@@ -194,7 +188,7 @@ internal fun AspersionSessionFiltersPanel(
                             text = "Filtros",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = AspersionFilterGreenDark
+                            color = NdviFilterGreenDark
                         )
 
                         if (filtrosActivos > 0) {
@@ -207,10 +201,10 @@ internal fun AspersionSessionFiltersPanel(
                                 text = "$filtrosActivos aplicados",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = AspersionFilterGreen,
+                                color = NdviFilterGreen,
                                 modifier = Modifier
                                     .background(
-                                        color = AspersionFilterGreenSoft,
+                                        color = NdviFilterGreenSoft,
                                         shape = RoundedCornerShape(
                                             20.dp
                                         )
@@ -226,7 +220,7 @@ internal fun AspersionSessionFiltersPanel(
                     Text(
                         text = resumen,
                         fontSize = 11.sp,
-                        color = AspersionFilterSecondary,
+                        color = NdviFilterSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -245,7 +239,7 @@ internal fun AspersionSessionFiltersPanel(
                         } else {
                             "Editar"
                         },
-                        color = AspersionFilterGreen,
+                        color = NdviFilterGreen,
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp
                     )
@@ -260,7 +254,7 @@ internal fun AspersionSessionFiltersPanel(
                     } else {
                         "⌄"
                     },
-                    color = AspersionFilterGreenDark,
+                    color = NdviFilterGreenDark,
                     fontSize = 17.sp
                 )
             }
@@ -277,7 +271,7 @@ internal fun AspersionSessionFiltersPanel(
                 /*
                  * PRODUCTOR
                  */
-                AspersionDropdownFilter(
+                NdviDropdownFilter(
                     label = "Productor",
                     selectedId =
                     state.filters.producerId,
@@ -299,7 +293,7 @@ internal fun AspersionSessionFiltersPanel(
                 )
 
                 /*
-                 * RANCHO Y PARCELA
+                 * RANCHO / PARCELA
                  */
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -307,7 +301,7 @@ internal fun AspersionSessionFiltersPanel(
                     Arrangement.spacedBy(9.dp)
                 ) {
 
-                    AspersionDropdownFilter(
+                    NdviDropdownFilter(
                         label = "Rancho",
                         selectedId =
                         state.filters.ranchId,
@@ -331,7 +325,7 @@ internal fun AspersionSessionFiltersPanel(
                         onRanchChange
                     )
 
-                    AspersionDropdownFilter(
+                    NdviDropdownFilter(
                         label = "Parcela",
                         selectedId =
                         state.filters.plotId,
@@ -361,7 +355,7 @@ internal fun AspersionSessionFiltersPanel(
                 )
 
                 /*
-                 * FECHA INICIO Y FIN
+                 * FECHAS
                  */
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -369,7 +363,7 @@ internal fun AspersionSessionFiltersPanel(
                     Arrangement.spacedBy(9.dp)
                 ) {
 
-                    AspersionDateFilter(
+                    NdviDateFilter(
                         label = "Inicio",
                         value =
                         state.filters.startDateMillis,
@@ -379,7 +373,7 @@ internal fun AspersionSessionFiltersPanel(
                         onStartDateChange
                     )
 
-                    AspersionDateFilter(
+                    NdviDateFilter(
                         label = "Fin",
                         value =
                         state.filters.endDateMillis,
@@ -391,7 +385,7 @@ internal fun AspersionSessionFiltersPanel(
                 }
 
                 /*
-                 * LIMPIAR
+                 * LIMPIAR FILTROS
                  */
                 if (filtrosActivos > 0) {
 
@@ -405,10 +399,8 @@ internal fun AspersionSessionFiltersPanel(
 
                         Text(
                             text = "↻ Limpiar filtros",
-                            color =
-                            AspersionFilterGreen,
-                            fontWeight =
-                            FontWeight.Bold,
+                            color = NdviFilterGreen,
+                            fontWeight = FontWeight.Bold,
                             fontSize = 12.sp
                         )
                     }
@@ -418,14 +410,11 @@ internal fun AspersionSessionFiltersPanel(
     }
 }
 
-/*
- * SELECTOR PRODUCTOR / RANCHO / PARCELA
- */
 @Composable
-private fun AspersionDropdownFilter(
+private fun NdviDropdownFilter(
     label: String,
     selectedId: String?,
-    options: List<AspersionFilterOption>,
+    options: List<NdviFilterOption>,
     allText: String,
     enabled: Boolean,
     modifier: Modifier = Modifier,
@@ -460,6 +449,7 @@ private fun AspersionDropdownFilter(
 
             OutlinedButton(
                 onClick = {
+
                     if (enabled) {
                         expanded = true
                     }
@@ -491,15 +481,13 @@ private fun AspersionDropdownFilter(
                     overflow =
                     TextOverflow.Ellipsis,
                     fontSize = 12.sp,
-                    fontWeight =
-                    FontWeight.Bold
+                    fontWeight = FontWeight.Bold
                 )
 
                 Text(
                     text = "⌄",
                     color = Color.Black,
-                    fontWeight =
-                    FontWeight.Bold
+                    fontWeight = FontWeight.Bold
                 )
             }
 
@@ -526,15 +514,11 @@ private fun AspersionDropdownFilter(
 
                     DropdownMenuItem(
                         text = {
-                            Text(
-                                option.label
-                            )
+                            Text(option.label)
                         },
                         onClick = {
 
-                            onSelected(
-                                option.id
-                            )
+                            onSelected(option.id)
 
                             expanded = false
                         }
@@ -545,11 +529,8 @@ private fun AspersionDropdownFilter(
     }
 }
 
-/*
- * SELECTOR DE FECHA
- */
 @Composable
-private fun AspersionDateFilter(
+private fun NdviDateFilter(
     label: String,
     value: Long?,
     modifier: Modifier = Modifier,
@@ -561,7 +542,7 @@ private fun AspersionDateFilter(
     val text =
         value
             ?.let(
-                ::formatAspersionFilterDate
+                ::formatNdviFilterDate
             )
             ?: "Fecha"
 
@@ -652,8 +633,7 @@ private fun AspersionDateFilter(
                     Color.Black
                 },
                 fontSize = 12.sp,
-                fontWeight =
-                FontWeight.Bold,
+                fontWeight = FontWeight.Bold,
                 maxLines = 1
             )
         }
@@ -666,7 +646,7 @@ private fun AspersionDateFilter(
     }
 }
 
-private fun formatAspersionFilterDate(
+private fun formatNdviFilterDate(
     value: Long
 ): String {
 

@@ -6,7 +6,7 @@ plugins {
 
 val ciagroApiBaseUrl = providers
     .gradleProperty("CIAGRO_API_BASE_URL")
-    .orElse("https://emacs-plaza-driving-stages.trycloudflare.com/")
+    .orElse("https://regions-desirable-escape-boc.trycloudflare.com/")
     .get()
 
 android {

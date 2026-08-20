@@ -43,7 +43,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-
+import com.example.myapplication.local.ndvi.ui.NdviViewModel
+import com.example.myapplication.local.ndvi.ui.NdviDetailScreen
+import com.example.myapplication.local.ndvi.ui.NdviSessionsScreen
+import com.example.myapplication.local.ndvi.ui.NdviMapScreen
 
 private enum class AccionMenuTrabajo {
     PERFIL,
@@ -69,10 +72,16 @@ fun MainNavegacion(
     database: AppDatabase,
     mainViewModel: MainViewModel,
     aspersionViewModel: AspersionViewModel,
+    ndviViewModel: NdviViewModel,
     uiState: MainUiState
 ) {
     val context = LocalContext.current
-    val aspersionState = aspersionViewModel.uiState
+
+    val aspersionState =
+        aspersionViewModel.uiState
+
+    val ndviState =
+        ndviViewModel.uiState
 
     LaunchedEffect(aspersionState.message) {
         aspersionState.message?.let { message ->
@@ -410,35 +419,283 @@ fun MainNavegacion(
         }
 
         PantallaActual.MODULOS_TRABAJO -> {
+
             ModulosTrabajoScreen(
+
+                nombreUsuario =
+                uiState.nombreUsuarioActual,
+
+                rolUsuario =
+                uiState.rolUsuarioActual,
+
+                nombreCia =
+                uiState.ciaSeleccionada
+                    ?.nombre
+                    ?: "Sesiones asignadas",
+
+
+                // =============================================
+                // MONITOREO
+                // =============================================
+
+                onMonitoreoClick = {
+
+                    mainViewModel
+                        .abrirMonitoreosDesdeEncabezado()
+                },
+
+
+                // =============================================
+                // ASPERSIÓN
+                // =============================================
+
+                onAspersionClick = {
+
+                    mainViewModel
+                        .abrirAspersion()
+                },
+
+
+                // =============================================
+                // NDVI
+                // =============================================
+
+                onNdviClick = {
+
+                    /**
+                     * Por ahora solamente navegamos.
+                     *
+                     * NDVI_LISTA se encargará de llamar:
+                     *
+                     * ndviViewModel.onModuleOpened()
+                     */
+                    mainViewModel.irA(
+                        PantallaActual.NDVI_LISTA
+                    )
+                },
+
+
+                mostrarAspersion =
+                uiState.usuarioSesion
+                    ?.puedeVerAspersion == true,
+
+
+                onPerfilClick = {
+
+                    solicitarAccionMenu(
+                        AccionMenuTrabajo.PERFIL
+                    )
+                },
+
+
+                onAdminClick = {
+
+                    solicitarAccionMenu(
+                        AccionMenuTrabajo.PANEL_ADMIN
+                    )
+                },
+
+
+                onCambiarCiaClick =
+                if (
+                    uiState.usuarioSesion
+                        ?.esTecnico == true ||
+
+                    uiState.usuarioSesion
+                        ?.esInvitado == true
+                ) {
+
+                    null
+
+                } else {
+
+                    cambiarCiaClick
+                },
+
+
+                onCerrarSesionClick =
+                cerrarSesionClick
+            )
+        }
+
+
+        // =============================================================
+        // NDVI - LISTA DE SESIONES
+        // =============================================================
+
+        PantallaActual.NDVI_LISTA -> {
+
+            LaunchedEffect(
+                uiState.ciaSeleccionada?.extId
+            ) {
+                ndviViewModel.onModuleOpened(
+                    dataCentralId =
+                    uiState.ciaSeleccionada?.extId
+                )
+            }
+
+            NdviSessionsScreen(
+                state = ndviState,
                 nombreUsuario = uiState.nombreUsuarioActual,
                 rolUsuario = uiState.rolUsuarioActual,
-                nombreCia = uiState.ciaSeleccionada?.nombre ?: "Sesiones asignadas",
-                onMonitoreoClick = {
-                    mainViewModel.abrirMonitoreosDesdeEncabezado()
+
+                onOpenSession = { sessionId ->
+                    ndviViewModel.selectSession(
+                        sessionId = sessionId
+                    )
+                    mainViewModel.irA(
+                        PantallaActual.NDVI_DETALLE
+                    )
                 },
-                onAspersionClick = {
-                    mainViewModel.abrirAspersion()
+
+                onSync = {
+                    ndviViewModel.refreshSessions()
                 },
-                mostrarAspersion = uiState.usuarioSesion?.puedeVerAspersion == true,
+
+                onProducerFilterChange =
+                ndviViewModel::selectProducerFilter,
+
+                onRanchFilterChange =
+                ndviViewModel::selectRanchFilter,
+
+                onPlotFilterChange =
+                ndviViewModel::selectPlotFilter,
+
+                onStartDateFilterChange =
+                ndviViewModel::selectStartDateFilter,
+
+                onEndDateFilterChange =
+                ndviViewModel::selectEndDateFilter,
+
+                onClearFilters =
+                ndviViewModel::clearSessionFilters,
+
+                onToggleFilters =
+                ndviViewModel::toggleSessionFiltersExpanded,
+
+                onBackToModules = {
+                    ndviViewModel.clearSelectedSession()
+                    mainViewModel.abrirModulosTrabajo()
+                },
+
                 onPerfilClick = {
-                    solicitarAccionMenu(AccionMenuTrabajo.PERFIL)
+                    solicitarAccionMenu(
+                        AccionMenuTrabajo.PERFIL
+                    )
                 },
+
+                onMonitoreosClick = {
+                    solicitarAccionMenu(
+                        AccionMenuTrabajo.MONITOREOS
+                    )
+                },
+
                 onAdminClick = {
-                    solicitarAccionMenu(AccionMenuTrabajo.PANEL_ADMIN)
+                    solicitarAccionMenu(
+                        AccionMenuTrabajo.PANEL_ADMIN
+                    )
                 },
-                onCambiarCiaClick = if (
-                    uiState.usuarioSesion?.esTecnico == true ||
-                    uiState.usuarioSesion?.esInvitado == true
+
+                onCambiarCiaClick =
+                if (
+                    uiState.usuarioSesion
+                        ?.esTecnico == true ||
+                    uiState.usuarioSesion
+                        ?.esInvitado == true
                 ) {
                     null
                 } else {
                     cambiarCiaClick
                 },
-                onCerrarSesionClick = cerrarSesionClick
+
+                onCerrarSesionClick =
+                cerrarSesionClick
             )
         }
 
+        // =============================================================
+        // NDVI - DETALLE DE SESIÓN
+        // =============================================================
+
+        PantallaActual.NDVI_DETALLE -> {
+            if (ndviState.selectedSessionId == null) {
+                LaunchedEffect(Unit) {
+                    mainViewModel.irA(
+                        PantallaActual.NDVI_LISTA
+                    )
+                }
+            } else {
+                NdviDetailScreen(
+                    uiState = ndviState,
+                    onBackClick = {
+                        ndviViewModel.clearSelectedSession()
+                        mainViewModel.irA(
+                            PantallaActual.NDVI_LISTA
+                        )
+                    },
+                    onRefreshClick = {
+                        ndviViewModel.refreshSelectedSession()
+                    },
+                    onIndexSelected = { index ->
+                        ndviViewModel.selectIndex(
+                            index = index
+                        )
+                    },
+                    onMapClick = {
+                        mainViewModel.irA(
+                            PantallaActual.NDVI_MAPA
+                        )
+                    }
+                )
+            }
+        }
+
+        // =============================================================
+        // NDVI - MAPA
+        // =============================================================
+
+        // =============================================================
+// NDVI - MAPA
+// =============================================================
+
+        PantallaActual.NDVI_MAPA -> {
+
+            if (ndviState.selectedSessionId == null) {
+
+                LaunchedEffect(Unit) {
+
+                    mainViewModel.irA(
+                        PantallaActual.NDVI_LISTA
+                    )
+                }
+
+            } else {
+
+                NdviMapScreen(
+
+                    uiState = ndviState,
+
+                    onBackClick = {
+
+                        mainViewModel.irA(
+                            PantallaActual.NDVI_DETALLE
+                        )
+                    },
+
+                    onRefreshClick = {
+
+                        ndviViewModel.refreshSelectedSession()
+                    },
+
+                    onIndexSelected = { index ->
+
+                        ndviViewModel.selectIndex(
+                            index = index
+                        )
+                    }
+                )
+            }
+        }
         PantallaActual.ASPERSION_LISTA -> {
             val aspersionAccessMode = if (uiState.usuarioSesion?.esAdmin == true) {
                 AspersionAccessMode.ADMIN

@@ -25,6 +25,9 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+import com.example.myapplication.local.api.sync.AgroSyncRepository
+import com.example.myapplication.local.api.sync.ResultadoAgroSync
+
 
 import com.example.myapplication.local.aspersion.report.AspersionReportFileManager
 /**
@@ -44,6 +47,10 @@ class AspersionViewModel(
     )
     private val fieldOpsRepository = FieldOpsRepository(
         context = application.applicationContext
+    )
+    private val agroSyncRepository = AgroSyncRepository(
+        context = application.applicationContext,
+        database = database
     )
 
     var uiState: AspersionUiState by mutableStateOf(AspersionUiState())
@@ -172,9 +179,11 @@ class AspersionViewModel(
         if (sessionsSyncJob?.isActive == true) return
 
         val requestedScopeVersion = scopeVersion
+        val requestedCiaLocalId = activeCiaLocalId
         val requestedCiaExtId = activeCiaExtId
 
         sessionsSyncJob = viewModelScope.launch {
+
             updateState {
                 it.copy(
                     syncingSessions = true,
@@ -182,65 +191,152 @@ class AspersionViewModel(
                 )
             }
 
+            /*
+             * IMPORTANTE:
+             *
+             * Aspersión necesita productor -> rancho -> parcela
+             * para poder resolver correctamente los subprogramas.
+             *
+             * En una instalación nueva esa estructura todavía puede
+             * no existir en Room.
+             */
+            val agroResult = if (requestedCiaLocalId == null) {
+
+                ResultadoAgroSync.Error(
+                    "La CIA seleccionada no está disponible localmente."
+                )
+
+            } else {
+
+                withContext(Dispatchers.IO) {
+                    agroSyncRepository.sincronizarProductoresRanchosParcelas(
+                        idLocalCia = requestedCiaLocalId
+                    )
+                }
+            }
+
+            if (requestedScopeVersion != scopeVersion) {
+                return@launch
+            }
+
+            /*
+             * Después de asegurar la estructura agrícola,
+             * descargamos sesiones y árbol productivo.
+             */
             val (sessionsResult, hierarchyResult) = coroutineScope {
-                val sessionsDeferred = async {
+
+                val sessionsDeferred = async(Dispatchers.IO) {
+
                     if (requestedCiaExtId.isNullOrBlank()) {
+
                         AspersionSyncResult.Error(
                             "La CIA seleccionada todavía no tiene un UUID sincronizado."
                         )
+
                     } else {
+
                         repository.syncSessions(
                             dataCentralId = requestedCiaExtId,
                             assignedToId = null
                         )
                     }
                 }
-                val hierarchyDeferred = async {
+
+                val hierarchyDeferred = async(Dispatchers.IO) {
                     syncProgramHierarchy(requestedCiaExtId)
                 }
+
                 sessionsDeferred.await() to hierarchyDeferred.await()
             }
+
             if (requestedScopeVersion != scopeVersion) {
                 return@launch
             }
 
+            /*
+             * Guardamos el árbol remoto.
+             */
             if (hierarchyResult is AspersionHierarchySyncResult.Updated) {
+
                 remoteProgramTreesCache = hierarchyResult.trees
                 remoteHierarchyLoaded = true
+
                 hierarchyVersion += 1L
             }
 
+            /*
+             * MUY IMPORTANTE:
+             *
+             * Llegamos aquí cuando AgroSync ya terminó.
+             * Por eso Room ya debe tener:
+             *
+             * CIA -> productor -> rancho -> parcela
+             *
+             * y buildSessionPresentation puede resolver los
+             * programas correctamente incluso en el primer uso.
+             */
             val presentation = withContext(Dispatchers.IO) {
                 buildSessionPresentation(allSessionsCache)
             }
-            if (requestedScopeVersion != scopeVersion) return@launch
+
+            if (requestedScopeVersion != scopeVersion) {
+                return@launch
+            }
+
             acceptSessionPresentation(presentation)
 
-            val sessionsError = (sessionsResult as? AspersionSyncResult.Error)?.message
-            val hierarchyError = (hierarchyResult as? AspersionHierarchySyncResult.Error)?.message
-            val errorMessage = listOfNotNull(sessionsError, hierarchyError)
+            val agroError =
+                (agroResult as? ResultadoAgroSync.Error)?.mensaje
+
+            val sessionsError =
+                (sessionsResult as? AspersionSyncResult.Error)?.message
+
+            val hierarchyError =
+                (hierarchyResult as? AspersionHierarchySyncResult.Error)?.message
+
+            val errorMessage = listOfNotNull(
+                agroError,
+                sessionsError,
+                hierarchyError
+            )
+                .distinct()
                 .joinToString(" ")
                 .takeIf(String::isNotBlank)
 
-            val sessionsCount = (sessionsResult as? AspersionSyncResult.SessionsUpdated)
-                ?.sessionsCount
-                ?: scopedSessionsCache.size
+            val sessionsCount =
+                (sessionsResult as? AspersionSyncResult.SessionsUpdated)
+                    ?.sessionsCount
+                    ?: scopedSessionsCache.size
+
             val programCount = programItemsCache.size
 
             updateState {
+
                 it.copy(
+
                     syncingSessions = false,
-                    message = if (showSuccessMessage && errorMessage == null) {
-                        "Estructura actualizada: $programCount subprogramas y " +
+
+                    message =
+                    if (
+                        showSuccessMessage &&
+                        errorMessage == null
+                    ) {
+
+                        "Estructura actualizada: " +
+                                "$programCount subprogramas y " +
                                 "$sessionsCount sesiones"
+
                     } else {
                         null
                     },
-                    error = errorMessage?.let {
+
+                    error = errorMessage?.let { message ->
+
                         if (programItemsCache.isEmpty()) {
-                            it
+                            message
                         } else {
-                            "No se pudo actualizar todo. Se muestran los datos guardados."
+                            "No se pudo actualizar todo. " +
+                                    "Se muestran los datos guardados."
                         }
                     }
                 )

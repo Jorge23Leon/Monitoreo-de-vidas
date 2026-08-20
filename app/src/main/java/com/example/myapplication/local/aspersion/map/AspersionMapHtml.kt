@@ -221,17 +221,28 @@ internal fun createAspersionMapHtml(
                 }
 
                 try {
+                    // Mismo comportamiento de zoom que plagas/enfermedades.
+                    // Esri se solicita únicamente hasta zoom nativo 18; por encima
+                    // Leaflet amplía ese mosaico en lugar de pedir niveles que
+                    // muestran "Map data not yet available".
                     map = L.map('map', {
                         zoomControl: true,
                         preferCanvas: true,
-                        maxZoom: 20
+                        zoomSnap: 0.25,
+                        zoomDelta: 0.5,
+                        minZoom: 3,
+                        maxZoom: 28
                     });
 
                     L.tileLayer(
                         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                         {
-                            maxZoom: 20,
-                            attribution: 'Esri'
+                            minZoom: 3,
+                            maxZoom: 28,
+                            maxNativeZoom: 18,
+                            attribution: internetAvailable ? 'Tiles © Esri' : 'Mapa en cache',
+                            opacity: 1,
+                            errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lCjQ9wAAAABJRU5ErkJggg=='
                         }
                     ).addTo(map);
 

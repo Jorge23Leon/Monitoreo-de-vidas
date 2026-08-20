@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -43,9 +43,9 @@ fun EncabezadoApp(
     onMonitoreosClick: (() -> Unit)? = null,
     onAdminClick: (() -> Unit)? = null,
     onCerrarSesionClick: () -> Unit,
-
-)  {
+) {
     val context = LocalContext.current
+
     val logoAgroindustryId = remember(context) {
         context.resources.getIdentifier(
             "logo_agroindustry",
@@ -54,10 +54,10 @@ fun EncabezadoApp(
         )
     }
 
-
     var menuAbierto by remember {
         mutableStateOf(false)
     }
+
     var mostrarDialogCerrarSesion by remember {
         mutableStateOf(false)
     }
@@ -66,20 +66,19 @@ fun EncabezadoApp(
         normalizarRolHeader(rolUsuario)
     }
 
-    val puedeVerPanelTrabajo = remember(rolUsuario) {
-        rolNormalizado in listOf(
-            "admin",
-            "gerente",
-            "supervisor"
-        )
-    }
-    val puedeCambiarCia = onCambiarCiaClick != null && rolNormalizado in listOf(
+    val puedeVerPanelTrabajo = rolNormalizado in listOf(
         "admin",
         "gerente",
         "supervisor"
     )
 
-
+    val puedeCambiarCia =
+        onCambiarCiaClick != null &&
+                rolNormalizado in listOf(
+            "admin",
+            "gerente",
+            "supervisor"
+        )
 
     val fechaActual = remember {
         SimpleDateFormat(
@@ -88,11 +87,23 @@ fun EncabezadoApp(
         ).format(Date())
     }
 
+    /*
+     * IMPORTANTE:
+     *
+     * El statusBarsPadding se aplica al ENCABEZADO COMPLETO.
+     *
+     * Antes solamente se estaba aplicando al botón hamburguesa,
+     * por lo que el logo, textos y menú no respetaban todos
+     * la misma zona segura.
+     *
+     * Esto es especialmente importante con targetSdk 35.
+     */
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(74.dp)
             .background(Color.White)
+            .statusBarsPadding()
+            .height(74.dp)
             .padding(
                 start = 0.dp,
                 end = 10.dp,
@@ -101,9 +112,15 @@ fun EncabezadoApp(
             )
     ) {
 
+        /*
+         * LOGO
+         */
         if (logoAgroindustryId != 0) {
+
             Image(
-                painter = painterResource(id = logoAgroindustryId),
+                painter = painterResource(
+                    id = logoAgroindustryId
+                ),
                 contentDescription = "GPA Agroindustry",
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -111,25 +128,36 @@ fun EncabezadoApp(
                     .height(55.dp),
                 contentScale = ContentScale.Fit
             )
+
         } else {
+
             Text(
                 text = "GPA Agroindustry",
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(start = 2.dp, top = 10.dp),
+                    .padding(
+                        start = 2.dp,
+                        top = 10.dp
+                    ),
                 color = Color(0xFF6D6D6D),
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Black
             )
         }
 
-
+        /*
+         * BIENVENIDA
+         */
         Text(
             text = "Bienvenido $nombreUsuario - $fechaActual",
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(start = 8.dp, end = 48.dp, bottom = 2.dp),
+                .padding(
+                    start = 8.dp,
+                    end = 48.dp,
+                    bottom = 2.dp
+                ),
             fontSize = 9.sp,
             fontWeight = FontWeight.Bold,
             color = Color(0xFF6D6D6D),
@@ -137,32 +165,50 @@ fun EncabezadoApp(
             maxLines = 1
         )
 
+        /*
+         * MENÚ HAMBURGUESA
+         *
+         * Aquí YA NO ponemos systemBarsPadding().
+         * La zona segura ya la maneja todo el encabezado.
+         */
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = 8.dp)
-                .systemBarsPadding() // 👈 ESTA ES LA ÚNICA LÍNEA QUE NECESITAS
-
+                .padding(
+                    top = 8.dp
+                )
         ) {
+
             Text(
                 text = "☰",
                 modifier = Modifier
                     .clickable {
                         menuAbierto = true
                     }
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                    .padding(
+                        horizontal = 6.dp,
+                        vertical = 4.dp
+                    ),
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.Black
             )
 
+            /*
+             * MENÚ DESPLEGABLE
+             */
             DropdownMenu(
                 expanded = menuAbierto,
                 onDismissRequest = {
                     menuAbierto = false
                 },
-                modifier = Modifier.background(Color.White)
+                modifier = Modifier
+                    .background(Color.White)
             ) {
+
+                /*
+                 * PERFIL
+                 */
                 DropdownMenuItem(
                     text = {
                         Text(
@@ -175,8 +221,11 @@ fun EncabezadoApp(
                         menuAbierto = false
 
                         if (onPerfilClick != null) {
+
                             onPerfilClick()
+
                         } else {
+
                             Toast.makeText(
                                 context,
                                 "Perfil del usuario",
@@ -186,9 +235,11 @@ fun EncabezadoApp(
                     }
                 )
 
-
-
+                /*
+                 * CAMBIAR CIA
+                 */
                 if (puedeCambiarCia) {
+
                     DropdownMenuItem(
                         text = {
                             Text(
@@ -204,9 +255,11 @@ fun EncabezadoApp(
                     )
                 }
 
-
-
+                /*
+                 * PANEL DE TRABAJO
+                 */
                 if (puedeVerPanelTrabajo) {
+
                     DropdownMenuItem(
                         text = {
                             Text(
@@ -219,8 +272,11 @@ fun EncabezadoApp(
                             menuAbierto = false
 
                             if (onAdminClick != null) {
+
                                 onAdminClick()
+
                             } else {
+
                                 Toast.makeText(
                                     context,
                                     "Panel de trabajo",
@@ -231,6 +287,9 @@ fun EncabezadoApp(
                     )
                 }
 
+                /*
+                 * CERRAR SESIÓN
+                 */
                 DropdownMenuItem(
                     text = {
                         Text(
@@ -248,7 +307,11 @@ fun EncabezadoApp(
         }
     }
 
+    /*
+     * CONFIRMACIÓN DE CIERRE DE SESIÓN
+     */
     if (mostrarDialogCerrarSesion) {
+
         AlertDialog(
             onDismissRequest = {
                 mostrarDialogCerrarSesion = false
@@ -265,12 +328,14 @@ fun EncabezadoApp(
                 )
             },
             confirmButton = {
+
                 TextButton(
                     onClick = {
                         mostrarDialogCerrarSesion = false
                         onCerrarSesionClick()
                     }
                 ) {
+
                     Text(
                         text = "Sí, cerrar sesión",
                         color = Color(0xFFB3261E),
@@ -279,11 +344,13 @@ fun EncabezadoApp(
                 }
             },
             dismissButton = {
+
                 TextButton(
                     onClick = {
                         mostrarDialogCerrarSesion = false
                     }
                 ) {
+
                     Text(
                         text = "Cancelar",
                         fontWeight = FontWeight.Bold
@@ -294,7 +361,10 @@ fun EncabezadoApp(
     }
 }
 
-private fun normalizarRolHeader(rol: String): String {
+private fun normalizarRolHeader(
+    rol: String
+): String {
+
     val limpio = rol
         .trim()
         .lowercase(Locale.getDefault())
@@ -305,16 +375,23 @@ private fun normalizarRolHeader(rol: String): String {
         .replace("ú", "u")
         .replace(".", "")
         .replace("_", " ")
-        .replace(Regex("\\s+"), " ")
+        .replace(
+            Regex("\\s+"),
+            " "
+        )
 
     return when (limpio) {
-        "super admin", "admin", "administrador" -> "admin"
+
+        "super admin",
+        "admin",
+        "administrador" -> "admin"
 
         "gerente" -> "gerente"
 
         "ingy supervision",
         "ing y supervision",
         "supervisor" -> "supervisor"
+
         "tecnico",
         "tecnicos",
         "técnico",
@@ -326,6 +403,11 @@ private fun normalizarRolHeader(rol: String): String {
     }
 }
 
-private fun esSuperAdminHeader(rol: String): Boolean {
-    return normalizarRolHeader(rol) == "admin"
+private fun esSuperAdminHeader(
+    rol: String
+): Boolean {
+
+    return normalizarRolHeader(
+        rol
+    ) == "admin"
 }
