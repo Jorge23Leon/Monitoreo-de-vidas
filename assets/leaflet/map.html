@@ -1,0 +1,132 @@
+<!doctype html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <link rel="stylesheet" href="leaflet.css">
+  <style>
+    html,body,#map{height:100%;margin:0}
+    .leaflet-control-attribution{font-size:9px}
+    .ciagro-tip{background:#fff;border-radius:8px;padding:4px 8px;box-shadow:0 1px 5px #0003;font:12px sans-serif}
+    .ciagro-point-number{
+      background:transparent!important;border:0!important;box-shadow:none!important;
+      color:#fff!important;font:900 10px/18px system-ui,sans-serif!important;
+      text-shadow:0 1px 2px #000,0 0 2px #000;
+    }
+    .ciagro-point-number:before{display:none!important}
+
+    .ciagro-pe-wrapper{background:transparent!important;border:0!important}
+    .ciagro-pe-marker{position:relative;width:34px;height:39px;font-family:system-ui,-apple-system,sans-serif}
+    .ciagro-pe-labels{
+      position:absolute;top:-1px;left:0;width:34px;display:flex;justify-content:space-around;
+      font-size:10px;line-height:12px;font-weight:900;color:#111;text-shadow:0 1px 2px #fff,0 0 2px #fff;
+      z-index:3;
+    }
+    .ciagro-pe-circle{
+      position:absolute;left:2px;top:9px;width:30px;height:30px;border-radius:50%;overflow:hidden;
+      border:3px solid #0b5a2a;box-sizing:border-box;background:#fff;
+      box-shadow:0 1px 4px #0006;
+    }
+    .ciagro-pe-half{position:absolute;top:0;height:100%;width:50%}
+    .ciagro-pe-pest{left:0}
+    .ciagro-pe-disease{right:0}
+    .ciagro-pe-divider{position:absolute;left:50%;top:0;width:2px;height:100%;background:#111;transform:translateX(-1px);z-index:2}
+    .ciagro-pe-point-number{
+      position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;
+      color:#fff;font-size:9px;font-weight:900;text-shadow:0 1px 2px #000,0 0 2px #000;
+      pointer-events:none;
+    }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<script src="leaflet.js"></script>
+<script>
+const map=L.map('map',{zoomSnap:.25,zoomDelta:.5}).setView([21.12,-101.68],13);
+map.getContainer().style.background='#dfe8db';
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxNativeZoom:18,maxZoom:20,updateWhenZooming:false,updateWhenIdle:true,keepBuffer:4,attribution:'Tiles © Esri'}).addTo(map);
+L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{maxNativeZoom:18,maxZoom:20,updateWhenZooming:false,updateWhenIdle:true,keepBuffer:4,attribution:'Labels © Esri',opacity:.72}).addTo(map);
+let layers=[];
+let interactive=false;
+let pointInteractive=false;
+function clear(){layers.forEach(x=>map.removeLayer(x));layers=[]}
+function color(v){if(v==null)return '#555';if(v<0)return '#5c4033';if(v<.2)return '#d73027';if(v<.4)return '#fdae61';if(v<.6)return '#fee08b';if(v<.75)return '#a6d96a';return '#1a9850'}
+function esc(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;')}
+function phytoIcon(p){
+  const pest=p.pestColor||'#9ca3af';
+  const disease=p.diseaseColor||'#9ca3af';
+  const number=esc(p.markerText||'');
+  const html='<div class="ciagro-pe-marker">'+
+    '<div class="ciagro-pe-labels"><span>P</span><span>E</span></div>'+
+    '<div class="ciagro-pe-circle">'+
+      '<div class="ciagro-pe-half ciagro-pe-pest" style="background:'+esc(pest)+'"></div>'+
+      '<div class="ciagro-pe-half ciagro-pe-disease" style="background:'+esc(disease)+'"></div>'+
+      '<div class="ciagro-pe-divider"></div>'+
+      (number?'<div class="ciagro-pe-point-number">'+number+'</div>':'')+
+    '</div></div>';
+  return L.divIcon({className:'ciagro-pe-wrapper',html:html,iconSize:[34,39],iconAnchor:[17,27],tooltipAnchor:[0,-18]});
+}
+map.on('click',()=>{
+  if(interactive && window.CiagroMapTap && window.CiagroMapTap.postMessage){
+    window.CiagroMapTap.postMessage('capture');
+  }
+});
+window.setCiagroData=function(d){
+  clear(); interactive=!!d.interactive; pointInteractive=!!d.pointInteractive; let bounds=[];
+  (d.points||[]).forEach(p=>{
+    let m;
+    if(d.ndvi){
+      m=L.circleMarker([p.lat,p.lon],{radius:5,color:color(p.value),fillColor:color(p.value),fillOpacity:.9});
+    } else if(p.splitPhyto){
+      m=L.marker([p.lat,p.lon],{icon:phytoIcon(p)});
+    } else {
+      const c=p.markerColor||'#17863a';
+      m=L.circleMarker([p.lat,p.lon],{radius:10,color:'#0d5b29',weight:3,fillColor:c,fillOpacity:1});
+    }
+    m.addTo(map);
+
+    let popup=p.label||'';
+    if(p.splitPhyto){
+      popup=(p.markerText?'Punto '+esc(p.markerText):'Punto')+
+        '<br>P · '+esc(p.pestText||'Sin evaluar')+
+        '<br>E · '+esc(p.diseaseText||'Sin evaluar');
+    }
+    if(popup)m.bindPopup(popup);
+
+    if(!d.ndvi && !p.splitPhyto && p.markerText){
+      m.bindTooltip(String(p.markerText),{permanent:true,direction:'center',className:'ciagro-point-number',opacity:1});
+    }
+    if(p.splitPhyto){
+      const tooltip=(p.markerText?'Punto '+esc(p.markerText):'Punto')+
+        '<br>P · '+esc(p.pestText||'Sin evaluar')+
+        '<br>E · '+esc(p.diseaseText||'Sin evaluar');
+      m.bindTooltip(tooltip,{permanent:false,direction:'top',opacity:.97});
+    }
+
+    if(pointInteractive && p.id!=null){
+      m.on('click',function(e){
+        if(e && e.originalEvent){L.DomEvent.stopPropagation(e.originalEvent);L.DomEvent.preventDefault(e.originalEvent)}
+        if(window.CiagroPointTap && window.CiagroPointTap.postMessage){window.CiagroPointTap.postMessage(String(p.id));}
+      });
+    }
+    layers.push(m);bounds.push([p.lat,p.lon]);
+  });
+  if((d.polygon||[]).length>2){
+    let poly=L.polygon(d.polygon,{color:'#137333',weight:4,fillColor:'#16833a',fillOpacity:.22}).addTo(map);
+    layers.push(poly);bounds.push(...d.polygon);
+  }
+  const u=d.currentLocation;
+  if(u && Number.isFinite(u.lat) && Number.isFinite(u.lon)){
+    const accuracy=Math.max(0,Number(u.accuracy)||0);
+    if(accuracy>0){
+      const c=L.circle([u.lat,u.lon],{radius:accuracy,color:'#1565c0',weight:1,fillOpacity:.06}).addTo(map);layers.push(c);
+    }
+    const me=L.circleMarker([u.lat,u.lon],{radius:8,color:'#0d47a1',weight:3,fillColor:'#2196f3',fillOpacity:1}).addTo(map);
+    me.bindPopup((u.label||'Tu ubicación')+(accuracy?' · precisión '+Math.round(accuracy)+' m':''));
+    layers.push(me);bounds.push([u.lat,u.lon]);
+  }
+  if(bounds.length)map.fitBounds(bounds,{padding:[24,24],maxZoom:18});
+  setTimeout(()=>map.invalidateSize(),80);
+}
+</script>
+</body>
+</html>

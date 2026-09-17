@@ -1,0 +1,16 @@
+PATCH PARTE 4
+
+Destino recomendado:
+C:\Users\leons\Downloads\Monitoreo-de-vidas-Flutter-PARTE3-MAPA-INDICES-DETALLE-NOMBRES
+
+1. Haz una copia de respaldo de esa carpeta.
+2. Copia TODO el contenido de este patch encima de la carpeta PARTE3.
+3. Acepta reemplazar los archivos existentes.
+4. Abre PowerShell en la carpeta PARTE3 y ejecuta:
+
+flutter clean
+flutter pub get
+flutter run --dart-define=CIAGRO_API_BASE_URL=https://dramatically-von-boost-savannah.trycloudflare.com/
+
+No se eliminó la validación de precisión GPS al CREAR un punto ni la validación de parcela.
+Sí se eliminó la restricción de distancia al GUARDAR y no existe separación mínima/máxima entre puntos.

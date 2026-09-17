@@ -1,0 +1,9 @@
+{
+  "dart.flutterHotReloadOnSave": "all",
+  "dart.previewFlutterUiGuides": true,
+  "editor.formatOnSave": true,
+  "files.exclude": {
+    "**/.dart_tool": true,
+    "**/build": true
+  }
+}

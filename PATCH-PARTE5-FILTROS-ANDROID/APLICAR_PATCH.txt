@@ -1,0 +1,26 @@
+PATCH PARTE5 - FILTROS ESTILO ANDROID
+
+Este parche se aplica sobre:
+C:\Users\leons\Downloads\Monitoreo-de-vidas-Flutter-PARTE3-MAPA-INDICES-DETALLE-NOMBRES
+
+Cambios:
+- Productor: ancho completo.
+- Rancho: ancho completo.
+- Parcela: ancho completo.
+- Ciclo: ancho completo.
+- Estado: ancho completo.
+- Inicio: ancho completo.
+- Fin: ancho completo.
+- Limpiar filtros: ancho completo.
+- Elimina filas dobles y layouts responsivos que ponian filtros lado a lado.
+- Conserva toda la logica actual de filtrado y el PATCH PARTE4.
+
+Desde PowerShell en C:\Users\leons\Downloads:
+
+Copy-Item -Path ".\PATCH-PARTE5-FILTROS-ANDROID\*" -Destination ".\Monitoreo-de-vidas-Flutter-PARTE3-MAPA-INDICES-DETALLE-NOMBRES" -Recurse -Force
+
+Luego:
+cd ".\Monitoreo-de-vidas-Flutter-PARTE3-MAPA-INDICES-DETALLE-NOMBRES"
+flutter clean
+flutter pub get
+flutter run -d R5CY71CK38D --dart-define=CIAGRO_API_BASE_URL=https://dramatically-von-boost-savannah.trycloudflare.com/

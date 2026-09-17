@@ -1,0 +1,23 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Flutter: preparar proyecto",
+      "type": "shell",
+      "command": "flutter pub get && flutter analyze && flutter test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Flutter: correr Android emulador",
+      "type": "shell",
+      "command": "flutter run --dart-define=CIAGRO_API_BASE_URL=http://10.0.2.2:8500/",
+      "problemMatcher": []
+    },
+    {
+      "label": "Flutter: construir APK debug",
+      "type": "shell",
+      "command": "flutter build apk --debug --dart-define=CIAGRO_API_BASE_URL=http://10.0.2.2:8500/",
+      "problemMatcher": []
+    }
+  ]
+}

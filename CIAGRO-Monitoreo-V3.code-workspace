@@ -1,0 +1,11 @@
+{
+  "folders": [{"path": "."}],
+  "settings": {
+    "dart.flutterSdkPath": "",
+    "editor.formatOnSave": true,
+    "dart.lineLength": 100
+  },
+  "extensions": {
+    "recommendations": ["Dart-Code.flutter", "Dart-Code.dart-code"]
+  }
+}

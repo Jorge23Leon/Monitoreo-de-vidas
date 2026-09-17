@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "CIAGRO V3 - Android emulador (backend local)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "toolArgs": ["--dart-define=CIAGRO_API_BASE_URL=http://10.0.2.2:8500/"]
+    },
+    {
+      "name": "CIAGRO V3 - Android/iOS (URL configurada)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart"
+    },
+    {
+      "name": "CIAGRO V3 - iOS Simulator (backend en la Mac)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "toolArgs": ["--dart-define=CIAGRO_API_BASE_URL=http://127.0.0.1:8500/"]
+    }
+  ]
+}

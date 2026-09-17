@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>$(DEVELOPMENT_LANGUAGE)</string>
+  <key>CFBundleDisplayName</key>
+  <string>CIAGRO Monitoreo V3</string>
+  <key>CFBundleExecutable</key>
+  <string>$(EXECUTABLE_NAME)</string>
+  <key>CFBundleIdentifier</key>
+  <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>CIAGRO Monitoreo V3</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$(FLUTTER_BUILD_NAME)</string>
+  <key>CFBundleSignature</key>
+  <string>????</string>
+  <key>CFBundleVersion</key>
+  <string>$(FLUTTER_BUILD_NUMBER)</string>
+  <key>LSRequiresIPhoneOS</key>
+  <true/>
+  <key>UILaunchStoryboardName</key>
+  <string>LaunchScreen</string>
+  <key>UIMainStoryboardFile</key>
+  <string>Main</string>
+  <key>UISupportedInterfaceOrientations</key>
+  <array>
+    <string>UIInterfaceOrientationPortrait</string>
+  </array>
+  <key>UISupportedInterfaceOrientations~ipad</key>
+  <array>
+    <string>UIInterfaceOrientationPortrait</string>
+    <string>UIInterfaceOrientationPortraitUpsideDown</string>
+    <string>UIInterfaceOrientationLandscapeLeft</string>
+    <string>UIInterfaceOrientationLandscapeRight</string>
+  </array>
+  <key>NSCameraUsageDescription</key>
+  <string>CIAGRO usa la cámara para tomar evidencia fotográfica de plagas y enfermedades.</string>
+  <key>NSPhotoLibraryUsageDescription</key>
+  <string>CIAGRO permite seleccionar evidencia fotográfica desde tu biblioteca.</string>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>CIAGRO usa tu ubicación precisa para validar y registrar los puntos de monitoreo dentro de la parcela.</string>
+  <key>NSLocationTemporaryUsageDescriptionDictionary</key>
+  <dict>
+    <key>CIAGROPreciseLocation</key>
+    <string>CIAGRO necesita temporalmente la ubicación precisa para colocar el punto de monitoreo y validar que esté dentro de la parcela.</string>
+  </dict>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>CIAGRO puede conectarse al backend de desarrollo dentro de tu red local.</string>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <true/>
+  </dict>
+  <key>CADisableMinimumFrameDurationOnPhone</key>
+  <true/>
+  <key>UIApplicationSupportsIndirectInputEvents</key>
+  <true/>
+</dict>
+</plist>

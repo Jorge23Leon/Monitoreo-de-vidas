@@ -1,0 +1,854 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+
+import '../../core/app_controller.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_header.dart';
+import '../../core/widgets/leaflet_map.dart';
+import '../../core/widgets/gpa_loading_indicator.dart';
+import 'monitoring_models.dart';
+import 'monitoring_repository.dart';
+import 'monitoring_services.dart';
+
+class MonitoringMapScreen extends StatefulWidget {
+  const MonitoringMapScreen({super.key});
+
+  @override
+  State<MonitoringMapScreen> createState() => _MonitoringMapScreenState();
+}
+
+class _MonitoringMapScreenState extends State<MonitoringMapScreen> {
+  final repo = MonitoringRepository();
+  late MonitoringHeader header;
+  late Future<List<TargetPoint>> pointsFuture;
+  List<({double lat, double lon})> polygon = const [];
+  MapPoint? currentLocation;
+  double? currentAccuracy;
+  int pending = 0;
+  bool syncing = false;
+  bool creatingPoint = false;
+  bool changingStatus = false;
+  bool paused = false;
+  bool completed = false;
+  Timer? _expiryTimer;
+  StreamSubscription<Position>? _gpsSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    final raw = AppScope.read(context).selectedMonitoring ?? const <String, dynamic>{};
+    header = MonitoringHeader.fromJson(raw);
+    paused = header.isPaused;
+    completed = header.isCompleted;
+    pointsFuture = repo.targetPoints(header.id);
+    _bootstrap();
+    _expiryTimer = Timer.periodic(const Duration(seconds: 1), (_) => _checkExpiry());
+  }
+
+
+  @override
+  void dispose() {
+    _expiryTimer?.cancel();
+    _gpsSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkExpiry() async {
+    if (!mounted || completed || changingStatus) return;
+    final end = DateTime.tryParse(header.endDate ?? '');
+    if (end == null) return;
+    final localEnd = end.toLocal();
+    final endOfDay = DateTime(
+      localEnd.year,
+      localEnd.month,
+      localEnd.day,
+      23,
+      59,
+      59,
+    );
+    if (!DateTime.now().isAfter(endOfDay)) return;
+    final closed = await repo.autoCloseIfExpired(header);
+    if (!mounted || !closed) return;
+    setState(() {
+      completed = true;
+      paused = false;
+    });
+    _snack('El tiempo del monitoreo terminó. Se cerró localmente y se sincronizará cuando no queden capturas pendientes.');
+  }
+
+  Future<void> _bootstrap() async {
+    // Pinta primero SQLite y actualiza targets desde la API sin bloquear el
+    // primer frame del mapa.
+    unawaited(_refreshPointsFromServer());
+    final closedByDate = await repo.autoCloseIfExpired(header);
+    final poly = await repo.plotPolygon(header);
+    if (mounted) {
+      setState(() {
+        polygon = poly;
+        if (closedByDate) {
+          completed = true;
+          paused = false;
+        }
+      });
+    }
+    await _loadPending();
+    await _updateCurrentLocation(silent: true);
+    _startGpsTracking();
+  }
+
+  Future<void> _refreshPointsFromServer() async {
+    final latest = await repo.refreshTargetPoints(header.id);
+    if (!mounted) return;
+    setState(() => pointsFuture = Future.value(latest));
+  }
+
+  Future<void> _loadPending() async {
+    final value = await repo.pendingCount(header.id);
+    if (mounted) setState(() => pending = value);
+  }
+
+  void _startGpsTracking() {
+    _gpsSubscription?.cancel();
+    _gpsSubscription = MonitoringLocationService.positionStream().listen(
+      (position) {
+        if (!mounted) return;
+        setState(() {
+          currentLocation = MapPoint(
+            position.latitude,
+            position.longitude,
+            label: 'Tu ubicación',
+          );
+          currentAccuracy = position.accuracy;
+        });
+      },
+      onError: (_) {
+        // El botón de GPS sigue disponible para reintentar manualmente.
+      },
+    );
+  }
+
+  Future<void> _updateCurrentLocation({bool silent = false}) async {
+    try {
+      final position = await MonitoringLocationService.currentPosition();
+      if (!mounted) return;
+      setState(() {
+        currentLocation = MapPoint(
+          position.latitude,
+          position.longitude,
+          label: 'Tu ubicación',
+        );
+        currentAccuracy = position.accuracy;
+      });
+    } catch (error) {
+      if (!silent && mounted) _snack(_message(error));
+    }
+  }
+
+  Future<void> _refresh() async {
+    setState(() => pointsFuture = repo.refreshTargetPoints(header.id));
+    await pointsFuture;
+    await _loadPending();
+    await _updateCurrentLocation(silent: true);
+    _startGpsTracking();
+  }
+
+  Future<void> _sync() async {
+    if (syncing) return;
+    setState(() => syncing = true);
+    try {
+      final result = await repo.syncPending(headerId: header.id);
+      if (!mounted) return;
+      _snack(result.message);
+      await _refresh();
+    } finally {
+      if (mounted) setState(() => syncing = false);
+    }
+  }
+
+  Future<void> _newPoint() async {
+    if (creatingPoint || completed) return;
+    if (paused) {
+      _snack('El monitoreo está pausado. Toca Continuar antes de registrar otro punto.');
+      return;
+    }
+    setState(() => creatingPoint = true);
+    try {
+      // Si quedó un punto móvil sin finalizar, se retoma antes de crear otro.
+      // Evita targets huérfanos y mantiene la numeración igual que Android.
+      final knownPoints = await repo.targetPoints(header.id);
+      TargetPoint? unfinishedLocal;
+      for (final point in knownPoints) {
+        if (point.id.startsWith('local_') && !point.completed) {
+          unfinishedLocal = point;
+          break;
+        }
+      }
+      if (unfinishedLocal != null) {
+        if (!mounted) return;
+        final resume = await _confirm(
+          'Punto pendiente',
+          '${unfinishedLocal.label} todavía no se ha guardado. Debes terminar ese punto antes de crear uno nuevo. ¿Continuar ahora?',
+        );
+        if (resume && mounted) {
+          AppScope.read(context).selectTargetPoint(unfinishedLocal.navigationRaw);
+        }
+        return;
+      }
+
+      final position = await MonitoringLocationService.capturePosition();
+      if (polygon.isNotEmpty &&
+          !MonitoringLocationService.pointInsidePolygon(
+            position.latitude,
+            position.longitude,
+            polygon,
+          )) {
+        throw Exception(
+          'Tu GPS está fuera de la parcela. Acércate al área del cultivo antes de registrar el punto.',
+        );
+      }
+
+      if (!mounted) return;
+      final ok = await _confirm(
+        'Registrar nuevo punto',
+        'Se usará tu ubicación GPS real (${position.accuracy.toStringAsFixed(0)} m de precisión). '
+            'El toque del mapa no cambia la coordenada. ¿Continuar?',
+      );
+      if (!ok) return;
+
+      final target = await repo.createLocalTarget(
+        headerId: header.id,
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+
+      // Kotlin inicia el header con el primer punto confirmado, no al abrir el mapa.
+      final existing = await repo.localCheckpoints(header.id);
+      if (existing.isEmpty && _statusKey(header.status) == 'pending') {
+        await repo.startHeader(header.id);
+      }
+
+      if (!mounted) return;
+      final app = AppScope.read(context);
+      app.selectTargetPoint(target.navigationRaw);
+    } catch (error) {
+      if (mounted) _snack(_message(error));
+    } finally {
+      if (mounted) setState(() => creatingPoint = false);
+    }
+  }
+
+  Future<void> _pause() async {
+    if (changingStatus || completed) return;
+    final ok = await _confirm(
+      'Pausar monitoreo',
+      'El monitoreo quedará en progreso con la marca PAUSADO y podrás continuar después.',
+    );
+    if (!ok) return;
+    setState(() => changingStatus = true);
+    try {
+      await repo.pauseHeader(header.id);
+      if (!mounted) return;
+      setState(() => paused = true);
+      _snack('Monitoreo pausado. Si no hay internet, el cambio queda pendiente.');
+      AppScope.read(context).go(AppPage.monitoringList);
+    } finally {
+      if (mounted) setState(() => changingStatus = false);
+    }
+  }
+
+  Future<void> _resume() async {
+    if (changingStatus || completed) return;
+    setState(() => changingStatus = true);
+    try {
+      await repo.resumeHeader(header.id);
+      if (!mounted) return;
+      setState(() => paused = false);
+      _snack('Monitoreo reanudado.');
+    } finally {
+      if (mounted) setState(() => changingStatus = false);
+    }
+  }
+
+  Future<void> _finish() async {
+    if (changingStatus || completed) return;
+    final points = await repo.targetPoints(header.id);
+    final captured = points.where((point) => point.completed).length;
+    if (captured <= 0) {
+      _snack('Necesitas guardar mínimo 1 punto para terminar el monitoreo.');
+      return;
+    }
+    final ok = await _confirm(
+      'Finalizar monitoreo',
+      'Has guardado $captured punto(s). Después de finalizar podrás consultar el reporte. Las capturas pendientes se conservarán localmente hasta sincronizar.',
+    );
+    if (!ok) return;
+    setState(() => changingStatus = true);
+    try {
+      await repo.completeHeader(header.id);
+      if (!mounted) return;
+      setState(() {
+        completed = true;
+        paused = false;
+      });
+      _snack('Monitoreo finalizado localmente.');
+      AppScope.read(context).go(AppPage.monitoringReport);
+    } catch (error) {
+      if (mounted) _snack(_message(error));
+    } finally {
+      if (mounted) setState(() => changingStatus = false);
+    }
+  }
+
+  Future<void> _handleBack() async {
+    if (changingStatus || creatingPoint) return;
+    if (completed || paused) {
+      AppScope.read(context).go(AppPage.monitoringList);
+      return;
+    }
+
+    // Paridad con Kotlin: Atrás dentro de un monitoreo activo NO cierra la app
+    // ni salta pantallas. Si todavía no hay capturas se explica el requisito;
+    // con capturas se abre el mismo flujo de confirmación para terminar.
+    final points = await repo.targetPoints(header.id);
+    final captured = points.where((point) => point.completed).length;
+    if (!mounted) return;
+    if (captured <= 0) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Captura requerida'),
+          content: const Text(
+            'Necesitas guardar mínimo 1 punto para terminar el monitoreo.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Aceptar'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    await _finish();
+  }
+
+  Future<bool> _confirm(String title, String message) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Confirmar'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppScope.of(context);
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _handleBack();
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFFBFCF8),
+        body: Column(
+          children: [
+            AppHeader(
+              title: 'Mapa del monitoreo',
+              onBack: _handleBack,
+            ),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _refresh,
+                child: FutureBuilder<List<TargetPoint>>(
+                  future: pointsFuture,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState != ConnectionState.done) {
+                      return const Center(child: GpaLoadingIndicator(text: 'Cargando mapa...'));
+                    }
+                    final points = snapshot.data ?? const <TargetPoint>[];
+                    if (snapshot.hasError && points.isEmpty) {
+                      return ListView(
+                        padding: const EdgeInsets.all(24),
+                        children: [
+                          const SizedBox(height: 100),
+                          const Icon(Icons.map_outlined, size: 70, color: Colors.black26),
+                          const SizedBox(height: 18),
+                          Text('${snapshot.error}', textAlign: TextAlign.center),
+                        ],
+                      );
+                    }
+
+                    final validPoints = points
+                        .where((e) => e.latitude != 0 || e.longitude != 0)
+                        .toList(growable: false);
+                    final mapPoints = <MapPoint>[
+                      for (var index = 0; index < validPoints.length; index++)
+                        MapPoint(
+                          validPoints[index].latitude,
+                          validPoints[index].longitude,
+                          label:
+                              '${validPoints[index].label} · ${validPoints[index].completed ? 'Capturado' : 'Pendiente'}',
+                          markerText: '${validPoints[index].visibleNumber > 0 ? validPoints[index].visibleNumber : index + 1}',
+                          markerColor: validPoints[index].completed
+                              ? '#1BA64B'
+                              : '#F59E0B',
+                        ),
+                    ];
+                    final polygonPoints = polygon
+                        .map((e) => MapPoint(e.lat, e.lon))
+                        .toList(growable: false);
+                    final completedPoints = points.where((e) => e.completed).length;
+
+                    return ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(12, 14, 12, 30),
+                      children: [
+                        _MonitoringSummary(
+                          header: header,
+                          total: points.length,
+                          completed: completedPoints,
+                          pendingSync: pending,
+                          syncing: syncing,
+                          paused: paused,
+                          finished: completed,
+                          changingStatus: changingStatus,
+                          onSync: _sync,
+                          onPause: _pause,
+                          onResume: _resume,
+                          onFinish: _finish,
+                          onReport: () => app.go(AppPage.monitoringReport),
+                        ),
+                        const SizedBox(height: 12),
+                        _InstructionCard(
+                          pointNumber: completedPoints + 1,
+                          accuracy: currentAccuracy,
+                          paused: paused,
+                          finished: completed,
+                        ),
+                        const SizedBox(height: 12),
+                        Card(
+                          margin: EdgeInsets.zero,
+                          elevation: 2,
+                          color: Colors.white,
+                          surfaceTintColor: Colors.transparent,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          child: Padding(
+                            padding: const EdgeInsets.all(10),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Expanded(
+                                      child: Text(
+                                        'Mapa del monitoreo',
+                                        style: TextStyle(
+                                          color: AppTheme.darkGreen,
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFE9F7E7),
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Text(
+                                        '${polygon.length} vértices',
+                                        style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w900),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                const Text(
+                                  'Usa tu ubicación GPS para registrar cada punto dentro de la parcela.',
+                                  style: TextStyle(color: Colors.black54, fontSize: 12),
+                                ),
+                                const SizedBox(height: 10),
+                                Stack(
+                                  children: [
+                                    LeafletMap(
+                                      points: mapPoints,
+                                      polygon: polygonPoints,
+                                      currentLocation: currentLocation,
+                                      currentAccuracy: currentAccuracy,
+                                      onMapTap: completed || paused ? null : _newPoint,
+                                      height: 390,
+                                    ),
+                                    Positioned(
+                                      top: 10,
+                                      right: 10,
+                                      child: Material(
+                                        color: Colors.white,
+                                        elevation: 2,
+                                        shape: const CircleBorder(),
+                                        child: IconButton(
+                                          tooltip: 'Actualizar GPS',
+                                          onPressed: () => _updateCurrentLocation(),
+                                          icon: const Icon(Icons.my_location, color: AppTheme.primary),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  height: 52,
+                                  child: FilledButton.icon(
+                                    onPressed: completed || paused || creatingPoint ? null : _newPoint,
+                                    icon: creatingPoint
+                                        ? const GpaLoadingIndicator(size: 24, showText: false)
+                                        : const Icon(Icons.add_location_alt_outlined),
+                                    label: Text(
+                                      creatingPoint
+                                          ? 'Obteniendo GPS...'
+                                          : completedPoints == 0
+                                              ? 'Iniciar monitoreo con primer punto'
+                                              : 'Registrar nuevo punto',
+                                    ),
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: const Color(0xFF176E35),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Puntos monitoreados',
+                                style: TextStyle(
+                                  color: AppTheme.darkGreen,
+                                  fontSize: 19,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            Text('$completedPoints/${points.length}'),
+                          ],
+                        ),
+                        const SizedBox(height: 9),
+                        if (points.isEmpty)
+                          const Card(
+                            child: Padding(
+                              padding: EdgeInsets.all(20),
+                              child: Text(
+                                'Todavía no hay puntos. El primer punto se crea con tu GPS real dentro de la parcela.',
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                        ...points.map(
+                          (point) => Padding(
+                            padding: const EdgeInsets.only(bottom: 9),
+                            child: _TargetCard(
+                              point: point,
+                              onTap: point.completed
+                                  ? null
+                                  : () => app.selectTargetPoint(point.navigationRaw),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _snack(String text) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+
+  String _message(Object error) =>
+      error.toString().replaceFirst('Exception: ', '');
+}
+
+class _MonitoringSummary extends StatelessWidget {
+  const _MonitoringSummary({
+    required this.header,
+    required this.total,
+    required this.completed,
+    required this.pendingSync,
+    required this.syncing,
+    required this.paused,
+    required this.finished,
+    required this.changingStatus,
+    required this.onSync,
+    required this.onPause,
+    required this.onResume,
+    required this.onFinish,
+    required this.onReport,
+  });
+
+  final MonitoringHeader header;
+  final int total;
+  final int completed;
+  final int pendingSync;
+  final bool syncing;
+  final bool paused;
+  final bool finished;
+  final bool changingStatus;
+  final VoidCallback onSync;
+  final VoidCallback onPause;
+  final VoidCallback onResume;
+  final VoidCallback onFinish;
+  final VoidCallback onReport;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = finished ? 'Completado' : paused ? 'Pausado' : total == 0 ? 'Pendiente' : 'En progreso';
+    final accent = finished
+        ? const Color(0xFF2E7D32)
+        : paused
+            ? const Color(0xFFD66B00)
+            : const Color(0xFF176E35);
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 2,
+      color: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(15),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Monitoreo - ${header.plotName}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppTheme.darkGreen,
+                      fontSize: 21,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: .11),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(label, style: TextStyle(color: accent, fontWeight: FontWeight.w900, fontSize: 11)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${header.programName} · ${header.cropName}',
+              style: const TextStyle(color: Colors.black54, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _remainingText(header.endDate),
+              style: const TextStyle(color: Colors.black45, fontSize: 11),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _SmallStatus(icon: Icons.my_location, text: '$completed punto(s)'),
+                _SmallStatus(icon: Icons.cloud_upload_outlined, text: '$pendingSync pendiente(s)'),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: syncing ? null : onSync,
+                    icon: syncing
+                        ? const GpaLoadingIndicator(size: 22, showText: false)
+                        : const Icon(Icons.sync),
+                    label: const Text('Sincronizar'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onReport,
+                    icon: const Icon(Icons.analytics_outlined),
+                    label: const Text('Reporte'),
+                  ),
+                ),
+              ],
+            ),
+            if (!finished) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: changingStatus ? null : (paused ? onResume : onPause),
+                      icon: Icon(paused ? Icons.play_arrow : Icons.pause),
+                      label: Text(paused ? 'Continuar' : 'Pausar'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: changingStatus ? null : onFinish,
+                      icon: const Icon(Icons.check),
+                      label: const Text('Terminar'),
+                      style: FilledButton.styleFrom(backgroundColor: const Color(0xFF176E35)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SmallStatus extends StatelessWidget {
+  const _SmallStatus({required this.icon, required this.text});
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(color: const Color(0xFFF2F7EE), borderRadius: BorderRadius.circular(12)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 16, color: AppTheme.primary), const SizedBox(width: 6), Text(text, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800))]),
+      );
+}
+
+class _InstructionCard extends StatelessWidget {
+  const _InstructionCard({required this.pointNumber, required this.accuracy, required this.paused, required this.finished});
+  final int pointNumber;
+  final double? accuracy;
+  final bool paused;
+  final bool finished;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = finished
+        ? 'El monitoreo está finalizado. Consulta el reporte y sincroniza cualquier dato pendiente.'
+        : paused
+            ? 'El monitoreo está pausado. Presiona Continuar antes de registrar otro punto.'
+            : 'Camina dentro de la parcela. El punto $pointNumber se guardará con tu ubicación GPS real.';
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F8EF),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFDCEAD8)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: const BoxDecoration(color: Color(0xFFE2F2DE), shape: BoxShape.circle),
+            child: const Icon(Icons.directions_walk, color: AppTheme.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Monitoreo libre por punto', style: TextStyle(color: AppTheme.darkGreen, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 3),
+                Text(text, style: const TextStyle(color: Colors.black54, fontSize: 12, height: 1.35)),
+                if (accuracy != null) ...[
+                  const SizedBox(height: 3),
+                  Text('Precisión GPS actual: ${accuracy!.toStringAsFixed(0)} m', style: const TextStyle(color: AppTheme.primary, fontSize: 11, fontWeight: FontWeight.w700)),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TargetCard extends StatelessWidget {
+  const _TargetCard({required this.point, this.onTap});
+  final TargetPoint point;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final done = point.completed;
+    return Card(
+      margin: EdgeInsets.zero,
+      color: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ListTile(
+        onTap: onTap,
+        leading: CircleAvatar(
+          backgroundColor: done ? const Color(0xFFE1F2DE) : const Color(0xFFFFF0D9),
+          child: Icon(done ? Icons.check : Icons.location_on, color: done ? AppTheme.primary : const Color(0xFFD66B00)),
+        ),
+        title: Text(point.label, style: const TextStyle(fontWeight: FontWeight.w900)),
+        subtitle: Text(
+          done
+              ? 'Capturado · ${point.serverId == null ? 'Pendiente de sincronizar' : 'Sincronizado'}'
+              : 'Pendiente de captura · toca para continuar',
+          style: const TextStyle(fontSize: 12),
+        ),
+        trailing: Icon(point.needsSync ? Icons.cloud_upload_outlined : Icons.cloud_done_outlined, color: done ? AppTheme.primary : Colors.black45),
+      ),
+    );
+  }
+}
+
+String _statusKey(String raw) {
+  final value = raw.toLowerCase().trim().replaceAll(' ', '_');
+  if (value.contains('complet') || value.contains('finaliz')) return 'completed';
+  if (value.contains('progress') || value.contains('progreso')) return 'in_progress';
+  return 'pending';
+}
+
+String _remainingText(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return 'Sin fecha de término del programa';
+  final parsed = DateTime.tryParse(raw);
+  if (parsed == null) return 'Fin del programa: $raw';
+  final end = DateTime(parsed.year, parsed.month, parsed.day, 23, 59, 59);
+  final diff = end.difference(DateTime.now());
+  if (diff.isNegative) return 'El programa ya alcanzó su fecha de cierre';
+  final days = diff.inDays;
+  final hours = diff.inHours.remainder(24);
+  return 'Tiempo restante: ${days}d ${hours}h · fin ${parsed.day.toString().padLeft(2, '0')}/${parsed.month.toString().padLeft(2, '0')}/${parsed.year}';
+}
