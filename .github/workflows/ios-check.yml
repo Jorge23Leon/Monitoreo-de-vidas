@@ -41,3 +41,38 @@ jobs:
         with:
           name: CIAgro-iOS-sin-firma
           path: build/ios/iphoneos/Runner.app
+
+  build-ios-simulator:
+    runs-on: macos-latest
+
+    steps:
+      - name: Descargar proyecto
+        uses: actions/checkout@v4
+
+      - name: Instalar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: 'stable'
+          cache: true
+
+      - name: Dependencias
+        run: flutter pub get
+
+      - name: Compilar para simulador iOS
+        run: |
+          flutter build ios \
+            --simulator \
+            --debug \
+            --dart-define=CIAGRO_API_BASE_URL=https://ciagro.bapta.mx/
+
+      - name: Comprimir app del simulador
+        run: |
+          cd build/ios/iphonesimulator
+          zip -r CIAgro-iOS-Simulator.zip Runner.app
+
+      - name: Guardar simulador
+        uses: actions/upload-artifact@v4
+        with:
+          name: CIAgro-iOS-Simulator
+          path: build/ios/iphonesimulator/CIAgro-iOS-Simulator.zip
