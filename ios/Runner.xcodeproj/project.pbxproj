@@ -7,6 +7,7 @@
 
 /* Begin PBXBuildFile section */
 		1498D2341E8E89220040F4C2 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* AppDelegate.swift */; };
+		74858FAE1ED2DC5600515810 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAF1ED2DC5600515810 /* GeneratedPluginRegistrant.m */; };
 		97C146F31CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146F11CF9000F007C117D /* Main.storyboard */; };
 		97C146F41CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146F21CF9000F007C117D /* Assets.xcassets */; };
 		97C146F51CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146F01CF9000F007C117D /* LaunchScreen.storyboard */; };
@@ -15,6 +16,8 @@
 /* Begin PBXFileReference section */
 		1498D2321E8E86230040F4C2 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		74858FAD1ED2DC5600515810 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
+		74858FAF1ED2DC5600515810 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Flutter/Debug.xcconfig; sourceTree = "<group>"; };
 		9740EEB31CF90195004384FC /* Generated.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Generated.xcconfig; path = Flutter/Generated.xcconfig; sourceTree = "<group>"; };
@@ -35,7 +38,7 @@
 		9740EEB11CF90186004384FC /* Flutter */ = {isa = PBXGroup; children = (9740EEB41CF90195004384FC /* AppFrameworkInfo.plist */, 9740EEB21CF90195004384FC /* Debug.xcconfig */, 7AFA3C8E1D35360C0083082E /* Release.xcconfig */, B1BC10003A00000000000001 /* Profile.xcconfig */, 9740EEB31CF90195004384FC /* Generated.xcconfig */); name = Flutter; sourceTree = "<group>"; };
 		97C146E51CF9000F007C117D = {isa = PBXGroup; children = (9740EEB11CF90186004384FC /* Flutter */, 97C146EF1CF9000F007C117D /* Runner */, 97C146E81CF9000F007C117D /* Products */); sourceTree = "<group>"; };
 		97C146E81CF9000F007C117D /* Products */ = {isa = PBXGroup; children = (97C146EE1CF9000F007C117D /* Runner.app */); name = Products; sourceTree = "<group>"; };
-		97C146EF1CF9000F007C117D /* Runner */ = {isa = PBXGroup; children = (97C146F11CF9000F007C117D /* Main.storyboard */, 97C146F21CF9000F007C117D /* Assets.xcassets */, 97C146F01CF9000F007C117D /* LaunchScreen.storyboard */, 97C146F61CF9000F007C117D /* Info.plist */, 1498D2331E8E89220040F4C2 /* AppDelegate.swift */, 1498D2321E8E86230040F4C2 /* Runner-Bridging-Header.h */); path = Runner; sourceTree = "<group>"; };
+		97C146EF1CF9000F007C117D /* Runner */ = {isa = PBXGroup; children = (97C146F11CF9000F007C117D /* Main.storyboard */, 97C146F21CF9000F007C117D /* Assets.xcassets */, 97C146F01CF9000F007C117D /* LaunchScreen.storyboard */, 97C146F61CF9000F007C117D /* Info.plist */, 1498D2331E8E89220040F4C2 /* AppDelegate.swift */, 74858FAD1ED2DC5600515810 /* GeneratedPluginRegistrant.h */, 74858FAF1ED2DC5600515810 /* GeneratedPluginRegistrant.m */, 1498D2321E8E86230040F4C2 /* Runner-Bridging-Header.h */); path = Runner; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -56,7 +59,7 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		97C146EA1CF9000F007C117D /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (1498D2341E8E89220040F4C2 /* AppDelegate.swift in Sources */); runOnlyForDeploymentPostprocessing = 0; };
+		97C146EA1CF9000F007C117D /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (1498D2341E8E89220040F4C2 /* AppDelegate.swift in Sources */, 74858FAE1ED2DC5600515810 /* GeneratedPluginRegistrant.m in Sources */); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
