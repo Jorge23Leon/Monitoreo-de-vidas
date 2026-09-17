@@ -1,0 +1,43 @@
+name: Verificar iOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - flutter-produccion-3.3.6
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+
+    steps:
+      - name: Descargar proyecto
+        uses: actions/checkout@v4
+
+      - name: Instalar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: 'stable'
+          cache: true
+
+      - name: Versiones
+        run: |
+          flutter --version
+          flutter doctor -v
+
+      - name: Dependencias
+        run: flutter pub get
+
+      - name: Compilar iOS sin firma
+        run: |
+          flutter build ios \
+            --release \
+            --no-codesign \
+            --dart-define=CIAGRO_API_BASE_URL=https://ciagro.bapta.mx/
+
+      - name: Guardar compilacion
+        uses: actions/upload-artifact@v4
+        with:
+          name: CIAgro-iOS-sin-firma
+          path: build/ios/iphoneos/Runner.app
