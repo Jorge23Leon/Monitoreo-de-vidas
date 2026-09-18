@@ -1,6 +1,6 @@
-# CIAGRO Monitoreo V3 — Flutter + Visual Studio Code
+﻿# CIAGRO Monitoreo V3 â€” Flutter + Visual Studio Code
 
-Esta es la **nueva versión Flutter del proyecto Android de Monitoreo de vidas/CIAGRO**, preparada como proyecto completo para abrir directamente en **Visual Studio Code** y ejecutar en Android.
+Esta es la **nueva versiÃ³n Flutter del proyecto Android de Monitoreo de vidas/CIAGRO**, preparada como proyecto completo para abrir directamente en **Visual Studio Code** y ejecutar en Android.
 
 No necesitas ejecutar `flutter create`. La carpeta `android/`, Gradle, `MainActivity`, manifiesto, permisos y configuraciones de VS Code ya vienen incluidas.
 
@@ -20,7 +20,7 @@ No necesitas ejecutar `flutter create`. La carpeta `android/`, Gradle, `MainActi
 
 Descomprime el ZIP y abre **la carpeta `Monitoreo-de-vidas-Flutter-V3`**, no solamente `lib`.
 
-También puedes abrir directamente:
+TambiÃ©n puedes abrir directamente:
 
 ```text
 CIAGRO-Monitoreo-V3.code-workspace
@@ -30,16 +30,16 @@ Instala las extensiones recomendadas de **Flutter** y **Dart** cuando VS Code la
 
 ## 2. Preparar el proyecto
 
-Abre PowerShell en la raíz del proyecto:
+Abre PowerShell en la raÃ­z del proyecto:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
-.\preparar_vscode.ps1
+.\scripts\preparar_vscode.ps1
 ```
 
-El script NO ejecuta `flutter create`. Genera únicamente `android/local.properties` con las rutas de tu PC, verifica Flutter, descarga dependencias y ejecuta `flutter analyze` + `flutter test`.
+El script NO ejecuta `flutter create`. Genera Ãºnicamente `android/local.properties` con las rutas de tu PC, verifica Flutter, descarga dependencias y ejecuta `flutter analyze` + `flutter test`.
 
-También puedes hacerlo manualmente:
+TambiÃ©n puedes hacerlo manualmente:
 
 ```powershell
 flutter --version
@@ -57,9 +57,9 @@ Para el emulador Android, tu backend de la PC en `8500` se ve como:
 http://10.0.2.2:8500/
 ```
 
-La configuración de VS Code **CIAGRO V3 - Android emulador (backend local)** ya manda esa URL con `--dart-define`.
+La configuraciÃ³n de VS Code **CIAGRO V3 - Android emulador (backend local)** ya manda esa URL con `--dart-define`.
 
-Si usas un celular físico, ejecuta con la IP LAN de tu computadora:
+Si usas un celular fÃ­sico, ejecuta con la IP LAN de tu computadora:
 
 ```powershell
 flutter run --dart-define=CIAGRO_API_BASE_URL=http://192.168.X.X:8500/
@@ -73,16 +73,16 @@ flutter run --dart-define=CIAGRO_API_BASE_URL=https://TU-TUNEL.trycloudflare.com
 
 ## 4. Ejecutar desde VS Code
 
-1. Arranca un emulador Android o conecta tu celular con depuración USB.
+1. Arranca un emulador Android o conecta tu celular con depuraciÃ³n USB.
 2. En la barra inferior de VS Code selecciona el dispositivo Android.
 3. Ve a **Run and Debug / Ejecutar y depurar**.
 4. Selecciona **CIAGRO V3 - Android emulador (backend local)**.
 5. Presiona **F5**.
 
-También puedes ejecutar:
+TambiÃ©n puedes ejecutar:
 
 ```powershell
-.\ejecutar_android_local.ps1
+.\scripts\ejecutar_android_local.ps1
 ```
 
 ## 5. Validaciones
@@ -95,7 +95,7 @@ flutter test
 flutter build apk --debug --dart-define=CIAGRO_API_BASE_URL=http://10.0.2.2:8500/
 ```
 
-Existe además una validación de estructura que no requiere Flutter:
+Existe ademÃ¡s una validaciÃ³n de estructura que no requiere Flutter:
 
 ```powershell
 python tool\validar_estructura.py
@@ -103,27 +103,28 @@ python tool\validar_estructura.py
 
 ## Funcionalidad incluida
 
-- Login JWT y refresh automático.
-- Sesión y almacenamiento seguro.
+- Login JWT y refresh automÃ¡tico.
+- SesiÃ³n y almacenamiento seguro.
 - Perfil y roles.
-- Selección de CIA.
-- Pantalla de módulos.
-- Monitoreo de plagas/enfermedades: flujo offline-first alineado con Kotlin (listado, filtros, GPS libre, parcela, captura, plagas/enfermedades, evidencia, severidad, sincronización, reporte y CSV).
-- Aspersión: sesiones, detalle y mapa.
+- SelecciÃ³n de CIA.
+- Pantalla de mÃ³dulos.
+- Monitoreo de plagas/enfermedades: flujo offline-first alineado con Kotlin (listado, filtros, GPS libre, parcela, captura, plagas/enfermedades, evidencia, severidad, sincronizaciÃ³n, reporte y CSV).
+- AspersiÃ³n: sesiones, detalle y mapa.
 - NDVI: sesiones, detalle, mapa y escala de NDVI.
 - Panel administrativo base.
 - SQLite con las 24 tablas del esquema Room v39 original.
 - Leaflet integrado localmente.
-- Permisos Android de internet, ubicación y cámara.
+- Permisos Android de internet, ubicaciÃ³n y cÃ¡mara.
 
-## Nota sobre una “versión completa”
+## Nota sobre una â€œversiÃ³n completaâ€
 
-El **proyecto de compilación sí está completo**: puedes abrirlo en VS Code y no falta la envoltura Android. La app Kotlin original tiene 181 archivos Kotlin y lógica de negocio muy extensa. Esta entrega concentra la paridad funcional en **monitoreo de plagas y enfermedades**, que es el módulo objetivo. Aspersión, NDVI y pantallas administrativas permanecen fuera del alcance de esta migración 1:1 y pueden seguir evolucionándose por separado.
+El **proyecto de compilaciÃ³n sÃ­ estÃ¡ completo**: puedes abrirlo en VS Code y no falta la envoltura Android. La app Kotlin original tiene 181 archivos Kotlin y lÃ³gica de negocio muy extensa. Esta entrega concentra la paridad funcional en **monitoreo de plagas y enfermedades**, que es el mÃ³dulo objetivo. AspersiÃ³n, NDVI y pantallas administrativas permanecen fuera del alcance de esta migraciÃ³n 1:1 y pueden seguir evolucionÃ¡ndose por separado.
 
 ## APK
 
-Después de una compilación debug exitosa, normalmente estará en:
+DespuÃ©s de una compilaciÃ³n debug exitosa, normalmente estarÃ¡ en:
 
 ```text
 build\app\outputs\flutter-apk\app-debug.apk
 ```
+
