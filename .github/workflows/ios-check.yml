@@ -36,6 +36,19 @@ jobs:
             --no-codesign \
             --dart-define=CIAGRO_API_BASE_URL=https://ciagro.bapta.mx/
 
+      - name: Crear IPA para iPhone
+        run: |
+          mkdir -p build/ios/sideload/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ios/sideload/Payload/Runner.app
+          cd build/ios/sideload
+          zip -r CIAgro-Monitoreo-3.3.6.ipa Payload
+
+      - name: Guardar IPA para sideload
+        uses: actions/upload-artifact@v4
+        with:
+          name: CIAgro-iOS-IPA-Sideload
+          path: build/ios/sideload/CIAgro-Monitoreo-3.3.6.ipa
+
       - name: Guardar compilacion
         uses: actions/upload-artifact@v4
         with:
