@@ -22,6 +22,34 @@ class MonitoringCheckpointScreen extends StatefulWidget {
 
 enum _CatalogTab { pests, diseases }
 
+String _pestPresenceStatusForPoint(int total, int tolerance) {
+  if (total <= 0) return 'low';
+
+  final threshold = tolerance < 0 ? 0 : tolerance;
+  if (threshold == 0) {
+    return total == 1 ? 'warning' : 'critical';
+  }
+  if (total <= threshold) return 'low';
+  if (total == threshold + 1) return 'warning';
+  return 'critical';
+}
+
+String _diseasePresenceStatusForStage(String? stage) {
+  final value = (stage ?? '').trim().toLowerCase();
+
+  if (value.contains('avanz') ||
+      value.contains('terminal') ||
+      value.contains('alta')) {
+    return 'critical';
+  }
+  if (value.contains('desarrollo') || value.contains('media')) {
+    return 'warning';
+  }
+
+  // Inicio (y cualquier fase inicial compatible) corresponde a Baja.
+  return 'low';
+}
+
 class _MonitoringCheckpointScreenState
     extends State<MonitoringCheckpointScreen> {
   final repo = MonitoringRepository();
@@ -108,7 +136,9 @@ class _MonitoringCheckpointScreenState
   int get pendingRecords =>
       quantities.values.where((value) => value > 0).length +
       generalPests.length +
-      diseases.length;
+      diseases.values
+          .where((evaluation) => evaluation.presence == DiseasePresence.present)
+          .length;
 
   Future<void> _takePhoto() async {
     final result = await MonitoringPhotoService.takePhoto();
@@ -158,6 +188,16 @@ class _MonitoringCheckpointScreenState
       final rawNotes = notesController.text.trim();
       final notes = rawNotes.isEmpty ? null : rawNotes;
 
+      final pestTotal =
+          quantities.values
+              .where((value) => value > 0)
+              .fold<int>(0, (sum, value) => sum + value) +
+          generalPests.length;
+      final pestPresenceStatus = _pestPresenceStatusForPoint(
+        pestTotal,
+        header.pestTolerance,
+      );
+
       final records = <PendingCheckpoint>[];
       var index = 0;
       String localId() =>
@@ -175,7 +215,7 @@ class _MonitoringCheckpointScreenState
               phytoName: item.name,
               phytoType: item.type,
               stage: null,
-              presenceStatus: 'warning',
+              presenceStatus: pestPresenceStatus,
               qty: 1,
               latitude: target.latitude,
               longitude: target.longitude,
@@ -198,7 +238,7 @@ class _MonitoringCheckpointScreenState
               phytoName: item.name,
               phytoType: item.type,
               stage: stage.name,
-              presenceStatus: qty >= 10 ? 'critical' : 'warning',
+              presenceStatus: pestPresenceStatus,
               qty: qty,
               latitude: target.latitude,
               longitude: target.longitude,
@@ -214,8 +254,15 @@ class _MonitoringCheckpointScreenState
       for (final entry in diseases.entries) {
         final item = catalog.where((e) => e.id == entry.key).firstOrNull;
         if (item == null) continue;
+
         final evaluation = entry.value;
         final present = evaluation.presence == DiseasePresence.present;
+
+        // "No presente" es una evaluacion local, no un hallazgo. El backend/web
+        // solo tiene low/warning/critical para hallazgos de Enfermedad; enviar
+        // low con qty=0 hacia que CIAGRO web lo pintara amarillo.
+        if (!present) continue;
+
         records.add(
           PendingCheckpoint(
             localId: localId(),
@@ -224,9 +271,9 @@ class _MonitoringCheckpointScreenState
             phytoIssueId: item.id,
             phytoName: item.name,
             phytoType: item.type,
-            stage: present ? evaluation.stage : null,
-            presenceStatus: present ? 'warning' : 'low',
-            qty: present ? 1 : 0,
+            stage: evaluation.stage,
+            presenceStatus: _diseasePresenceStatusForStage(evaluation.stage),
+            qty: 1,
             latitude: target.latitude,
             longitude: target.longitude,
             notes: notes,

@@ -1148,10 +1148,10 @@ String _remainingText(String? raw) {
       '${parsed.day.toString().padLeft(2, '0')}/${parsed.month.toString().padLeft(2, '0')}/${parsed.year}';
 
   if (diff.isNegative) {
-    return 'Sesion vencida Â· fin $formatted';
+    return 'Sesion vencida - fin $formatted';
   }
 
   final days = diff.inDays;
   final hours = diff.inHours.remainder(24);
-  return 'Tiempo restante: ${days}d ${hours}h Â· fin $formatted';
+  return 'Tiempo restante: ${days}d ${hours}h - fin $formatted';
 }

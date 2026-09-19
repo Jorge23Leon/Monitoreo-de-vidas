@@ -712,16 +712,18 @@ class _ReportData {
       );
     }
 
-    final remoteByTarget = <String, List<Map<String, dynamic>>>{};
+    // Igual que CIAGRO web: primero agrupa TODOS los hallazgos del punto por
+    // pcp_oid. Solo si no existe pcp_oid cae a target/coordenadas.
+    final remoteByPoint = <String, List<Map<String, dynamic>>>{};
     for (final item in remote) {
-      final targetId = _remoteTargetId(item);
-      if (targetId != null) {
-        remoteByTarget.putIfAbsent(targetId, () => []).add(item);
+      final pointKey = _remotePointKey(item);
+      if (pointKey != null) {
+        remoteByPoint.putIfAbsent(pointKey, () => []).add(item);
       }
     }
-    final severityByRemoteTarget = <String, String>{};
-    for (final entry in remoteByTarget.entries) {
-      severityByRemoteTarget[entry.key] = _remotePestSeverity(
+    final severityByRemotePoint = <String, String>{};
+    for (final entry in remoteByPoint.entries) {
+      severityByRemotePoint[entry.key] = _remotePestSeverity(
         entry.value,
         catalogById,
         pestTolerance,
@@ -743,6 +745,7 @@ class _ReportData {
       final id = flexibleId(item['id']) ?? '';
       if (id.isNotEmpty) remoteIds.add(id);
       final targetId = _remoteTargetId(item);
+      final pointKey = _remotePointKey(item);
       final point = _findTargetForRemote(
         item,
         targetId,
@@ -758,9 +761,9 @@ class _ReportData {
             if (pcpOid != null && pcpOid > 0) return pcpOid;
             return _numberForTarget(point, pointNumbers);
           })(),
-          pestSeverity: targetId == null
+          pestSeverity: pointKey == null
               ? _remotePestSeverity([item], catalogById, pestTolerance)
-              : (severityByRemoteTarget[targetId] ?? 'Sin plaga'),
+              : (severityByRemotePoint[pointKey] ?? 'Sin plaga'),
           catalogById: catalogById,
           localMirror: id.isEmpty ? null : localByRemoteId[id],
         ),
@@ -2504,8 +2507,17 @@ String _pestSeverity(List<PendingCheckpoint> checkpoints, int pestTolerance) {
       .toList(growable: false);
 
   final total = pests.fold<int>(0, (sum, e) => sum + (e.qty > 0 ? e.qty : 0));
+  if (total <= 0) return 'Sin plaga';
 
-  return _pestSeverityFromTotal(total, pestTolerance);
+  var rank = _pestSeverityRank(_pestSeverityFromTotal(total, pestTolerance));
+
+  // CIAGRO web tambien respeta la severidad que ya venga en presence_status.
+  for (final pest in pests) {
+    final presenceRank = _presenceSeverityRank(pest.presenceStatus);
+    if (presenceRank > rank) rank = presenceRank;
+  }
+
+  return _pestSeverityLabelForRank(rank);
 }
 
 String _pestSeverityFromTotal(int total, int tolerance) {
@@ -2522,10 +2534,35 @@ String _pestSeverityFromTotal(int total, int tolerance) {
   return 'Severidad alta';
 }
 
+int _pestSeverityRank(String label) {
+  final value = label.toLowerCase();
+  if (value.contains('alta') || value.contains('supera')) return 3;
+  if (value.contains('mayor')) return 2;
+  if (value.contains('menor')) return 1;
+  return 0;
+}
+
+int _presenceSeverityRank(dynamic raw) {
+  final value = '${raw ?? ''}'.trim().toLowerCase();
+  if (value == 'critical') return 3;
+  if (value == 'warning') return 2;
+
+  // El frontend web trata cualquier presence_status restante de un hallazgo
+  // como low. Solo se llama para plagas con cantidad positiva.
+  return 1;
+}
+
+String _pestSeverityLabelForRank(int rank) {
+  if (rank >= 3) return 'Severidad alta';
+  if (rank == 2) return 'Severidad mayor';
+  if (rank == 1) return 'Severidad menor';
+  return 'Sin plaga';
+}
+
 String _diseaseSeverity(String? stage, String presence) {
   final p = presence.trim().toLowerCase();
 
-  if (p == 'critical' || p == 'critica' || p == 'crÃ­tica') {
+  if (p == 'critical' || p == 'critica') {
     return 'Alta';
   }
   if (p == 'warning' || p == 'advertencia') {
@@ -2552,7 +2589,6 @@ String _diseaseSeverity(String? stage, String presence) {
     return 'Media';
   }
 
-  // Si existe un hallazgo de tipo Enfermedad, el nivel base del web es Baja.
   return 'Baja';
 }
 
@@ -2582,6 +2618,24 @@ int _numberForTarget(TargetPoint? point, Map<String, int> numbers) {
 
 String? _remoteTargetId(Map<String, dynamic> item) =>
     flexibleId(item['target'] ?? item['target_point']);
+
+String? _remotePointKey(Map<String, dynamic> item) {
+  final pcpOid = int.tryParse('${item['pcp_oid'] ?? ''}');
+  if (pcpOid != null && pcpOid > 0) return 'pcp:$pcpOid';
+
+  final targetId = _remoteTargetId(item);
+  if (targetId != null && targetId.isNotEmpty) return 'target:$targetId';
+
+  final geom = item['geom'];
+  if (geom is Map && geom['coordinates'] is List) {
+    final coordinates = geom['coordinates'] as List;
+    if (coordinates.length >= 2) {
+      return 'coord:${coordinates[0]},${coordinates[1]}';
+    }
+  }
+
+  return null;
+}
 
 TargetPoint? _findTargetForRemote(
   Map<String, dynamic> item,
@@ -2739,7 +2793,18 @@ String _remotePestSeverity(
     return sum + (qty > 0 ? qty : 0);
   });
 
-  return _pestSeverityFromTotal(total, pestTolerance);
+  if (total <= 0) return 'Sin plaga';
+
+  var rank = _pestSeverityRank(_pestSeverityFromTotal(total, pestTolerance));
+
+  // Misma segunda regla del web: warning eleva al menos a mayor y critical
+  // eleva a alta aunque el total por cantidad fuera menor.
+  for (final pest in pests) {
+    final presenceRank = _presenceSeverityRank(pest['presence_status']);
+    if (presenceRank > rank) rank = presenceRank;
+  }
+
+  return _pestSeverityLabelForRank(rank);
 }
 
 String _diseasePhase(String? stage, String presence) {
