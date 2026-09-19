@@ -37,8 +37,11 @@ class _MonitoringListScreenState extends State<MonitoringListScreen> {
   Future<List<MonitoringHeader>> _load() {
     final app = AppScope.read(context);
     final user = app.user;
-    final ciaId = flexibleId(app.selectedCia?['id'] ?? app.selectedCia?['ext_id']);
-    final directOperational = user?.isTechnician == true || user?.isGuest == true;
+    final ciaId = flexibleId(
+      app.selectedCia?['id'] ?? app.selectedCia?['ext_id'],
+    );
+    final directOperational =
+        user?.isTechnician == true || user?.isGuest == true;
     return repo.headers(
       assignedTo: null,
       dataCentralId: directOperational ? null : ciaId,
@@ -55,21 +58,27 @@ class _MonitoringListScreenState extends State<MonitoringListScreen> {
   }
 
   List<MonitoringHeader> _filtered(List<MonitoringHeader> all) {
-    return all.where((item) {
-      if (producerId != null && item.producerId != producerId) return false;
-      if (ranchId != null && item.ranchId != ranchId) return false;
-      if (plotId != null && item.plotId != plotId) return false;
-      if (cycle != null && _cycleKey(item) != cycle) return false;
-      if (status != null && _statusKey(item.status) != status) return false;
-      final date = _parseDate(item.activityDate ?? item.startDate);
-      if (startDate != null && date != null && date.isBefore(_startOfDay(startDate!))) {
-        return false;
-      }
-      if (endDate != null && date != null && date.isAfter(_endOfDay(endDate!))) {
-        return false;
-      }
-      return true;
-    }).toList(growable: false);
+    return all
+        .where((item) {
+          if (producerId != null && item.producerId != producerId) return false;
+          if (ranchId != null && item.ranchId != ranchId) return false;
+          if (plotId != null && item.plotId != plotId) return false;
+          if (cycle != null && _cycleKey(item) != cycle) return false;
+          if (status != null && _statusKey(item.status) != status) return false;
+          final date = _parseDate(item.activityDate ?? item.startDate);
+          if (startDate != null &&
+              date != null &&
+              date.isBefore(_startOfDay(startDate!))) {
+            return false;
+          }
+          if (endDate != null &&
+              date != null &&
+              date.isAfter(_endOfDay(endDate!))) {
+            return false;
+          }
+          return true;
+        })
+        .toList(growable: false);
   }
 
   void _clearBelowProducer(String? value) {
@@ -77,6 +86,9 @@ class _MonitoringListScreenState extends State<MonitoringListScreen> {
       producerId = value;
       ranchId = null;
       plotId = null;
+      cycle = null;
+      startDate = null;
+      endDate = null;
     });
   }
 
@@ -84,6 +96,9 @@ class _MonitoringListScreenState extends State<MonitoringListScreen> {
     setState(() {
       ranchId = value;
       plotId = null;
+      cycle = null;
+      startDate = null;
+      endDate = null;
     });
   }
 
@@ -122,7 +137,8 @@ class _MonitoringListScreenState extends State<MonitoringListScreen> {
   Future<void> _handleBack() async {
     final app = AppScope.read(context);
     final user = app.user;
-    final hierarchical = user?.isAdmin == true ||
+    final hierarchical =
+        user?.isAdmin == true ||
         user?.isManager == true ||
         user?.isSupervisor == true;
 
@@ -149,7 +165,10 @@ class _MonitoringListScreenState extends State<MonitoringListScreen> {
     if (raw == null) return 'Monitoreos fitosanitarios';
     String text(dynamic v) => v == null ? '' : '$v'.trim();
     final name = text(
-      raw['commercial_name'] ?? raw['name'] ?? raw['nombre'] ?? raw['display_name'],
+      raw['commercial_name'] ??
+          raw['name'] ??
+          raw['nombre'] ??
+          raw['display_name'],
     );
     return name.isNotEmpty ? name : 'CIA seleccionada';
   }
@@ -157,7 +176,8 @@ class _MonitoringListScreenState extends State<MonitoringListScreen> {
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
-    final progressiveFilters = app.user?.isAdmin == true ||
+    final progressiveFilters =
+        app.user?.isAdmin == true ||
         app.user?.isManager == true ||
         app.user?.isSupervisor == true;
 
@@ -176,124 +196,231 @@ class _MonitoringListScreenState extends State<MonitoringListScreen> {
               title: 'Monitoreo fitosanitario',
               onBack: canReturnToCia ? _handleBack : null,
             ),
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _refresh,
-              child: FutureBuilder<List<MonitoringHeader>>(
-                future: future,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
-                    return const Center(child: GpaLoadingIndicator(text: 'Cargando monitoreos...'));
-                  }
-                  if (snapshot.hasError) {
-                    return _Message(
-                      icon: Icons.cloud_off,
-                      title: 'No se pudieron cargar los monitoreos',
-                      message: '${snapshot.error}',
-                      onPressed: _refresh,
-                    );
-                  }
-
-                  final all = snapshot.data ?? const <MonitoringHeader>[];
-                  final visible = _filtered(all);
-                  if (all.isEmpty) {
-                    return _Message(
-                      icon: Icons.assignment_outlined,
-                      title: 'Sin monitoreos',
-                      message: app.user?.isTechnician == true || app.user?.isGuest == true
-                          ? 'No tienes monitoreos fitosanitarios asignados.'
-                          : 'No hay monitoreos para la CIA seleccionada.',
-                      onPressed: _refresh,
-                    );
-                  }
-
-                  return ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(14, 16, 14, 32),
-                    children: [
-                      Text(
-                        _ciaHeading(app),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 23,
-                          fontWeight: FontWeight.w900,
-                          color: Color(0xFF111111),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _refresh,
+                child: FutureBuilder<List<MonitoringHeader>>(
+                  future: future,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState != ConnectionState.done) {
+                      return const Center(
+                        child: GpaLoadingIndicator(
+                          text: 'Cargando monitoreos...',
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      if (progressiveFilters)
-                        _ProgressiveFilters(
-                          expanded: filtersExpanded,
-                          all: all,
-                          producerId: producerId,
-                          ranchId: ranchId,
-                          plotId: plotId,
-                          cycle: cycle,
-                          status: status,
-                          startDate: startDate,
-                          endDate: endDate,
-                          onToggle: () => setState(() => filtersExpanded = !filtersExpanded),
-                          onProducer: _clearBelowProducer,
-                          onRanch: _clearBelowRanch,
-                          onPlot: (value) => setState(() => plotId = value),
-                          onCycle: (value) => setState(() => cycle = value),
-                          onStatus: (value) => setState(() => status = value),
-                          onStartDate: _pickStart,
-                          onEndDate: _pickEnd,
-                          onClearStart: () => setState(() => startDate = null),
-                          onClearEnd: () => setState(() => endDate = null),
-                          onClear: _clearAll,
+                      );
+                    }
+                    if (snapshot.hasError) {
+                      return _Message(
+                        icon: Icons.cloud_off,
+                        title: 'No se pudieron cargar los monitoreos',
+                        message: '${snapshot.error}',
+                        onPressed: _refresh,
+                      );
+                    }
+
+                    final all = snapshot.data ?? const <MonitoringHeader>[];
+                    final visible = _filtered(all);
+                    if (all.isEmpty) {
+                      return _Message(
+                        icon: Icons.assignment_outlined,
+                        title: 'Sin monitoreos',
+                        message:
+                            app.user?.isTechnician == true ||
+                                app.user?.isGuest == true
+                            ? 'No tienes monitoreos fitosanitarios asignados.'
+                            : 'No hay monitoreos para la CIA seleccionada.',
+                        onPressed: _refresh,
+                      );
+                    }
+
+                    return ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(14, 16, 14, 32),
+                      children: [
+                        _OrganizationBreadcrumb(app: app),
+                        const SizedBox(height: 10),
+                        if (progressiveFilters)
+                          _ProgressiveFilters(
+                            expanded: filtersExpanded,
+                            all: all,
+                            producerId: producerId,
+                            ranchId: ranchId,
+                            plotId: plotId,
+                            cycle: cycle,
+                            status: status,
+                            startDate: startDate,
+                            endDate: endDate,
+                            onToggle: () => setState(
+                              () => filtersExpanded = !filtersExpanded,
+                            ),
+                            onProducer: _clearBelowProducer,
+                            onRanch: _clearBelowRanch,
+                            onPlot: (value) => setState(() {
+                              plotId = value;
+                              cycle = null;
+                              startDate = null;
+                              endDate = null;
+                            }),
+                            onCycle: (value) => setState(() {
+                              cycle = value;
+                              startDate = null;
+                              endDate = null;
+                            }),
+                            onStatus: (value) => setState(() => status = value),
+                            onStartDate: _pickStart,
+                            onEndDate: _pickEnd,
+                            onClearStart: () =>
+                                setState(() => startDate = null),
+                            onClearEnd: () => setState(() => endDate = null),
+                            onClear: _clearAll,
+                          ),
+                        if (progressiveFilters) const SizedBox(height: 18),
+                        _ListCountHeader(
+                          count: visible.length,
+                          updated: lastRefresh,
+                          onRefresh: _refresh,
                         ),
-                      if (progressiveFilters) const SizedBox(height: 18),
-                      _ListCountHeader(
-                        count: visible.length,
-                        updated: lastRefresh,
-                        onRefresh: _refresh,
-                      ),
-                      const SizedBox(height: 12),
-                      if (visible.isEmpty)
-                        const Card(
-                          child: Padding(
-                            padding: EdgeInsets.all(22),
-                            child: Text(
-                              'No hay monitoreos que coincidan con los filtros.',
-                              textAlign: TextAlign.center,
+                        const SizedBox(height: 12),
+                        if (visible.isEmpty)
+                          const Card(
+                            child: Padding(
+                              padding: EdgeInsets.all(22),
+                              child: Text(
+                                'No hay monitoreos que coincidan con los filtros.',
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                        ...visible.map(
+                          (item) => Padding(
+                            padding: const EdgeInsets.only(bottom: 14),
+                            child: _MonitoringCard(
+                              header: item,
+                              onTap: () {
+                                final state = _statusKey(item.status);
+                                if (state == 'cancelled') {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Este monitoreo está cancelado. No se puede abrir ni consultar información.',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                app.selectMonitoring(item.raw);
+                                if (state == 'completed') {
+                                  app.go(AppPage.monitoringReport);
+                                }
+                              },
                             ),
                           ),
                         ),
-                      ...visible.map(
-                        (item) => Padding(
-                          padding: const EdgeInsets.only(bottom: 14),
-                          child: _MonitoringCard(
-                            header: item,
-                            onTap: () {
-                              final state = _statusKey(item.status);
-                              if (state == 'cancelled') {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Este monitoreo está cancelado. No se puede abrir ni consultar información.',
-                                    ),
-                                  ),
-                                );
-                                return;
-                              }
-                              app.selectMonitoring(item.raw);
-                              if (state == 'completed') {
-                                app.go(AppPage.monitoringReport);
-                              }
-                            },
-                          ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OrganizationBreadcrumb extends StatelessWidget {
+  const _OrganizationBreadcrumb({required this.app});
+
+  final AppController app;
+
+  static String _label(dynamic raw) {
+    if (raw is! Map) return '';
+    final value =
+        raw['commercial_name'] ??
+        raw['name'] ??
+        raw['nombre'] ??
+        raw['display_name'] ??
+        raw['code'] ??
+        raw['codigo'];
+    return value == null ? '' : '$value'.trim();
+  }
+
+  static Map<String, dynamic>? _parentOf(Map<String, dynamic> raw) {
+    final parent =
+        raw['data_central_main'] ??
+        raw['dataCentralMain'] ??
+        raw['datacentralmain'] ??
+        raw['main'] ??
+        raw['parent'];
+    if (parent is Map) return Map<String, dynamic>.from(parent);
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = app.selectedCia;
+    if (selected == null) return const SizedBox.shrink();
+
+    final child = Map<String, dynamic>.from(selected);
+    final parent = _parentOf(child);
+    final grandParent = parent == null ? null : _parentOf(parent);
+
+    final labels = <String>[
+      if (_label(grandParent).isNotEmpty) _label(grandParent),
+      if (_label(parent).isNotEmpty) _label(parent),
+      if (_label(child).isNotEmpty) _label(child),
+    ];
+
+    if (labels.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F6F3),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5EAE3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.location_on_outlined,
+            size: 18,
+            color: Color(0xFF315B38),
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (var i = 0; i < labels.length; i++) ...[
+                    if (i > 0)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 4),
+                        child: Icon(
+                          Icons.chevron_right,
+                          size: 17,
+                          color: Color(0xFF7B857B),
                         ),
                       ),
-                    ],
-                  );
-                },
+                    Text(
+                      labels[i],
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: i == labels.length - 1
+                            ? FontWeight.w800
+                            : FontWeight.w600,
+                        color: const Color(0xFF263128),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -351,27 +478,34 @@ class _ProgressiveFilters extends StatelessWidget {
       (e) => e.producerId!,
       (e) => e.producerName,
     );
+
+    // Todos los campos permanecen disponibles. Cada seleccion reduce las
+    // opciones de los campos siguientes y el listado se actualiza al instante.
     final ranchSource = producerId == null
         ? all
-        : all.where((e) => e.producerId == producerId).toList();
+        : all.where((e) => e.producerId == producerId).toList(growable: false);
     final ranches = _options(
       ranchSource.where((e) => e.ranchId != null),
       (e) => e.ranchId!,
       (e) => e.ranchName,
     );
+
     final plotSource = ranchId == null
         ? ranchSource
-        : ranchSource.where((e) => e.ranchId == ranchId).toList();
+        : ranchSource
+              .where((e) => e.ranchId == ranchId)
+              .toList(growable: false);
     final plots = _options(
       plotSource.where((e) => e.plotId != null),
       (e) => e.plotId!,
-      // En parcela se prioriza el código, igual que la app Kotlin.
       (e) => e.plotName,
     );
-    final cycles = <String, String>{};
-    for (final item in plotId == null
+
+    final cycleSource = plotId == null
         ? plotSource
-        : plotSource.where((e) => e.plotId == plotId)) {
+        : plotSource.where((e) => e.plotId == plotId).toList(growable: false);
+    final cycles = <String, String>{};
+    for (final item in cycleSource) {
       final key = _cycleKey(item);
       if (key.isNotEmpty) cycles.putIfAbsent(key, () => item.programName);
     }
@@ -385,79 +519,99 @@ class _ProgressiveFilters extends StatelessWidget {
       startDate,
       endDate,
     ].where((value) => value != null).length;
-    final filterSummary = activeCount == 0
-        ? 'Todos los monitoreos'
-        : '$activeCount filtro${activeCount == 1 ? '' : 's'} aplicado${activeCount == 1 ? '' : 's'}';
 
     return Card(
       margin: EdgeInsets.zero,
-      elevation: 3,
+      elevation: 2,
       shadowColor: Colors.black12,
       color: Colors.white,
       surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+        padding: const EdgeInsets.fromLTRB(10, 7, 10, 8),
         child: Column(
           children: [
             InkWell(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(13),
               onTap: onToggle,
-              child: Row(
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFEAF6E8),
-                      shape: BoxShape.circle,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFEAF6E8),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.filter_alt_outlined,
+                        size: 20,
+                        color: AppTheme.primary,
+                      ),
                     ),
-                    child: const Icon(Icons.menu, color: AppTheme.primary),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Filtros',
-                          style: TextStyle(
-                            color: Color(0xFF16421E),
-                            fontSize: 20,
+                    const SizedBox(width: 9),
+                    const Text(
+                      'Filtros',
+                      style: TextStyle(
+                        color: Color(0xFF16421E),
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    if (activeCount > 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEAF6E8),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        child: Text(
+                          '$activeCount',
+                          style: const TextStyle(
+                            color: AppTheme.primary,
+                            fontSize: 11,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          filterSummary,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.black54,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
+                      ),
+                    ],
+                    const Spacer(),
+                    Text(
+                      expanded ? 'Cerrar' : 'Abrir',
+                      style: const TextStyle(
+                        color: AppTheme.primary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                  ),
-                  TextButton(
-                    onPressed: onToggle,
-                    child: Text(expanded ? 'Cerrar' : 'Abrir'),
-                  ),
-                  Icon(expanded ? Icons.expand_less : Icons.expand_more),
-                ],
+                    const SizedBox(width: 3),
+                    Icon(
+                      expanded ? Icons.expand_less : Icons.expand_more,
+                      color: AppTheme.primary,
+                      size: 21,
+                    ),
+                  ],
+                ),
               ),
             ),
             if (expanded) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: 5),
               _FilterDropdown(
                 label: 'Productor',
                 value: producerId,
                 options: producers,
-                allLabel: 'Todos los productores',
+                allLabel: 'Todos',
                 onChanged: onProducer,
+                leading: Icons.person_outline,
+                compact: true,
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 5),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -466,68 +620,46 @@ class _ProgressiveFilters extends StatelessWidget {
                       label: 'Rancho',
                       value: ranchId,
                       options: ranches,
-                      allLabel: producerId == null
-                          ? 'Selecciona productor'
-                          : 'Todos',
-                      enabled: producerId != null,
+                      allLabel: 'Todos',
                       onChanged: onRanch,
+                      leading: Icons.home_outlined,
+                      compact: true,
                     ),
                   ),
-                  const SizedBox(width: 9),
+                  const SizedBox(width: 6),
                   Expanded(
                     child: _FilterDropdown(
                       label: 'Parcela',
                       value: plotId,
                       options: plots,
-                      allLabel: ranchId == null
-                          ? 'Selecciona rancho'
-                          : 'Todas',
-                      enabled: ranchId != null,
+                      allLabel: 'Todas',
                       onChanged: onPlot,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              // Igual que Kotlin: Ciclo, Inicio y Fin comparten la misma fila,
-              // pero ahora usan Expanded para que nunca se recorten los títulos.
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: _FilterDropdown(
-                      label: 'Ciclo',
-                      value: cycle,
-                      options: cycles,
-                      allLabel: 'Todos',
-                      onChanged: onCycle,
-                      leading: Icons.refresh,
-                      compact: true,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _DateFilter(
-                      label: 'Inicio',
-                      value: startDate,
-                      onTap: onStartDate,
-                      onClear: onClearStart,
-                      compact: true,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _DateFilter(
-                      label: 'Fin',
-                      value: endDate,
-                      onTap: onEndDate,
-                      onClear: onClearEnd,
+                      leading: Icons.eco_outlined,
                       compact: true,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 5),
+              _FilterDropdown(
+                label: 'Ciclo',
+                value: cycle,
+                options: cycles,
+                allLabel: 'Todos',
+                onChanged: onCycle,
+                leading: Icons.spa_outlined,
+                compact: true,
+              ),
+              const SizedBox(height: 5),
+              _PeriodFilter(
+                startDate: startDate,
+                endDate: endDate,
+                onStartDate: onStartDate,
+                onEndDate: onEndDate,
+                onClearStart: onClearStart,
+                onClearEnd: onClearEnd,
+              ),
+              const SizedBox(height: 5),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -543,36 +675,40 @@ class _ProgressiveFilters extends StatelessWidget {
                       },
                       allLabel: 'Todos',
                       onChanged: onStatus,
-                      leading: Icons.check,
+                      leading: Icons.check_circle_outline,
                       compact: true,
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   Expanded(
-                    child: SizedBox(
-                      height: 54,
-                      child: OutlinedButton.icon(
-                        onPressed: activeCount > 0 ? onClear : null,
-                        icon: const Icon(Icons.filter_alt_off, size: 18),
-                        label: const Text(
-                          'Limpiar filtros',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppTheme.primary,
-                          disabledForegroundColor: Colors.black26,
-                          side: BorderSide(
-                            color: activeCount > 0
-                                ? const Color(0xFF777777)
-                                : const Color(0xFFD6D6D6),
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 19),
+                      child: SizedBox(
+                        height: 47,
+                        child: OutlinedButton.icon(
+                          onPressed: activeCount > 0 ? onClear : null,
+                          icon: const Icon(Icons.filter_alt_off, size: 17),
+                          label: const Text(
+                            'Limpiar',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          textStyle: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppTheme.primary,
+                            disabledForegroundColor: Colors.black26,
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            side: BorderSide(
+                              color: activeCount > 0
+                                  ? const Color(0xFF6F9674)
+                                  : const Color(0xFFD6D6D6),
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
                         ),
                       ),
@@ -600,6 +736,111 @@ class _ProgressiveFilters extends StatelessWidget {
   }
 }
 
+class _PeriodFilter extends StatelessWidget {
+  const _PeriodFilter({
+    required this.startDate,
+    required this.endDate,
+    required this.onStartDate,
+    required this.onEndDate,
+    required this.onClearStart,
+    required this.onClearEnd,
+  });
+
+  final DateTime? startDate;
+  final DateTime? endDate;
+  final VoidCallback onStartDate;
+  final VoidCallback onEndDate;
+  final VoidCallback onClearStart;
+  final VoidCallback onClearEnd;
+
+  void _openNext() {
+    if (startDate == null) {
+      onStartDate();
+      return;
+    }
+    if (endDate == null) {
+      onEndDate();
+      return;
+    }
+    onStartDate();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasValue = startDate != null || endDate != null;
+    final text = switch ((startDate, endDate)) {
+      (final start?, final end?) => '${_shortDate(start)} / ${_shortDate(end)}',
+      (final start?, null) => '${_shortDate(start)} / Seleccionar fin',
+      (null, final end?) => 'Seleccionar inicio / ${_shortDate(end)}',
+      _ => 'Seleccionar periodo',
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(left: 4, bottom: 4),
+          child: Text(
+            'Periodo',
+            style: TextStyle(
+              color: Color(0xFF4A4A4A),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        InkWell(
+          onTap: _openNext,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            height: 47,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF777777)),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.calendar_month_outlined,
+                  size: 18,
+                  color: Color(0xFF444444),
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    text,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: hasValue ? Colors.black87 : Colors.black45,
+                    ),
+                  ),
+                ),
+                if (hasValue)
+                  IconButton(
+                    tooltip: 'Limpiar periodo',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () {
+                      onClearStart();
+                      onClearEnd();
+                    },
+                    icon: const Icon(Icons.close, size: 17),
+                  )
+                else
+                  const Icon(Icons.keyboard_arrow_down, size: 19),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _FilterDropdown extends StatelessWidget {
   const _FilterDropdown({
     required this.label,
@@ -623,7 +864,9 @@ class _FilterDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final validValue = value != null && options.containsKey(value) ? value : null;
+    final validValue = value != null && options.containsKey(value)
+        ? value
+        : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -659,9 +902,7 @@ class _FilterDropdown extends StatelessWidget {
               horizontal: compact ? 9 : 12,
               vertical: compact ? 13 : 15,
             ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
               borderSide: const BorderSide(color: Color(0xFF777777)),
@@ -675,7 +916,7 @@ class _FilterDropdown extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: compact ? 13 : 14,
+                  fontSize: compact ? 12 : 14,
                   fontWeight: FontWeight.w700,
                   color: enabled ? Colors.black87 : Colors.black38,
                 ),
@@ -689,7 +930,7 @@ class _FilterDropdown extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: compact ? 13 : 14,
+                    fontSize: compact ? 12 : 14,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -740,14 +981,12 @@ class _DateFilter extends StatelessWidget {
           onTap: onTap,
           child: InputDecorator(
             decoration: InputDecoration(
-              prefixIcon: Icon(
-                Icons.calendar_month_outlined,
-                size: compact ? 18 : 20,
-              ),
-              prefixIconConstraints: const BoxConstraints(
-                minWidth: 36,
-                minHeight: 36,
-              ),
+              prefixIcon: value == null
+                  ? Icon(Icons.calendar_month_outlined, size: compact ? 18 : 20)
+                  : null,
+              prefixIconConstraints: value == null
+                  ? const BoxConstraints(minWidth: 36, minHeight: 36)
+                  : null,
               suffixIcon: value == null
                   ? Icon(Icons.keyboard_arrow_down, size: compact ? 18 : 20)
                   : IconButton(
@@ -775,11 +1014,11 @@ class _DateFilter extends StatelessWidget {
               ),
             ),
             child: Text(
-              value == null ? 'Fecha' : _shortDate(value!),
+              value == null ? 'Seleccionar' : _shortDate(value!),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: compact ? 13 : 14,
+                fontSize: compact ? 12 : 14,
                 fontWeight: FontWeight.w700,
                 color: value == null ? Colors.black45 : Colors.black87,
               ),
@@ -804,36 +1043,36 @@ class _ListCountHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Monitoreos\ndisponibles: $count',
-                  style: const TextStyle(
-                    color: AppTheme.darkGreen,
-                    fontSize: 20,
-                    height: 1.25,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  'Actualizado: ${_shortDate(updated)}, ${updated.hour.toString().padLeft(2, '0')}:${updated.minute.toString().padLeft(2, '0')}',
-                  style: const TextStyle(color: Colors.black45, fontSize: 12),
-                ),
-              ],
+    crossAxisAlignment: CrossAxisAlignment.end,
+    children: [
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Monitoreos\ndisponibles: $count',
+              style: const TextStyle(
+                color: AppTheme.darkGreen,
+                fontSize: 20,
+                height: 1.25,
+                fontWeight: FontWeight.w900,
+              ),
             ),
-          ),
-          FilledButton.tonalIcon(
-            onPressed: onRefresh,
-            icon: const Icon(Icons.refresh, size: 18),
-            label: const Text('Actualizar'),
-          ),
-        ],
-      );
+            const SizedBox(height: 5),
+            Text(
+              'Actualizado: ${_shortDate(updated)}, ${updated.hour.toString().padLeft(2, '0')}:${updated.minute.toString().padLeft(2, '0')}',
+              style: const TextStyle(color: Colors.black45, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+      FilledButton.tonalIcon(
+        onPressed: onRefresh,
+        icon: const Icon(Icons.refresh, size: 18),
+        label: const Text('Actualizar'),
+      ),
+    ],
+  );
 }
 
 class _MonitoringCard extends StatelessWidget {
@@ -941,9 +1180,13 @@ class _MonitoringCard extends StatelessWidget {
                       const SizedBox(height: 7),
                       Row(
                         children: [
-                          Expanded(child: _TinyField('Ciclo', header.programName)),
+                          Expanded(
+                            child: _TinyField('Ciclo', header.programName),
+                          ),
                           const SizedBox(width: 8),
-                          Expanded(child: _TinyField('Cultivo', header.cropName)),
+                          Expanded(
+                            child: _TinyField('Cultivo', header.cropName),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -951,7 +1194,10 @@ class _MonitoringCard extends StatelessWidget {
                         '⌂ ${header.ranchName}   ·   ${header.producerName}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.black54, fontSize: 12),
+                        style: const TextStyle(
+                          color: Colors.black54,
+                          fontSize: 12,
+                        ),
                       ),
                       if (state == 'cancelled' &&
                           header.cancellationReason != null) ...[
@@ -988,8 +1234,8 @@ class _MonitoringCard extends StatelessWidget {
                   state == 'cancelled'
                       ? 'Monitoreo cancelado'
                       : state == 'completed'
-                          ? 'Ver reporte'
-                          : 'Abrir monitoreo',
+                      ? 'Ver reporte'
+                      : 'Abrir monitoreo',
                   style: TextStyle(
                     color: state == 'cancelled'
                         ? const Color(0xFFC62828)
@@ -1014,29 +1260,29 @@ class _TinyField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.black45,
-              fontSize: 10,
-              letterSpacing: .3,
-            ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.black87,
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      );
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        label,
+        style: const TextStyle(
+          color: Colors.black45,
+          fontSize: 10,
+          letterSpacing: .3,
+        ),
+      ),
+      const SizedBox(height: 3),
+      Text(
+        value,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Colors.black87,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    ],
+  );
 }
 
 class _Message extends StatelessWidget {
@@ -1054,47 +1300,50 @@ class _Message extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(30),
-        children: [
-          const SizedBox(height: 90),
-          Icon(icon, size: 70, color: Colors.black26),
-          const SizedBox(height: 16),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 8),
-          Text(message, textAlign: TextAlign.center),
-          const SizedBox(height: 18),
-          Center(
-            child: OutlinedButton.icon(
-              onPressed: onPressed,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Actualizar'),
-            ),
-          ),
-        ],
-      );
+    physics: const AlwaysScrollableScrollPhysics(),
+    padding: const EdgeInsets.all(30),
+    children: [
+      const SizedBox(height: 90),
+      Icon(icon, size: 70, color: Colors.black26),
+      const SizedBox(height: 16),
+      Text(
+        title,
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+      ),
+      const SizedBox(height: 8),
+      Text(message, textAlign: TextAlign.center),
+      const SizedBox(height: 18),
+      Center(
+        child: OutlinedButton.icon(
+          onPressed: onPressed,
+          icon: const Icon(Icons.refresh),
+          label: const Text('Actualizar'),
+        ),
+      ),
+    ],
+  );
 }
 
 String _statusKey(String raw) {
   final value = raw.toLowerCase().trim().replaceAll(' ', '_');
-  if (value.contains('complet') || value.contains('finaliz')) return 'completed';
-  if (value.contains('progress') || value.contains('progreso')) return 'in_progress';
+  if (value.contains('complet') || value.contains('finaliz'))
+    return 'completed';
+  if (value.contains('progress') || value.contains('progreso'))
+    return 'in_progress';
   if (value.contains('cancel')) return 'cancelled';
   return 'pending';
 }
 
 String _statusLabel(String key) => switch (key) {
-      'completed' => 'Completado',
-      'in_progress' => 'En progreso',
-      'cancelled' => 'Cancelado',
-      _ => 'Pendiente',
-    };
+  'completed' => 'Completado',
+  'in_progress' => 'En progreso',
+  'cancelled' => 'Cancelado',
+  _ => 'Pendiente',
+};
 
-String _cycleKey(MonitoringHeader header) => header.programName.trim().toLowerCase();
+String _cycleKey(MonitoringHeader header) =>
+    header.programName.trim().toLowerCase();
 
 DateTime? _parseDate(String? raw) {
   if (raw == null || raw.trim().isEmpty) return null;
@@ -1102,14 +1351,27 @@ DateTime? _parseDate(String? raw) {
 }
 
 DateTime _startOfDay(DateTime d) => DateTime(d.year, d.month, d.day);
-DateTime _endOfDay(DateTime d) => DateTime(d.year, d.month, d.day, 23, 59, 59, 999);
+DateTime _endOfDay(DateTime d) =>
+    DateTime(d.year, d.month, d.day, 23, 59, 59, 999);
 
 String _shortDate(DateTime d) =>
     '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
 String _monthShort(int month) => const [
-      '', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'
-    ][month];
+  '',
+  'ene',
+  'feb',
+  'mar',
+  'abr',
+  'may',
+  'jun',
+  'jul',
+  'ago',
+  'sep',
+  'oct',
+  'nov',
+  'dic',
+][month];
 
 String _cropEmoji(String crop) {
   final value = crop.toLowerCase();
@@ -1121,4 +1383,3 @@ String _cropEmoji(String crop) {
   if (value.contains('limón') || value.contains('limon')) return '🍋';
   return '🌱';
 }
-

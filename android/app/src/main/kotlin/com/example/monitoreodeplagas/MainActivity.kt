@@ -4,12 +4,17 @@ import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.ClipData
 import android.content.ContentValues
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -23,7 +28,18 @@ class MainActivity : FlutterActivity() {
         private const val NOTIFICATION_PERMISSION_REQUEST = 7016
     }
 
-    private var pendingNotification: Pair<String, String>? = null
+    private data class SavedCsv(
+        val location: String,
+        val uri: Uri
+    )
+
+    private data class PendingCsvNotification(
+        val fileName: String,
+        val location: String,
+        val uri: Uri
+    )
+
+    private var pendingNotification: PendingCsvNotification? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -44,12 +60,13 @@ class MainActivity : FlutterActivity() {
             val content = call.argument<String>("content") ?: ""
 
             try {
-                val location = saveCsvToDownloads(fileName, content)
-                notifyDownload(fileName, location)
+                val saved = saveCsvToDownloads(fileName, content)
+                notifyDownload(fileName, saved)
                 result.success(
                     mapOf(
                         "fileName" to fileName,
-                        "location" to location
+                        "location" to saved.location,
+                        "uri" to saved.uri.toString()
                     )
                 )
             } catch (error: Exception) {
@@ -62,7 +79,7 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun saveCsvToDownloads(fileName: String, content: String): String {
+    private fun saveCsvToDownloads(fileName: String, content: String): SavedCsv {
         val safeName = fileName
             .replace(Regex("[\\\\/:*?\"<>|]"), "_")
             .let { if (it.lowercase().endsWith(".csv")) it else "$it.csv" }
@@ -101,7 +118,10 @@ class MainActivity : FlutterActivity() {
                 throw error
             }
 
-            return "Descargas/Monitoreos/$safeName"
+            return SavedCsv(
+                location = "Descargas/Monitoreos/$safeName",
+                uri = uri
+            )
         }
 
         @Suppress("DEPRECATION")
@@ -111,10 +131,18 @@ class MainActivity : FlutterActivity() {
         val folder = File(downloads, "Monitoreos").apply { mkdirs() }
         val file = File(folder, safeName)
         file.writeText(content, Charsets.UTF_8)
-        return "Descargas/Monitoreos/$safeName"
+        val uri = FileProvider.getUriForFile(
+            this,
+            "$packageName.fileprovider",
+            file
+        )
+        return SavedCsv(
+            location = "Descargas/Monitoreos/$safeName",
+            uri = uri
+        )
     }
 
-    private fun notifyDownload(fileName: String, location: String) {
+    private fun notifyDownload(fileName: String, saved: SavedCsv) {
         createNotificationChannel()
 
         if (
@@ -122,20 +150,24 @@ class MainActivity : FlutterActivity() {
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
                 PackageManager.PERMISSION_GRANTED
         ) {
-            pendingNotification = fileName to location
+            pendingNotification = PendingCsvNotification(
+                fileName = fileName,
+                location = saved.location,
+                uri = saved.uri
+            )
             requestPermissions(
                 arrayOf(Manifest.permission.POST_NOTIFICATIONS),
                 NOTIFICATION_PERMISSION_REQUEST
             )
             Toast.makeText(
                 this,
-                "CSV descargado en $location",
+                "CSV descargado en ${saved.location}",
                 Toast.LENGTH_LONG
             ).show()
             return
         }
 
-        postDownloadNotification(fileName, location)
+        postDownloadNotification(fileName, saved.location, saved.uri)
     }
 
     private fun createNotificationChannel() {
@@ -154,7 +186,30 @@ class MainActivity : FlutterActivity() {
         )
     }
 
-    private fun postDownloadNotification(fileName: String, location: String) {
+    private fun openCsvPendingIntent(uri: Uri): PendingIntent {
+        val openIntent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "text/csv")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            clipData = ClipData.newRawUri("CIAGRO CSV", uri)
+        }
+        val chooserIntent = Intent.createChooser(
+            openIntent,
+            "Abrir reporte CSV"
+        ).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            clipData = ClipData.newRawUri("CIAGRO CSV", uri)
+        }
+
+        return PendingIntent.getActivity(
+            this,
+            (System.currentTimeMillis() and 0x7FFFFFFF).toInt(),
+            chooserIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun postDownloadNotification(fileName: String, location: String, uri: Uri) {
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
         } else {
@@ -165,11 +220,12 @@ class MainActivity : FlutterActivity() {
         val notification = builder
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle("Reporte CSV descargado")
-            .setContentText(fileName)
+            .setContentText("Toca para abrir $fileName")
             .setStyle(
                 Notification.BigTextStyle()
-                    .bigText("$fileName se guardó correctamente en $location")
+                    .bigText("$fileName se guardó correctamente en $location. Toca para abrirlo.")
             )
+            .setContentIntent(openCsvPendingIntent(uri))
             .setAutoCancel(true)
             .build()
 
@@ -193,11 +249,15 @@ class MainActivity : FlutterActivity() {
         if (pending == null) return
 
         if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-            postDownloadNotification(pending.first, pending.second)
+            postDownloadNotification(
+                pending.fileName,
+                pending.location,
+                pending.uri
+            )
         } else {
             Toast.makeText(
                 this,
-                "CSV descargado en ${pending.second}",
+                "CSV descargado en ${pending.location}",
                 Toast.LENGTH_LONG
             ).show()
         }

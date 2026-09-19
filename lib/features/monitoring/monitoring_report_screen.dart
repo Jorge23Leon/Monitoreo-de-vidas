@@ -23,7 +23,9 @@ class MonitoringReportScreen extends StatefulWidget {
 }
 
 class _MonitoringReportScreenState extends State<MonitoringReportScreen> {
-  static const MethodChannel _downloadsChannel = MethodChannel('ciagro/downloads');
+  static const MethodChannel _downloadsChannel = MethodChannel(
+    'ciagro/downloads',
+  );
   final repo = MonitoringRepository();
   late MonitoringHeader header;
   late Future<_ReportData> future;
@@ -52,7 +54,9 @@ class _MonitoringReportScreenState extends State<MonitoringReportScreen> {
       targets: await targetsFuture,
       pendingCount: await pendingFuture,
       catalog: await catalogFuture,
-      polygon: polygonRaw.map((e) => MapPoint(e.lat, e.lon)).toList(growable: false),
+      polygon: polygonRaw
+          .map((e) => MapPoint(e.lat, e.lon))
+          .toList(growable: false),
     );
   }
 
@@ -89,21 +93,24 @@ class _MonitoringReportScreenState extends State<MonitoringReportScreen> {
         'Imagen',
         'Comentario',
       ],
-      ...data.displayRows.map((row) => [
-            '${row.pointNumber}',
-            row.latitude == null ? '' : row.latitude!.toStringAsFixed(6),
-            row.longitude == null ? '' : row.longitude!.toStringAsFixed(6),
-            row.name,
-            row.type,
-            row.stage,
-            row.quantity,
-            row.severity,
-            row.capturedAt,
-            row.photo == null ? '0' : '1',
-            row.notes,
-          ]),
+      ...data.displayRows.map(
+        (row) => [
+          '${row.pointNumber}',
+          row.latitude == null ? '' : row.latitude!.toStringAsFixed(6),
+          row.longitude == null ? '' : row.longitude!.toStringAsFixed(6),
+          row.name,
+          row.type,
+          row.stage,
+          row.quantity,
+          row.severity,
+          row.capturedAt,
+          row.photo == null ? '0' : '1',
+          row.notes,
+        ],
+      ),
     ];
-    final csv = '\uFEFF${rows.map((row) => row.map(_csvEscape).join(',')).join('\r\n')}';
+    final csv =
+        '\uFEFF${rows.map((row) => row.map(_csvEscape).join(',')).join('\r\n')}';
     final fileName =
         'reporte_${_safeFileName(header.plotName)}_${DateTime.now().millisecondsSinceEpoch}.csv';
 
@@ -114,10 +121,7 @@ class _MonitoringReportScreenState extends State<MonitoringReportScreen> {
       try {
         final result = await _downloadsChannel.invokeMethod<dynamic>(
           'saveCsv',
-          <String, dynamic>{
-            'fileName': fileName,
-            'content': csv,
-          },
+          <String, dynamic>{'fileName': fileName, 'content': csv},
         );
         final location = result is Map
             ? '${result['location'] ?? 'Descargas/Monitoreos'}'
@@ -145,10 +149,11 @@ class _MonitoringReportScreenState extends State<MonitoringReportScreen> {
   Future<void> _showPhoto(_DisplayRecord row) async {
     final source = row.photo;
     if (source == null || source.trim().isEmpty) return;
+
     final local = File(source);
     final Widget image;
     if (await local.exists()) {
-      image = Image.file(local, fit: BoxFit.contain);
+      image = Image.file(local, fit: BoxFit.contain, gaplessPlayback: true);
     } else {
       image = AuthenticatedRemoteImage(
         url: source,
@@ -156,14 +161,14 @@ class _MonitoringReportScreenState extends State<MonitoringReportScreen> {
         fallback: const _EvidenceUnavailable(),
       );
     }
+
     if (!mounted) return;
     await showDialog<void>(
       context: context,
-      builder: (context) => Dialog(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 650, maxWidth: 700),
-          child: Padding(padding: const EdgeInsets.all(10), child: image),
-        ),
+      barrierColor: Colors.black87,
+      builder: (_) => _ZoomablePhotoDialog(
+        image: image,
+        title: '${row.name} Â· Punto ${row.pointNumber}',
       ),
     );
   }
@@ -176,7 +181,10 @@ class _MonitoringReportScreenState extends State<MonitoringReportScreen> {
         title: Text('${row.name} · Punto ${row.pointNumber}'),
         content: Text(row.notes),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cerrar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
+          ),
         ],
       ),
     );
@@ -184,9 +192,7 @@ class _MonitoringReportScreenState extends State<MonitoringReportScreen> {
 
   Future<void> _openFullMap(_ReportData data) async {
     await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => _FullReportMapScreen(data: data),
-      ),
+      MaterialPageRoute<void>(builder: (_) => _FullReportMapScreen(data: data)),
     );
   }
 
@@ -226,17 +232,23 @@ class _MonitoringReportScreenState extends State<MonitoringReportScreen> {
                   future: future,
                   builder: (context, snapshot) {
                     if (snapshot.connectionState != ConnectionState.done) {
-                      return const Center(child: GpaLoadingIndicator(text: 'Cargando reporte...'));
+                      return const Center(
+                        child: GpaLoadingIndicator(text: 'Cargando reporte...'),
+                      );
                     }
-                    final data = snapshot.data ?? const _ReportData(
-                      remote: [],
-                      local: [],
-                      targets: [],
-                      pendingCount: 0,
-                      catalog: [],
-                      polygon: [],
-                    );
+                    final data =
+                        snapshot.data ??
+                        const _ReportData(
+                          remote: [],
+                          local: [],
+                          targets: [],
+                          pendingCount: 0,
+                          catalog: [],
+                          polygon: [],
+                        );
                     final summary = data.summary;
+                    final synchronized =
+                        !snapshot.hasError && summary.pending == 0;
                     final captured = data.capturedPoints;
                     final reviewPending = data.reviewPendingPoints;
 
@@ -321,15 +333,26 @@ class _MonitoringReportScreenState extends State<MonitoringReportScreen> {
                                   child: FilledButton.icon(
                                     onPressed: syncing ? null : _sync,
                                     icon: syncing
-                                        ? const GpaLoadingIndicator(size: 24, showText: false)
-                                        : const Icon(Icons.sync),
+                                        ? const GpaLoadingIndicator(
+                                            size: 24,
+                                            showText: false,
+                                          )
+                                        : Icon(
+                                            synchronized
+                                                ? Icons.check_circle_outline
+                                                : Icons.sync,
+                                          ),
                                     label: Text(
-                                      summary.pending > 0
-                                          ? 'Sincronizar (${summary.pending})'
-                                          : 'Sincronizar',
+                                      syncing
+                                          ? 'Sincronizando...'
+                                          : synchronized
+                                          ? 'Sincronizado'
+                                          : 'Sincronizar (${summary.pending})',
                                     ),
                                     style: FilledButton.styleFrom(
-                                      backgroundColor: const Color(0xFFFFA000),
+                                      backgroundColor: synchronized
+                                          ? const Color(0xFF198754)
+                                          : const Color(0xFFFFA000),
                                       foregroundColor: Colors.white,
                                       minimumSize: const Size.fromHeight(58),
                                       shape: RoundedRectangleBorder(
@@ -406,28 +429,195 @@ class _MonitoringReportScreenState extends State<MonitoringReportScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
 }
 
+class _ZoomablePhotoDialog extends StatefulWidget {
+  const _ZoomablePhotoDialog({required this.image, required this.title});
+
+  final Widget image;
+  final String title;
+
+  @override
+  State<_ZoomablePhotoDialog> createState() => _ZoomablePhotoDialogState();
+}
+
+class _ZoomablePhotoDialogState extends State<_ZoomablePhotoDialog> {
+  final TransformationController _controller = TransformationController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _reset() {
+    _controller.value = TransformationController().value;
+    setState(() {});
+  }
+
+  void _zoom(double factor) {
+    final current = _controller.value.getMaxScaleOnAxis();
+    final target = (current * factor).clamp(1.0, 10.0);
+    final relative = target / current;
+    final matrix = _controller.value.clone()..scale(relative);
+    _controller.value = matrix;
+    setState(() {});
+  }
+
+  void _toggleDoubleTapZoom() {
+    final current = _controller.value.getMaxScaleOnAxis();
+    if (current > 1.05) {
+      _reset();
+    } else {
+      _zoom(2.5);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 18),
+      backgroundColor: Colors.black,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: SizedBox(
+        width: size.width,
+        height: size.height * .84,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    color: Colors.white,
+                    icon: const Icon(Icons.close),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      widget.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _reset,
+                    child: const Text('Restablecer'),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: Container(
+                        color: Colors.black,
+                        alignment: Alignment.center,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onDoubleTap: _toggleDoubleTapZoom,
+                          child: InteractiveViewer(
+                            transformationController: _controller,
+                            minScale: 1.0,
+                            maxScale: 10.0,
+                            panEnabled: true,
+                            scaleEnabled: true,
+                            trackpadScrollCausesScale: true,
+                            boundaryMargin: const EdgeInsets.all(500),
+                            clipBehavior: Clip.none,
+                            child: SizedBox.expand(
+                              child: Center(child: widget.image),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 12,
+                    top: 12,
+                    child: Column(
+                      children: [
+                        _ZoomButton(
+                          icon: Icons.add,
+                          tooltip: 'Acercar',
+                          onTap: () => _zoom(1.35),
+                        ),
+                        const SizedBox(height: 8),
+                        _ZoomButton(
+                          icon: Icons.remove,
+                          tooltip: 'Alejar',
+                          onTap: () => _zoom(1 / 1.35),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ZoomButton extends StatelessWidget {
+  const _ZoomButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black.withValues(alpha: .72),
+      shape: const CircleBorder(),
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: onTap,
+        color: Colors.white,
+        icon: Icon(icon),
+      ),
+    );
+  }
+}
 
 class _EvidenceUnavailable extends StatelessWidget {
   const _EvidenceUnavailable();
 
   @override
   Widget build(BuildContext context) => Container(
-        alignment: Alignment.center,
-        padding: const EdgeInsets.all(24),
-        color: const Color(0xFFF3F5F1),
-        child: const Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.broken_image_outlined, size: 42, color: Colors.black45),
-            SizedBox(height: 10),
-            Text(
-              'No se pudo cargar esta evidencia.\nSi fue tomada en este teléfono, vuelve a sincronizar cuando tengas conexión.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.black54),
-            ),
-          ],
+    alignment: Alignment.center,
+    padding: const EdgeInsets.all(24),
+    color: const Color(0xFFF3F5F1),
+    child: const Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.broken_image_outlined, size: 42, color: Colors.black45),
+        SizedBox(height: 10),
+        Text(
+          'No se pudo cargar esta evidencia.\nSi fue tomada en este teléfono, vuelve a sincronizar cuando tengas conexión.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.black54),
         ),
-      );
+      ],
+    ),
+  );
 }
 
 class _ReportData {
@@ -448,8 +638,8 @@ class _ReportData {
   final List<MapPoint> polygon;
 
   Map<String, PhytoCatalogItem> get _catalogById => {
-        for (final item in catalog) item.id: item,
-      };
+    for (final item in catalog) item.id: item,
+  };
 
   List<_DisplayRecord> get displayRows {
     final result = <_DisplayRecord>[];
@@ -460,7 +650,8 @@ class _ReportData {
     final pointByServer = <String, TargetPoint>{};
     for (final point in targets) {
       final serverId = point.serverId;
-      if (serverId != null && serverId.isNotEmpty) pointByServer[serverId] = point;
+      if (serverId != null && serverId.isNotEmpty)
+        pointByServer[serverId] = point;
     }
 
     final localByTarget = <String, List<PendingCheckpoint>>{};
@@ -481,8 +672,10 @@ class _ReportData {
     }
     final severityByRemoteTarget = <String, String>{};
     for (final entry in remoteByTarget.entries) {
-      severityByRemoteTarget[entry.key] =
-          _remotePestSeverity(entry.value, catalogById);
+      severityByRemoteTarget[entry.key] = _remotePestSeverity(
+        entry.value,
+        catalogById,
+      );
     }
 
     // Mantiene una referencia a la captura local incluso después de sincronizar.
@@ -500,7 +693,12 @@ class _ReportData {
       final id = flexibleId(item['id']) ?? '';
       if (id.isNotEmpty) remoteIds.add(id);
       final targetId = _remoteTargetId(item);
-      final point = _findTargetForRemote(item, targetId, pointByServer, targets);
+      final point = _findTargetForRemote(
+        item,
+        targetId,
+        pointByServer,
+        targets,
+      );
       result.add(
         _remoteRow(
           item,
@@ -528,20 +726,20 @@ class _ReportData {
           stage: isNoPest
               ? '-'
               : disease
-                  ? _diseasePhase(cp.stage, cp.presenceStatus)
-                  : (cp.stage == null || cp.stage!.trim().isEmpty
-                      ? '-'
-                      : stageLabel(cp.stage!)),
+              ? _diseasePhase(cp.stage, cp.presenceStatus)
+              : (cp.stage == null || cp.stage!.trim().isEmpty
+                    ? '-'
+                    : stageLabel(cp.stage!)),
           quantity: isNoPest
               ? '0'
               : disease
-                  ? '—'
-                  : '${cp.qty}',
+              ? '—'
+              : '${cp.qty}',
           severity: isNoPest
               ? 'Sin plaga'
               : disease
-                  ? _diseaseSeverity(cp.stage, cp.presenceStatus)
-                  : (severityByLocalTarget[cp.targetId] ?? 'Sin plaga'),
+              ? _diseaseSeverity(cp.stage, cp.presenceStatus)
+              : (severityByLocalTarget[cp.targetId] ?? 'Sin plaga'),
           capturedAt: _formatDate(cp.capturedAt),
           photo: cp.photoPath,
           notes: _cleanSeverityMetadata(cp.notes),
@@ -689,7 +887,8 @@ class _ReportData {
     required Map<String, PhytoCatalogItem> catalogById,
     PendingCheckpoint? localMirror,
   }) {
-    final issueRaw = item['phyto_issue'] ?? item['phyto_issue_id'] ?? item['phytosanitary'];
+    final issueRaw =
+        item['phyto_issue'] ?? item['phyto_issue_id'] ?? item['phytosanitary'];
     final issue = issueRaw is Map
         ? Map<String, dynamic>.from(issueRaw)
         : const <String, dynamic>{};
@@ -699,8 +898,8 @@ class _ReportData {
     final name = noPest
         ? 'Sin plaga'
         : firstText(issue, const ['name', 'nombre', 'label']) ??
-            catalogItem?.name ??
-            'Fitosanitario sin nombre';
+              catalogItem?.name ??
+              'Fitosanitario sin nombre';
     final stage = item['stage']?.toString();
     final presence = '${item['presence_status'] ?? ''}'.toLowerCase();
     final qty = int.tryParse('${item['qty'] ?? 0}') ?? 0;
@@ -713,18 +912,18 @@ class _ReportData {
       stage: noPest
           ? '-'
           : disease
-              ? _diseasePhase(stage, qty == 0 ? 'low' : presence)
-              : (stage == null || stage.trim().isEmpty ? '-' : stageLabel(stage)),
+          ? _diseasePhase(stage, qty == 0 ? 'low' : presence)
+          : (stage == null || stage.trim().isEmpty ? '-' : stageLabel(stage)),
       quantity: noPest
           ? '0'
           : disease
-              ? '—'
-              : '$qty',
+          ? '—'
+          : '$qty',
       severity: noPest
           ? 'Sin plaga'
           : disease
-              ? _diseaseSeverity(stage, qty == 0 ? 'low' : presence)
-              : pestSeverity,
+          ? _diseaseSeverity(stage, qty == 0 ? 'low' : presence)
+          : pestSeverity,
       capturedAt: _formatDynamicDate(item['captured_at']),
       // No usamos photoUrlFrom(item) sobre todo el JSON: `photo_ref` puede ser
       // solo un nombre de archivo y antes se interpretaba como URL, provocando
@@ -792,7 +991,10 @@ class _HeaderCard extends StatelessWidget {
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 13,
+                        vertical: 9,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(22),
@@ -839,22 +1041,38 @@ class _HeaderCard extends StatelessWidget {
                         children: [
                           const Text(
                             'PRODUCTOR',
-                            style: TextStyle(color: Colors.white60, fontSize: 10, fontWeight: FontWeight.w800),
+                            style: TextStyle(
+                              color: Colors.white60,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
                           Text(
                             header.producerName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
                           const SizedBox(height: 8),
                           const Text(
                             'CULTIVO',
-                            style: TextStyle(color: Colors.white60, fontSize: 10, fontWeight: FontWeight.w800),
+                            style: TextStyle(
+                              color: Colors.white60,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
                           Text(
                             header.cropName,
-                            style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
                         ],
                       ),
@@ -864,9 +1082,21 @@ class _HeaderCard extends StatelessWidget {
                 const SizedBox(height: 16),
                 Row(
                   children: [
-                    Expanded(child: _HeroInfo(icon: Icons.home_outlined, label: 'RANCHO', value: header.ranchName)),
+                    Expanded(
+                      child: _HeroInfo(
+                        icon: Icons.home_outlined,
+                        label: 'RANCHO',
+                        value: header.ranchName,
+                      ),
+                    ),
                     const SizedBox(width: 10),
-                    Expanded(child: _HeroInfo(icon: Icons.my_location_outlined, label: 'PARCELA', value: header.plotName)),
+                    Expanded(
+                      child: _HeroInfo(
+                        icon: Icons.my_location_outlined,
+                        label: 'PARCELA',
+                        value: header.plotName,
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -898,39 +1128,64 @@ class _HeaderCard extends StatelessWidget {
 }
 
 class _HeroInfo extends StatelessWidget {
-  const _HeroInfo({required this.icon, required this.label, required this.value});
+  const _HeroInfo({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
   final IconData icon;
   final String label;
   final String value;
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: .10),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: Colors.white, size: 24),
-            const SizedBox(width: 9),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label, style: const TextStyle(color: Colors.white60, fontSize: 9, fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 3),
-                  Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
-                ],
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: .10),
+      borderRadius: BorderRadius.circular(16),
+    ),
+    child: Row(
+      children: [
+        Icon(icon, color: Colors.white, size: 24),
+        const SizedBox(width: 9),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white60,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 3),
+              Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
         ),
-      );
+      ],
+    ),
+  );
 }
 
 class _ReportStatCard extends StatelessWidget {
-  const _ReportStatCard({required this.icon, required this.value, required this.title, required this.subtitle, required this.accent});
+  const _ReportStatCard({
+    required this.icon,
+    required this.value,
+    required this.title,
+    required this.subtitle,
+    required this.accent,
+  });
   final IconData icon;
   final int value;
   final String title;
@@ -939,30 +1194,46 @@ class _ReportStatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-        margin: EdgeInsets.zero,
-        elevation: 2,
-        color: Colors.white,
-        surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 14, 8, 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: accent.withValues(alpha: .10),
-                child: Icon(icon, color: accent, size: 22),
-              ),
-              const SizedBox(height: 9),
-              Text('$value', style: const TextStyle(color: AppTheme.darkGreen, fontSize: 26, fontWeight: FontWeight.w900)),
-              Text(title, maxLines: 1, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 7),
-              Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: accent, fontSize: 10)),
-            ],
+    margin: EdgeInsets.zero,
+    elevation: 2,
+    color: Colors.white,
+    surfaceTintColor: Colors.transparent,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(12, 14, 8, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: accent.withValues(alpha: .10),
+            child: Icon(icon, color: accent, size: 22),
           ),
-        ),
-      );
+          const SizedBox(height: 9),
+          Text(
+            '$value',
+            style: const TextStyle(
+              color: AppTheme.darkGreen,
+              fontSize: 26,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          Text(
+            title,
+            maxLines: 1,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            subtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: accent, fontSize: 10),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _ReportMapCard extends StatelessWidget {
@@ -982,92 +1253,130 @@ class _ReportMapCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-        margin: EdgeInsets.zero,
-        elevation: 2,
-        color: Colors.white,
-        surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    margin: EdgeInsets.zero,
+    elevation: 2,
+    color: Colors.white,
+    surfaceTintColor: Colors.transparent,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Mapa del monitoreo', style: TextStyle(color: AppTheme.darkGreen, fontSize: 21, fontWeight: FontWeight.w900)),
-                        SizedBox(height: 3),
-                        Text('Toca un punto para consultar plagas y enfermedades.', style: TextStyle(color: Colors.black54, fontSize: 12)),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                    decoration: BoxDecoration(color: const Color(0xFFE8F7E8), borderRadius: BorderRadius.circular(22)),
-                    child: Text('$vertexCount vértices', style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w900)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Stack(
-                children: [
-                  LeafletMap(
-                    points: points,
-                    polygon: polygon,
-                    height: 370,
-                    onPointTap: onPointTap,
-                  ),
-                  Positioned(
-                    top: 10,
-                    right: 10,
-                    child: Material(
-                      color: Colors.white,
-                      elevation: 3,
-                      shape: const CircleBorder(),
-                      child: IconButton(
-                        tooltip: 'Abrir mapa completo',
-                        onPressed: onOpenMap,
-                        icon: const Icon(Icons.fullscreen, color: AppTheme.primary, size: 30),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Mapa del monitoreo',
+                      style: TextStyle(
+                        color: AppTheme.darkGreen,
+                        fontSize: 21,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
-                  ),
-                  Positioned(
-                    left: 10,
-                    right: 10,
-                    bottom: 10,
-                    child: Row(
-                      children: const [
-                        Expanded(child: _LegendBox(title: 'Índice P · Plagas', disease: false)),
-                        SizedBox(width: 6),
-                        Expanded(child: _LegendBox(title: 'Índice E · Enfermedades', disease: true)),
-                      ],
+                    SizedBox(height: 3),
+                    Text(
+                      'Toca un punto para consultar plagas y enfermedades.',
+                      style: TextStyle(color: Colors.black54, fontSize: 12),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-              const SizedBox(height: 11),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: onOpenMap,
-                  icon: const Icon(Icons.fullscreen),
-                  label: const Text('Abrir mapa completo y tocar puntos'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.primary,
-                    minimumSize: const Size.fromHeight(50),
-                    side: const BorderSide(color: Color(0xFFB8C8B6)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    textStyle: const TextStyle(fontWeight: FontWeight.w900),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 9,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F7E8),
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: Text(
+                  '$vertexCount vértices',
+                  style: const TextStyle(
+                    color: AppTheme.primary,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ),
             ],
           ),
-        ),
-      );
+          const SizedBox(height: 10),
+          Stack(
+            children: [
+              LeafletMap(
+                points: points,
+                polygon: polygon,
+                height: 370,
+                onPointTap: onPointTap,
+              ),
+              Positioned(
+                top: 10,
+                right: 10,
+                child: Material(
+                  color: Colors.white,
+                  elevation: 3,
+                  shape: const CircleBorder(),
+                  child: IconButton(
+                    tooltip: 'Abrir mapa completo',
+                    onPressed: onOpenMap,
+                    icon: const Icon(
+                      Icons.fullscreen,
+                      color: AppTheme.primary,
+                      size: 30,
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 10,
+                right: 10,
+                bottom: 10,
+                child: Row(
+                  children: const [
+                    Expanded(
+                      child: _LegendBox(
+                        title: 'Índice P · Plagas',
+                        disease: false,
+                      ),
+                    ),
+                    SizedBox(width: 6),
+                    Expanded(
+                      child: _LegendBox(
+                        title: 'Índice E · Enfermedades',
+                        disease: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 11),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: onOpenMap,
+              icon: const Icon(Icons.fullscreen),
+              label: const Text('Abrir mapa completo y tocar puntos'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.primary,
+                minimumSize: const Size.fromHeight(50),
+                side: const BorderSide(color: Color(0xFFB8C8B6)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                textStyle: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _FullReportMapScreen extends StatelessWidget {
@@ -1103,22 +1412,48 @@ class _FullReportMapScreen extends StatelessWidget {
                 children: [
                   IconButton(
                     onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.arrow_back, color: AppTheme.darkGreen, size: 30),
+                    icon: const Icon(
+                      Icons.arrow_back,
+                      color: AppTheme.darkGreen,
+                      size: 30,
+                    ),
                   ),
                   const SizedBox(width: 4),
                   const Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Mapa del monitoreo', style: TextStyle(color: AppTheme.darkGreen, fontSize: 22, fontWeight: FontWeight.w900)),
-                        Text('Toca un punto para ver el detalle', style: TextStyle(color: Colors.black54, fontSize: 13)),
+                        Text(
+                          'Mapa del monitoreo',
+                          style: TextStyle(
+                            color: AppTheme.darkGreen,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        Text(
+                          'Toca un punto para ver el detalle',
+                          style: TextStyle(color: Colors.black54, fontSize: 13),
+                        ),
                       ],
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                    decoration: BoxDecoration(color: const Color(0xFFE8F7E8), borderRadius: BorderRadius.circular(22)),
-                    child: Text('${data.polygon.length} vértices', style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w900)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 9,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8F7E8),
+                      borderRadius: BorderRadius.circular(22),
+                    ),
+                    child: Text(
+                      '${data.polygon.length} vértices',
+                      style: const TextStyle(
+                        color: AppTheme.primary,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -1143,9 +1478,19 @@ class _FullReportMapScreen extends StatelessWidget {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: const [
-                            Expanded(child: _LegendBox(title: 'Índice P · Plagas', disease: false)),
+                            Expanded(
+                              child: _LegendBox(
+                                title: 'Índice P · Plagas',
+                                disease: false,
+                              ),
+                            ),
                             SizedBox(width: 8),
-                            Expanded(child: _LegendBox(title: 'Índice E · Enfermedades', disease: true)),
+                            Expanded(
+                              child: _LegendBox(
+                                title: 'Índice E · Enfermedades',
+                                disease: true,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -1168,31 +1513,57 @@ class _LegendBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(color: Colors.white.withValues(alpha: .90), borderRadius: BorderRadius.circular(13)),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: const TextStyle(color: AppTheme.darkGreen, fontSize: 11, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 4),
-            _legendLine(const Color(0xFF1BA64B), disease ? 'Sin presencia' : 'Sin plaga'),
-            _legendLine(const Color(0xFFFFC107), disease ? 'Baja' : 'Severidad menor'),
-            _legendLine(const Color(0xFFFF7A00), disease ? 'Media' : 'Severidad mayor'),
-            _legendLine(const Color(0xFFD82424), disease ? 'Alta' : 'Severidad alta'),
-          ],
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: .90),
+      borderRadius: BorderRadius.circular(13),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: AppTheme.darkGreen,
+            fontSize: 11,
+            fontWeight: FontWeight.w900,
+          ),
         ),
-      );
+        const SizedBox(height: 4),
+        _legendLine(
+          const Color(0xFF1BA64B),
+          disease ? 'Sin presencia' : 'Sin plaga',
+        ),
+        _legendLine(
+          const Color(0xFFFFC107),
+          disease ? 'Baja' : 'Severidad menor',
+        ),
+        _legendLine(
+          const Color(0xFFFF7A00),
+          disease ? 'Media' : 'Severidad mayor',
+        ),
+        _legendLine(
+          const Color(0xFFD82424),
+          disease ? 'Alta' : 'Severidad alta',
+        ),
+      ],
+    ),
+  );
 
   Widget _legendLine(Color color, String text) => Padding(
-        padding: const EdgeInsets.only(top: 2),
-        child: Row(
-          children: [
-            Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-            const SizedBox(width: 5),
-            Expanded(child: Text(text, style: const TextStyle(fontSize: 8.5))),
-          ],
+    padding: const EdgeInsets.only(top: 2),
+    child: Row(
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
-      );
+        const SizedBox(width: 5),
+        Expanded(child: Text(text, style: const TextStyle(fontSize: 8.5))),
+      ],
+    ),
+  );
 }
 
 String _reportCropEmoji(String crop) {
@@ -1222,7 +1593,10 @@ class _CaptureTable extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         child: DataTable(
           headingRowColor: WidgetStatePropertyAll(Colors.green.shade800),
-          headingTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+          headingTextStyle: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
           columnSpacing: 22,
           columns: const [
             DataColumn(label: Text('Punto')),
@@ -1235,37 +1609,47 @@ class _CaptureTable extends StatelessWidget {
             DataColumn(label: Text('Imagen')),
             DataColumn(label: Text('Comentario')),
           ],
-          rows: rows.map((row) {
-            return DataRow(
-              cells: [
-                DataCell(Text('${row.pointNumber}')),
-                DataCell(SizedBox(width: 150, child: Text(row.name))),
-                DataCell(Text(row.type)),
-                DataCell(Text(row.stage)),
-                DataCell(Text(row.quantity)),
-                DataCell(Text(row.severity, style: const TextStyle(fontWeight: FontWeight.w700))),
-                DataCell(Text(row.capturedAt)),
-                DataCell(
-                  TextButton(
-                    onPressed: row.photo == null ? null : () => onPhoto(row),
-                    child: Text(row.photo == null ? '📷 0' : '🖼️ 1'),
-                  ),
-                ),
-                DataCell(
-                  TextButton(
-                    onPressed: row.notes.trim().isEmpty ? null : () => onComment(row),
-                    child: Text(row.notes.trim().isEmpty ? '💬 0' : '💬'),
-                  ),
-                ),
-              ],
-            );
-          }).toList(growable: false),
+          rows: rows
+              .map((row) {
+                return DataRow(
+                  cells: [
+                    DataCell(Text('${row.pointNumber}')),
+                    DataCell(SizedBox(width: 150, child: Text(row.name))),
+                    DataCell(Text(row.type)),
+                    DataCell(Text(row.stage)),
+                    DataCell(Text(row.quantity)),
+                    DataCell(
+                      Text(
+                        row.severity,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    DataCell(Text(row.capturedAt)),
+                    DataCell(
+                      TextButton(
+                        onPressed: row.photo == null
+                            ? null
+                            : () => onPhoto(row),
+                        child: Text(row.photo == null ? '📷 0' : '🖼️ 1'),
+                      ),
+                    ),
+                    DataCell(
+                      TextButton(
+                        onPressed: row.notes.trim().isEmpty
+                            ? null
+                            : () => onComment(row),
+                        child: Text(row.notes.trim().isEmpty ? '💬 0' : '💬'),
+                      ),
+                    ),
+                  ],
+                );
+              })
+              .toList(growable: false),
         ),
       ),
     );
   }
 }
-
 
 class _PointReportView {
   const _PointReportView({
@@ -1294,16 +1678,22 @@ class _PointReportView {
 
   String get mainDate {
     if (captures.isEmpty) return 'Sin captura';
-    return captures.map((row) => row.capturedAt).where((value) => value.trim().isNotEmpty).fold<String>(
-      '',
-      (latest, value) => latest.isEmpty || value.compareTo(latest) > 0 ? value : latest,
-    );
+    return captures
+        .map((row) => row.capturedAt)
+        .where((value) => value.trim().isNotEmpty)
+        .fold<String>(
+          '',
+          (latest, value) =>
+              latest.isEmpty || value.compareTo(latest) > 0 ? value : latest,
+        );
   }
 }
 
 String _pestIndexForRows(List<_DisplayRecord> rows, {required bool captured}) {
   if (!captured) return 'Sin evaluar';
-  final pests = rows.where((row) => row.type == 'Plaga').toList(growable: false);
+  final pests = rows
+      .where((row) => row.type == 'Plaga')
+      .toList(growable: false);
   if (pests.isEmpty) return 'Sin plaga';
   const order = <String, int>{
     'Sin plaga': 0,
@@ -1324,20 +1714,30 @@ String _pestIndexForRows(List<_DisplayRecord> rows, {required bool captured}) {
   return best;
 }
 
-String _diseaseIndexForRows(List<_DisplayRecord> rows, {required bool captured}) {
+String _diseaseIndexForRows(
+  List<_DisplayRecord> rows, {
+  required bool captured,
+}) {
   if (!captured) return 'Sin evaluar';
-  final diseases = rows.where((row) => row.type == 'Enfermedad').toList(growable: false);
+  final diseases = rows
+      .where((row) => row.type == 'Enfermedad')
+      .toList(growable: false);
   if (diseases.isEmpty) return 'Sin presencia';
   var rank = 0;
   for (final row in diseases) {
     final text = '${row.severity} ${row.stage}'.toLowerCase();
-    final current = text.contains('avanz') || text.contains('terminal') || text.contains('alta')
+    final current =
+        text.contains('avanz') ||
+            text.contains('terminal') ||
+            text.contains('alta')
         ? 3
         : text.contains('desarrollo') || text.contains('media')
-            ? 2
-            : text.contains('inicio') || text.contains('presente') || text.contains('baja')
-                ? 1
-                : 0;
+        ? 2
+        : text.contains('inicio') ||
+              text.contains('presente') ||
+              text.contains('baja')
+        ? 1
+        : 0;
     if (current > rank) rank = current;
   }
   return switch (rank) {
@@ -1371,7 +1771,10 @@ Color _hexColor(String hex) {
   return Color(int.parse('FF$clean', radix: 16));
 }
 
-Future<void> _showPointDetailSheet(BuildContext context, _PointReportView point) async {
+Future<void> _showPointDetailSheet(
+  BuildContext context,
+  _PointReportView point,
+) async {
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -1395,18 +1798,33 @@ Future<void> _showPointDetailSheet(BuildContext context, _PointReportView point)
               child: Container(
                 width: 90,
                 height: 6,
-                decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(99)),
+                decoration: BoxDecoration(
+                  color: Colors.black12,
+                  borderRadius: BorderRadius.circular(99),
+                ),
               ),
             ),
             const SizedBox(height: 14),
             Row(
               children: [
                 Expanded(
-                  child: Text('Punto ${point.number}', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900)),
+                  child: Text(
+                    'Punto ${point.number}',
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                 ),
                 TextButton(
                   onPressed: () => Navigator.pop(sheetContext),
-                  child: const Text('Cerrar', style: TextStyle(color: AppTheme.darkGreen, fontWeight: FontWeight.w800)),
+                  child: const Text(
+                    'Cerrar',
+                    style: TextStyle(
+                      color: AppTheme.darkGreen,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -1415,12 +1833,22 @@ Future<void> _showPointDetailSheet(BuildContext context, _PointReportView point)
               spacing: 8,
               runSpacing: 8,
               children: [
-                _IndexChip(prefix: 'P', text: point.pestText, color: _hexColor(_pestColorHex(point.pestText))),
-                _IndexChip(prefix: 'E', text: point.diseaseText, color: _hexColor(_diseaseColorHex(point.diseaseText))),
+                _IndexChip(
+                  prefix: 'P',
+                  text: point.pestText,
+                  color: _hexColor(_pestColorHex(point.pestText)),
+                ),
+                _IndexChip(
+                  prefix: 'E',
+                  text: point.diseaseText,
+                  color: _hexColor(_diseaseColorHex(point.diseaseText)),
+                ),
                 _IndexChip(
                   prefix: '✓',
                   text: point.captured ? 'Monitoreado' : 'Pendiente',
-                  color: point.captured ? const Color(0xFF16A34A) : const Color(0xFFF59E0B),
+                  color: point.captured
+                      ? const Color(0xFF16A34A)
+                      : const Color(0xFFF59E0B),
                 ),
               ],
             ),
@@ -1433,27 +1861,56 @@ Future<void> _showPointDetailSheet(BuildContext context, _PointReportView point)
             ),
             const Divider(height: 28),
             if (point.captures.isNotEmpty) ...[
-              const Text('Detalle capturado', style: TextStyle(color: AppTheme.darkGreen, fontSize: 20, fontWeight: FontWeight.w900)),
+              const Text(
+                'Detalle capturado',
+                style: TextStyle(
+                  color: AppTheme.darkGreen,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
               const SizedBox(height: 10),
               for (var index = 0; index < point.captures.length; index++) ...[
                 _PointCaptureCard(index: index + 1, row: point.captures[index]),
-                if (index != point.captures.length - 1) const SizedBox(height: 10),
+                if (index != point.captures.length - 1)
+                  const SizedBox(height: 10),
               ],
               const Divider(height: 30),
             ],
             Row(
               children: [
-                Expanded(child: _PointInfoTile(label: 'Estado', value: point.captured ? 'Monitoreado' : 'Pendiente')),
+                Expanded(
+                  child: _PointInfoTile(
+                    label: 'Estado',
+                    value: point.captured ? 'Monitoreado' : 'Pendiente',
+                  ),
+                ),
                 const SizedBox(width: 10),
-                Expanded(child: _PointInfoTile(label: 'Fecha principal', value: point.mainDate)),
+                Expanded(
+                  child: _PointInfoTile(
+                    label: 'Fecha principal',
+                    value: point.mainDate,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 10),
             Row(
               children: [
-                Expanded(child: _PointInfoTile(label: 'Cantidad de plagas', value: '${point.pestQuantity}')),
+                Expanded(
+                  child: _PointInfoTile(
+                    label: 'Cantidad de plagas',
+                    value: '${point.pestQuantity}',
+                  ),
+                ),
                 const SizedBox(width: 10),
-                Expanded(child: _PointInfoTile(label: 'Radio', value: '${point.radiusM.toStringAsFixed(point.radiusM % 1 == 0 ? 0 : 1)} m')),
+                Expanded(
+                  child: _PointInfoTile(
+                    label: 'Radio',
+                    value:
+                        '${point.radiusM.toStringAsFixed(point.radiusM % 1 == 0 ? 0 : 1)} m',
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 10),
@@ -1471,28 +1928,39 @@ Future<void> _showPointDetailSheet(BuildContext context, _PointReportView point)
 }
 
 class _IndexChip extends StatelessWidget {
-  const _IndexChip({required this.prefix, required this.text, required this.color});
+  const _IndexChip({
+    required this.prefix,
+    required this.text,
+    required this.color,
+  });
   final String prefix;
   final String text;
   final Color color;
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: .10),
-          border: Border.all(color: color.withValues(alpha: .22)),
-          borderRadius: BorderRadius.circular(99),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: .10),
+      border: Border.all(color: color.withValues(alpha: .22)),
+      borderRadius: BorderRadius.circular(99),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-            const SizedBox(width: 7),
-            Text('$prefix · $text', style: const TextStyle(fontWeight: FontWeight.w800)),
-          ],
+        const SizedBox(width: 7),
+        Text(
+          '$prefix · $text',
+          style: const TextStyle(fontWeight: FontWeight.w800),
         ),
-      );
+      ],
+    ),
+  );
 }
 
 class _PointCaptureCard extends StatelessWidget {
@@ -1503,10 +1971,16 @@ class _PointCaptureCard extends StatelessWidget {
   Future<void> _photo(BuildContext context) async {
     final source = row.photo;
     if (source == null || source.trim().isEmpty) return;
+
     final local = File(source);
     final Widget image;
     if (await local.exists()) {
-      image = Image.file(local, fit: BoxFit.contain);
+      image = Image.file(
+        local,
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.high,
+      );
     } else {
       image = AuthenticatedRemoteImage(
         url: source,
@@ -1514,14 +1988,14 @@ class _PointCaptureCard extends StatelessWidget {
         fallback: const _EvidenceUnavailable(),
       );
     }
+
     if (!context.mounted) return;
     await showDialog<void>(
       context: context,
-      builder: (context) => Dialog(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 650, maxWidth: 700),
-          child: Padding(padding: const EdgeInsets.all(10), child: image),
-        ),
+      barrierColor: Colors.black87,
+      builder: (_) => _ZoomablePhotoDialog(
+        image: image,
+        title: '${row.name} Â· Punto ${row.pointNumber}',
       ),
     );
   }
@@ -1533,7 +2007,12 @@ class _PointCaptureCard extends StatelessWidget {
       builder: (context) => AlertDialog(
         title: Text(row.name),
         content: Text(row.notes),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cerrar'))],
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
+          ),
+        ],
       ),
     );
   }
@@ -1541,7 +2020,9 @@ class _PointCaptureCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDisease = row.type == 'Enfermedad';
-    final accent = isDisease ? const Color(0xFF2E7D32) : _hexColor(_pestColorHex(row.severity));
+    final accent = isDisease
+        ? const Color(0xFF2E7D32)
+        : _hexColor(_pestColorHex(row.severity));
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -1554,11 +2035,28 @@ class _PointCaptureCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Expanded(child: Text('$index. ${row.name}', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900))),
+              Expanded(
+                child: Text(
+                  '$index. ${row.name}',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(color: accent.withValues(alpha: .10), borderRadius: BorderRadius.circular(99)),
-                child: Text(row.type == '-' ? 'Registro' : row.type, style: TextStyle(color: accent, fontWeight: FontWeight.w800)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: .10),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Text(
+                  row.type == '-' ? 'Registro' : row.type,
+                  style: TextStyle(color: accent, fontWeight: FontWeight.w800),
+                ),
               ),
             ],
           ),
@@ -1592,14 +2090,29 @@ class _PointCaptureCard extends StatelessWidget {
     );
   }
 
-  Widget _detailLine(String label, String value, {Color? valueColor}) => Padding(
+  Widget _detailLine(String label, String value, {Color? valueColor}) =>
+      Padding(
         padding: const EdgeInsets.only(top: 5),
         child: RichText(
           text: TextSpan(
             style: const TextStyle(color: Colors.black87, fontSize: 14),
             children: [
-              TextSpan(text: '$label: ', style: const TextStyle(color: AppTheme.darkGreen, fontWeight: FontWeight.w900)),
-              TextSpan(text: value, style: TextStyle(color: valueColor ?? Colors.black87, fontWeight: valueColor == null ? FontWeight.w400 : FontWeight.w800)),
+              TextSpan(
+                text: '$label: ',
+                style: const TextStyle(
+                  color: AppTheme.darkGreen,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              TextSpan(
+                text: value,
+                style: TextStyle(
+                  color: valueColor ?? Colors.black87,
+                  fontWeight: valueColor == null
+                      ? FontWeight.w400
+                      : FontWeight.w800,
+                ),
+              ),
             ],
           ),
         ),
@@ -1613,18 +2126,32 @@ class _PointInfoTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        constraints: const BoxConstraints(minHeight: 86),
-        padding: const EdgeInsets.all(13),
-        decoration: BoxDecoration(color: const Color(0xFFF7FAF4), borderRadius: BorderRadius.circular(16)),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: const TextStyle(color: AppTheme.darkGreen, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 6),
-            Text(value, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-          ],
+    constraints: const BoxConstraints(minHeight: 86),
+    padding: const EdgeInsets.all(13),
+    decoration: BoxDecoration(
+      color: const Color(0xFFF7FAF4),
+      borderRadius: BorderRadius.circular(16),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppTheme.darkGreen,
+            fontWeight: FontWeight.w900,
+          ),
         ),
-      );
+        const SizedBox(height: 6),
+        Text(
+          value,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        ),
+      ],
+    ),
+  );
 }
 
 class _ReportSummary {
@@ -1757,7 +2284,8 @@ bool _remoteIsNoPest(
   Map<String, dynamic> item,
   Map<String, PhytoCatalogItem> catalogById,
 ) {
-  final issueRaw = item['phyto_issue'] ?? item['phyto_issue_id'] ?? item['phytosanitary'];
+  final issueRaw =
+      item['phyto_issue'] ?? item['phyto_issue_id'] ?? item['phytosanitary'];
   if (issueRaw == null) return true;
   if (issueRaw is Map) {
     final issue = Map<String, dynamic>.from(issueRaw);
@@ -1779,9 +2307,8 @@ bool _remoteIsDisease(
   Map<String, dynamic> item,
   Map<String, PhytoCatalogItem> catalogById,
 ) {
-  final issueRaw = item['phyto_issue'] ??
-      item['phyto_issue_id'] ??
-      item['phytosanitary'];
+  final issueRaw =
+      item['phyto_issue'] ?? item['phyto_issue_id'] ?? item['phytosanitary'];
   if (issueRaw is Map) {
     final issue = Map<String, dynamic>.from(issueRaw);
     final type = '${issue['type'] ?? issue['tipo'] ?? ''}'.toLowerCase();
@@ -1801,9 +2328,11 @@ String _remotePestSeverity(
   Map<String, PhytoCatalogItem> catalogById,
 ) {
   final pests = checkpoints
-      .where((item) =>
-          !_remoteIsNoPest(item, catalogById) &&
-          !_remoteIsDisease(item, catalogById))
+      .where(
+        (item) =>
+            !_remoteIsNoPest(item, catalogById) &&
+            !_remoteIsDisease(item, catalogById),
+      )
       .toList(growable: false);
   final total = pests.fold<int>(0, (sum, item) {
     final qty = int.tryParse('${item['qty'] ?? 0}') ?? 0;
@@ -1814,7 +2343,9 @@ String _remotePestSeverity(
   var major = 5;
   final regex = RegExp(r'\[SEV_PUNTO:(?:m=\d+;)?M=(\d+)\]');
   for (final item in pests) {
-    final parsed = int.tryParse(regex.firstMatch('${item['notes'] ?? ''}')?.group(1) ?? '');
+    final parsed = int.tryParse(
+      regex.firstMatch('${item['notes'] ?? ''}')?.group(1) ?? '',
+    );
     if (parsed != null && parsed > 0) {
       major = parsed;
       break;

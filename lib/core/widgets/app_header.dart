@@ -74,8 +74,8 @@ class AppHeader extends StatelessWidget {
                   ],
                 ),
                 Positioned(
-                  left: onBack == null ? 84 : 112,
-                  right: 44,
+                  left: onBack == null ? 16 : 56,
+                  right: 50,
                   bottom: 4,
                   child: Text(
                     user == null
@@ -83,10 +83,10 @@ class AppHeader extends StatelessWidget {
                         : 'Bienvenido ${user.displayName} - ${_dateLabel()}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.left,
+                    textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Color(0xFF6D6D6D),
-                      fontSize: 10,
+                      fontSize: 9.5,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -104,7 +104,8 @@ class AppHeader extends StatelessWidget {
                       if (value == 'monitoring') app.go(AppPage.monitoringList);
                       if (value == 'cia') app.go(AppPage.ciaSelection);
                       if (value == 'logout') {
-                        final ok = await showDialog<bool>(
+                        final ok =
+                            await showDialog<bool>(
                               context: context,
                               builder: (context) => AlertDialog(
                                 title: const Text('Cerrar sesión'),
@@ -113,11 +114,13 @@ class AppHeader extends StatelessWidget {
                                 ),
                                 actions: [
                                   TextButton(
-                                    onPressed: () => Navigator.pop(context, false),
+                                    onPressed: () =>
+                                        Navigator.pop(context, false),
                                     child: const Text('Cancelar'),
                                   ),
                                   FilledButton(
-                                    onPressed: () => Navigator.pop(context, true),
+                                    onPressed: () =>
+                                        Navigator.pop(context, true),
                                     child: const Text('Cerrar sesión'),
                                   ),
                                 ],
