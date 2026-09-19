@@ -11,11 +11,9 @@ import 'monitoring_local_store.dart';
 import 'monitoring_models.dart';
 
 class MonitoringRepository {
-  MonitoringRepository({
-    ApiClient? apiClient,
-    MonitoringLocalStore? localStore,
-  })  : _apiClient = apiClient ?? ApiClient.instance,
-        _local = localStore ?? MonitoringLocalStore.instance;
+  MonitoringRepository({ApiClient? apiClient, MonitoringLocalStore? localStore})
+    : _apiClient = apiClient ?? ApiClient.instance,
+      _local = localStore ?? MonitoringLocalStore.instance;
 
   final ApiClient _apiClient;
   final MonitoringLocalStore _local;
@@ -104,8 +102,8 @@ class MonitoringRepository {
             ? Map<String, dynamic>.from(feature['properties'] as Map)
             : const <String, dynamic>{};
         final ranch = flexibleId(props['ranch']);
-        final producer = flexibleId(props['producer']) ??
-            flexibleId(props['producer_id']);
+        final producer =
+            flexibleId(props['producer']) ?? flexibleId(props['producer_id']);
         if (dataCentralId != null) {
           final allowedByRanch = ranch != null && ranchById.containsKey(ranch);
           final allowedByProducer =
@@ -135,10 +133,14 @@ class MonitoringRepository {
           final props = plot?['properties'] is Map
               ? Map<String, dynamic>.from(plot!['properties'] as Map)
               : const <String, dynamic>{};
-          final ranchId = flexibleId(props['ranch']) ?? flexibleId(task['ranch']);
+          final ranchId =
+              flexibleId(props['ranch']) ?? flexibleId(task['ranch']);
           final ranch = ranchId == null ? null : ranchById[ranchId];
-          final producerIdResolved = producerId ?? flexibleId(props['producer_id']);
-          final producer = producerIdResolved == null ? null : producerById[producerIdResolved];
+          final producerIdResolved =
+              producerId ?? flexibleId(props['producer_id']);
+          final producer = producerIdResolved == null
+              ? null
+              : producerById[producerIdResolved];
           // El cultivo de la SESION fitosanitaria es la fuente autoritativa.
           // `field_task.crop` solo se usa como respaldo cuando el header no trae
           // cultivo. Esto evita mostrar Maiz (o filtrar su catalogo) si el
@@ -151,32 +153,45 @@ class MonitoringRepository {
           final cropId = headerCropId ?? taskCropId;
           final cropCatalog = cropId == null ? null : cropById[cropId];
 
-          raw['_v3_program_name'] = firstText(task, const [
-                'title', 'name', 'cycle'
-              ]) ?? 'Monitoreo';
+          raw['_v3_program_name'] =
+              firstText(task, const ['title', 'name', 'cycle']) ?? 'Monitoreo';
           raw['_v3_program_cycle'] = firstText(task, const ['cycle']);
-          raw['_v3_start_date'] = firstText(task, const ['est_start_date']) ??
-              firstText(source, const ['estimated_start_date']);
-          raw['_v3_end_date'] = firstText(task, const ['est_finish_date']) ??
-              firstText(source, const ['estimated_end_date']);
+          raw['_v3_start_date'] =
+              firstText(source, const ['estimated_start_date', 'start_date']) ??
+              firstText(task, const ['est_start_date']);
+          raw['_v3_end_date'] =
+              firstText(source, const [
+                'estimated_end_date',
+                'estimated_finish_date',
+                'finish_date',
+              ]) ??
+              firstText(task, const ['est_finish_date']);
+          raw['_v3_pest_tolerance'] =
+              source['pest_tolerance'] ?? source['pestTolerance'];
           raw['_v3_plot_id'] = plotId;
           raw['_v3_plot_code'] = firstText(props, const ['code', 'plot_code']);
           raw['_v3_plot_name'] = _plotLabel(plot, props);
           raw['_v3_ranch_id'] = ranchId;
-          raw['_v3_ranch_name'] = firstText(props, const ['ranch_name']) ??
-              _entityLabel(
-                ranch,
-                fallback: 'Rancho sin nombre',
-              );
+          raw['_v3_ranch_name'] =
+              firstText(props, const ['ranch_name']) ??
+              _entityLabel(ranch, fallback: 'Rancho sin nombre');
           raw['_v3_producer_id'] = producerIdResolved;
-          raw['_v3_producer_name'] = firstText(props, const ['producer_name']) ??
+          raw['_v3_producer_name'] =
+              firstText(props, const ['producer_name']) ??
               _entityLabel(
                 producer,
-                preferred: const ['commercial_name', 'name', 'nombre', 'display_name'],
+                preferred: const [
+                  'commercial_name',
+                  'name',
+                  'nombre',
+                  'display_name',
+                ],
                 fallback: 'Productor sin nombre',
               );
           raw['_v3_crop_id'] = cropId;
-          raw['_v3_crop_source'] = headerCropId != null ? 'header' : 'field_task';
+          raw['_v3_crop_source'] = headerCropId != null
+              ? 'header'
+              : 'field_task';
           if (taskCropId != null) raw['_v3_task_crop_id'] = taskCropId;
 
           final headerEmbeddedCrop = headerCropRaw is Map
@@ -189,27 +204,40 @@ class MonitoringRepository {
           // Solo se permite usar nombre/foto de la task si su ID coincide con
           // el cultivo autoritativo. Si no coincide, ignorarlo evita mezclar
           // datos de otro cultivo.
-          final matchingTaskCrop =
-              taskCropId != null && taskCropId == cropId ? taskEmbeddedCrop : null;
-          final matchingTaskText =
-              taskCropId != null && taskCropId == cropId
-                  ? firstText(task, const ['crop_name', 'crop_variety_name'])
-                  : null;
+          final matchingTaskCrop = taskCropId != null && taskCropId == cropId
+              ? taskEmbeddedCrop
+              : null;
+          final matchingTaskText = taskCropId != null && taskCropId == cropId
+              ? firstText(task, const ['crop_name', 'crop_variety_name'])
+              : null;
 
           raw['_v3_crop_name'] =
               (headerEmbeddedCrop == null
                   ? null
-                  : firstText(headerEmbeddedCrop, const ['name', 'nombre', 'variety'])) ??
+                  : firstText(headerEmbeddedCrop, const [
+                      'name',
+                      'nombre',
+                      'variety',
+                    ])) ??
               firstText(source, const ['crop_name']) ??
               (cropCatalog == null
                   ? null
-                  : firstText(cropCatalog, const ['name', 'nombre', 'variety'])) ??
+                  : firstText(cropCatalog, const [
+                      'name',
+                      'nombre',
+                      'variety',
+                    ])) ??
               (matchingTaskCrop == null
                   ? null
-                  : firstText(matchingTaskCrop, const ['name', 'nombre', 'variety'])) ??
+                  : firstText(matchingTaskCrop, const [
+                      'name',
+                      'nombre',
+                      'variety',
+                    ])) ??
               matchingTaskText;
 
-          final cropPhoto = photoUrlFrom(source['crop_photo']) ??
+          final cropPhoto =
+              photoUrlFrom(source['crop_photo']) ??
               photoUrlFrom(headerEmbeddedCrop) ??
               photoUrlFrom(cropCatalog) ??
               photoUrlFrom(matchingTaskCrop);
@@ -241,10 +269,13 @@ class MonitoringRepository {
         dataCentralId: dataCentralId,
       );
       if (viewerUserId != null && viewerUserId.isNotEmpty) {
-        cached = cached.where((header) {
-          final visibleUser = flexibleId(header.raw['_v3_visible_user']);
-          return visibleUser == viewerUserId || header.assignedTo == viewerUserId;
-        }).toList(growable: false);
+        cached = cached
+            .where((header) {
+              final visibleUser = flexibleId(header.raw['_v3_visible_user']);
+              return visibleUser == viewerUserId ||
+                  header.assignedTo == viewerUserId;
+            })
+            .toList(growable: false);
       }
       return _sortHeaders(_offlineWindow(cached));
     }
@@ -289,7 +320,10 @@ class MonitoringRepository {
     final current = await _local.targetPoints(headerId);
     final captured = await _local.checkpointsForHeader(headerId);
     final capturedTargetIds = captured.map((e) => e.targetId).toSet();
-    final usedNumbers = current.map((e) => e.visibleNumber).where((e) => e > 0).toSet();
+    final usedNumbers = current
+        .map((e) => e.visibleNumber)
+        .where((e) => e > 0)
+        .toSet();
     var number = capturedTargetIds.length + 1;
     while (usedNumbers.contains(number)) {
       number++;
@@ -306,7 +340,9 @@ class MonitoringRepository {
     return point;
   }
 
-  Future<List<({double lat, double lon})>> plotPolygon(MonitoringHeader header) async {
+  Future<List<({double lat, double lon})>> plotPolygon(
+    MonitoringHeader header,
+  ) async {
     final cached = header.raw['_v3_plot_feature'];
     if (cached is Map) {
       final parsed = _polygonFromFeature(Map<String, dynamic>.from(cached));
@@ -317,7 +353,9 @@ class MonitoringRepository {
     // Evita descargar TODAS las parcelas solo para dibujar una. El detalle de
     // parcela es suficiente y reduce mucho el tiempo al abrir mapa/reporte.
     try {
-      final response = await _api.get('api/v1/geo_assets/plots/${header.plotId}/');
+      final response = await _api.get(
+        'api/v1/geo_assets/plots/${header.plotId}/',
+      );
       final data = response.data;
       if (data is Map) {
         final parsed = _polygonFromFeature(Map<String, dynamic>.from(data));
@@ -338,7 +376,9 @@ class MonitoringRepository {
     return const [];
   }
 
-  Future<List<PhytoCatalogItem>> catalogForCropCachedFirst(String? cropId) async {
+  Future<List<PhytoCatalogItem>> catalogForCropCachedFirst(
+    String? cropId,
+  ) async {
     final cached = await _local.catalogForCrop(cropId);
     if (cached.isNotEmpty) {
       // El reporte no debe esperar otra descarga completa del catálogo si ya
@@ -388,6 +428,42 @@ class MonitoringRepository {
   }
 
   Future<List<Map<String, dynamic>>> remoteCheckpoints(String headerId) async {
+    // Mismo endpoint que usa el frontend web para construir los indices P/E.
+    // El GeoJSON trae de forma explicita:
+    // issue, issue_type, presence_status, qty, pcp_oid y geometry.
+    try {
+      final response = await _api.get(
+        'api/v1/monitoring/phyto/headers/$headerId/checkpoints-geojson/',
+      );
+      final data = response.data;
+
+      if (data is Map && data['features'] is List) {
+        final result = <Map<String, dynamic>>[];
+
+        for (final rawFeature in data['features'] as List) {
+          if (rawFeature is! Map) continue;
+
+          final feature = Map<String, dynamic>.from(rawFeature);
+          final rawProperties = feature['properties'];
+          if (rawProperties is! Map) continue;
+
+          final properties = Map<String, dynamic>.from(rawProperties);
+          final geometry = feature['geometry'];
+
+          if (geometry is Map) {
+            properties['geom'] = Map<String, dynamic>.from(geometry);
+          }
+
+          result.add(properties);
+        }
+
+        return result;
+      }
+    } catch (_) {
+      // Compatibilidad con instalaciones donde el endpoint GeoJSON no exista.
+    }
+
+    // Fallback para backend antiguo.
     try {
       return await _paged(
         'api/v1/monitoring/phyto/checkpoints/',
@@ -407,7 +483,8 @@ class MonitoringRepository {
   Future<int> pendingCount(String headerId) async {
     final checkpoints = await _local.pendingCheckpoints(headerId: headerId);
     final targets = await _local.pendingTargets(headerId: headerId);
-    return checkpoints.length + targets.length +
+    return checkpoints.length +
+        targets.length +
         ((await _local.meta(_headerPatchKey(headerId))) == null ? 0 : 1);
   }
 
@@ -426,7 +503,9 @@ class MonitoringRepository {
       (checkpoint) =>
           checkpoint.headerId != headerId || checkpoint.targetId != target.id,
     )) {
-      throw Exception('Hay capturas que no corresponden al punto seleccionado.');
+      throw Exception(
+        'Hay capturas que no corresponden al punto seleccionado.',
+      );
     }
     await _local.saveCapturedPoint(target.id, checkpoints);
   }
@@ -465,14 +544,19 @@ class MonitoringRepository {
         await _local.markSyncing(checkpoint.localId);
         final targetServerId = await _local.targetServerId(checkpoint.targetId);
         if (targetServerId == null || targetServerId.isEmpty) {
-          throw Exception('El punto todavía no está vinculado con el servidor.');
+          throw Exception(
+            'El punto todavía no está vinculado con el servidor.',
+          );
         }
 
         // Si el JSON ya fue creado en un intento anterior, NO se vuelve a
         // hacer POST. Esto evita duplicados cuando lo único que falló fue la foto.
         var remoteId = checkpoint.remoteId;
         if (remoteId == null || remoteId.isEmpty) {
-          final body = _checkpointBody(checkpoint, targetServerId: targetServerId);
+          final body = _checkpointBody(
+            checkpoint,
+            targetServerId: targetServerId,
+          );
           final response = await _api.post(
             'api/v1/monitoring/phyto/checkpoints/create/',
             data: body,
@@ -505,10 +589,7 @@ class MonitoringRepository {
           // La foto se sube DESPUÉS del checkpoint por PATCH multipart, igual
           // que la app Android. Si falla, el registro queda pendiente para
           // reintentar y nunca se marca como sincronizado.
-          await _uploadPhotoEvidenceZip(
-            checkpoint.headerId,
-            photoPath,
-          );
+          await _uploadPhotoEvidenceZip(checkpoint.headerId, photoPath);
         }
 
         await _local.markSynced(checkpoint.localId, confirmedRemoteId);
@@ -551,10 +632,10 @@ class MonitoringRepository {
     }
 
     if (connectionUnavailable) {
-      final remainingTargets =
-          await _local.pendingTargets(headerId: headerId);
-      final remainingCheckpoints =
-          await _local.pendingCheckpoints(headerId: headerId);
+      final remainingTargets = await _local.pendingTargets(headerId: headerId);
+      final remainingCheckpoints = await _local.pendingCheckpoints(
+        headerId: headerId,
+      );
       final remaining = remainingTargets.length + remainingCheckpoints.length;
       return SyncResult(
         uploaded: uploaded,
@@ -613,7 +694,9 @@ class MonitoringRepository {
   Future<void> completeHeader(String headerId, {String? notes}) async {
     final records = await _local.checkpointsForHeader(headerId);
     if (records.isEmpty) {
-      throw Exception('Debes guardar al menos un punto antes de finalizar el monitoreo.');
+      throw Exception(
+        'Debes guardar al menos un punto antes de finalizar el monitoreo.',
+      );
     }
     await _queueHeaderPatch(
       headerId,
@@ -625,10 +708,7 @@ class MonitoringRepository {
     // la sincronización del reporte, DESPUÉS de targets, capturas y evidencias.
   }
 
-  Future<void> cancelHeader(
-    String headerId, {
-    required String reason,
-  }) async {
+  Future<void> cancelHeader(String headerId, {required String reason}) async {
     final cleanReason = reason.trim();
     if (cleanReason.isEmpty) {
       throw Exception('Escribe el motivo de cancelación.');
@@ -709,7 +789,8 @@ class MonitoringRepository {
       throw Exception('el servidor no confirmó el punto');
     }
     final serverId = flexibleId((response.data as Map)['id']);
-    if (serverId == null) throw Exception('el servidor no devolvió ID del punto');
+    if (serverId == null)
+      throw Exception('el servidor no devolvió ID del punto');
     await _local.markTargetSynced(target.id, serverId);
   }
 
@@ -777,8 +858,10 @@ class MonitoringRepository {
       );
     }
 
-    final diseaseAbsent = checkpoint.isDisease &&
-        checkpoint.presenceStatus == 'low' && checkpoint.qty == 0;
+    final diseaseAbsent =
+        checkpoint.isDisease &&
+        checkpoint.presenceStatus == 'low' &&
+        checkpoint.qty == 0;
     final stage = checkpoint.isNoPest || diseaseAbsent
         ? null
         : _normalizeStage(checkpoint.stage);
@@ -809,15 +892,17 @@ class MonitoringRepository {
 
   Future<int> _repairMissingRemotePhotos(String headerId) async {
     final local = await _local.checkpointsForHeader(headerId);
-    final candidates = local.where((checkpoint) {
-      final remoteId = checkpoint.remoteId?.trim();
-      final photoPath = checkpoint.photoPath?.trim();
-      return checkpoint.syncState == 'synced' &&
-          remoteId != null &&
-          remoteId.isNotEmpty &&
-          photoPath != null &&
-          photoPath.isNotEmpty;
-    }).toList(growable: false);
+    final candidates = local
+        .where((checkpoint) {
+          final remoteId = checkpoint.remoteId?.trim();
+          final photoPath = checkpoint.photoPath?.trim();
+          return checkpoint.syncState == 'synced' &&
+              remoteId != null &&
+              remoteId.isNotEmpty &&
+              photoPath != null &&
+              photoPath.isNotEmpty;
+        })
+        .toList(growable: false);
     if (candidates.isEmpty) return 0;
 
     // Aquí NO usamos remoteCheckpoints(), porque ese método oculta los errores
@@ -842,7 +927,8 @@ class MonitoringRepository {
       // El backend de CIAGRO puede devolver la evidencia como `photo` o
       // `photo_url`. `photo_ref` es solo el nombre local de referencia.
       final remotePhoto =
-          photoUrlFrom(serverItem['photo_url']) ?? photoUrlFrom(serverItem['photo']);
+          photoUrlFrom(serverItem['photo_url']) ??
+          photoUrlFrom(serverItem['photo']);
       if (remotePhoto != null) continue;
 
       final file = File(checkpoint.photoPath!.trim());
@@ -881,10 +967,7 @@ class MonitoringRepository {
   /// El servidor recibe después un ZIP multipart en `photos_zip` y vincula
   /// cada entrada por nombre. Esto hace que el frontend web reciba finalmente
   /// `photo` con una URL de MEDIA, en lugar de quedarse solo con la referencia.
-  Future<void> _uploadPhotoEvidenceZip(
-    String headerId,
-    String filePath,
-  ) async {
+  Future<void> _uploadPhotoEvidenceZip(String headerId, String filePath) async {
     final photo = File(filePath);
     if (!await photo.exists()) {
       throw Exception(
@@ -1014,7 +1097,8 @@ class MonitoringRepository {
   String? _normalizeStage(String? stage) {
     if (stage == null || stage.trim().isEmpty) return null;
     final value = stage.trim().toLowerCase().replaceAll('_', ' ');
-    if (value.contains('adulto') && value.contains('alas')) return 'adulto_alas';
+    if (value.contains('adulto') && value.contains('alas'))
+      return 'adulto_alas';
     if (value.contains('huev')) return 'huevesillo';
     if (value.contains('larva') || value.contains('joven')) return 'larva';
     if (value.contains('ninfa')) return 'ninfa';
@@ -1023,7 +1107,8 @@ class MonitoringRepository {
     if (value.contains('inicio')) return 'inicio';
     if (value.contains('desarrollo')) return 'desarrollo';
     if (value.contains('avanz')) return 'avanzado';
-    if (value.contains('terminal') || value.contains('podrido')) return 'terminal';
+    if (value.contains('terminal') || value.contains('podrido'))
+      return 'terminal';
     return value.replaceAll(' ', '_');
   }
 
@@ -1035,7 +1120,8 @@ class MonitoringRepository {
     final indexes = <int>[];
     for (var i = 0; i < output.length; i++) {
       final item = output[i];
-      final possibleCrop = cropId == null ||
+      final possibleCrop =
+          cropId == null ||
           item.cropId == null ||
           item.cropId!.isEmpty ||
           item.cropId == cropId;
@@ -1091,10 +1177,12 @@ class MonitoringRepository {
     // filtrado por default_crop; este segundo filtro evita que datos antiguos
     // o respuestas inconsistentes entren al registro.
     return items
-        .where((e) =>
-            !e.isNoPest &&
-            e.cropId != null &&
-            e.cropId!.trim() == normalizedCropId)
+        .where(
+          (e) =>
+              !e.isNoPest &&
+              e.cropId != null &&
+              e.cropId!.trim() == normalizedCropId,
+        )
         .toList(growable: false);
   }
 
@@ -1117,12 +1205,14 @@ class MonitoringRepository {
 
     for (final header in sorted) {
       final state = header.status.toLowerCase();
-      final protected = state.contains('pending') ||
+      final protected =
+          state.contains('pending') ||
           state.contains('pendiente') ||
           state.contains('progress') ||
           state.contains('progreso') ||
           header.isPaused;
-      final date = DateTime.tryParse(header.startDate ?? '') ??
+      final date =
+          DateTime.tryParse(header.startDate ?? '') ??
           DateTime.tryParse(header.endDate ?? '');
       if (protected || date == null || !date.toLocal().isBefore(cutoff)) {
         recent[header.id] = header;
@@ -1159,19 +1249,26 @@ class MonitoringRepository {
 
   String _entityLabel(
     Map<String, dynamic>? item, {
-    List<String> preferred = const ['commercial_name', 'name', 'nombre', 'display_name'],
+    List<String> preferred = const [
+      'commercial_name',
+      'name',
+      'nombre',
+      'display_name',
+    ],
     required String fallback,
   }) {
     if (item == null) return fallback;
     return firstText(item, preferred) ?? fallback;
   }
 
-  String _plotLabel(
-    Map<String, dynamic>? feature,
-    Map<String, dynamic> props,
-  ) {
+  String _plotLabel(Map<String, dynamic>? feature, Map<String, dynamic> props) {
     if (feature == null) return 'Parcela sin nombre';
-    return firstText(props, const ['name', 'nombre', 'description', 'display_name']) ??
+    return firstText(props, const [
+          'name',
+          'nombre',
+          'description',
+          'display_name',
+        ]) ??
         'Parcela sin nombre';
   }
 
@@ -1185,8 +1282,10 @@ class MonitoringRepository {
 
     // GeoJSON Polygon: [ring[ [lon,lat], ... ]]. MultiPolygon: [[ring...]].
     dynamic ring = coordinates;
-    while (ring is List && ring.isNotEmpty &&
-        ring.first is List && (ring.first as List).isNotEmpty &&
+    while (ring is List &&
+        ring.isNotEmpty &&
+        ring.first is List &&
+        (ring.first as List).isNotEmpty &&
         (ring.first as List).first is List) {
       ring = ring.first;
     }
@@ -1214,9 +1313,9 @@ class MonitoringRepository {
       final results = data['results'];
       if (results is Map && results['features'] is List) {
         all.addAll(
-          (results['features'] as List)
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e)),
+          (results['features'] as List).whereType<Map>().map(
+            (e) => Map<String, dynamic>.from(e),
+          ),
         );
       } else if (results is List) {
         all.addAll(

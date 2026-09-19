@@ -46,6 +46,7 @@ class LeafletMap extends StatefulWidget {
     this.onPointTap,
     this.height = 420,
     this.ndvi = false,
+    this.phytoVisualization = 'discs',
   });
 
   final List<MapPoint> points;
@@ -56,6 +57,9 @@ class LeafletMap extends StatefulWidget {
   final ValueChanged<String>? onPointTap;
   final double height;
   final bool ndvi;
+
+  /// "discs" muestra los marcadores P/E y "heat" muestra presencia tipo calor.
+  final String phytoVisualization;
 
   @override
   State<LeafletMap> createState() => _LeafletMapState();
@@ -129,6 +133,7 @@ class _LeafletMapState extends State<LeafletMap> {
               'accuracy': widget.currentAccuracy,
             },
       'ndvi': widget.ndvi,
+      'phytoVisualization': widget.phytoVisualization,
       'interactive': widget.onMapTap != null,
       'pointInteractive': widget.onPointTap != null,
     };

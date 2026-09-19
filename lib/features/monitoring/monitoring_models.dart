@@ -60,10 +60,27 @@ String? photoUrlFrom(dynamic value) {
   }
   if (value is Map) {
     const preferredKeys = [
-      'download_url', 'file_url', 'image_url', 'photo_url', 'absolute_url',
-      'content_url', 'original_url', 'source_url', 'thumbnail_url',
-      'attachment_url', 'download', 'photo', 'image', 'file', 'thumbnail',
-      'path', 'url', 'href', 'resource_url', 'detail_url', 'api_url',
+      'download_url',
+      'file_url',
+      'image_url',
+      'photo_url',
+      'absolute_url',
+      'content_url',
+      'original_url',
+      'source_url',
+      'thumbnail_url',
+      'attachment_url',
+      'download',
+      'photo',
+      'image',
+      'file',
+      'thumbnail',
+      'path',
+      'url',
+      'href',
+      'resource_url',
+      'detail_url',
+      'api_url',
     ];
     for (final key in preferredKeys) {
       final result = photoUrlFrom(value[key]);
@@ -86,12 +103,26 @@ String normalizePhytoType(String raw, String name) {
       .replaceAll('ó', 'o')
       .replaceAll('ú', 'u');
   const diseaseWords = [
-    'disease', 'enfermedad', 'roya', 'antracnosis', 'tizon', 'mosaico',
-    'mancha', 'moho', 'virus', 'carbon', 'pudricion', 'fusarium',
-    'achaparramiento', 'bacter', 'mildiu', 'cenicilla',
+    'disease',
+    'enfermedad',
+    'roya',
+    'antracnosis',
+    'tizon',
+    'mosaico',
+    'mancha',
+    'moho',
+    'virus',
+    'carbon',
+    'pudricion',
+    'fusarium',
+    'achaparramiento',
+    'bacter',
+    'mildiu',
+    'cenicilla',
   ];
   if (diseaseWords.any(value.contains)) return 'Enfermedad';
-  if (value.contains('sin plaga') || value.contains('sin_plaga')) return 'SIN_PLAGA';
+  if (value.contains('sin plaga') || value.contains('sin_plaga'))
+    return 'SIN_PLAGA';
   return 'Plaga';
 }
 
@@ -118,12 +149,16 @@ class MonitoringHeader {
   final String? endDate;
   final Map<String, dynamic> raw;
 
-  factory MonitoringHeader.fromJson(Map<String, dynamic> json) => MonitoringHeader(
+  factory MonitoringHeader.fromJson(Map<String, dynamic> json) =>
+      MonitoringHeader(
         id: flexibleId(json['id']) ?? '',
-        status: _text(json['status']).isEmpty ? 'pending' : _text(json['status']),
+        status: _text(json['status']).isEmpty
+            ? 'pending'
+            : _text(json['status']),
         // El crop del MonitoringHeader viene del backend y manda sobre
         // cualquier enriquecimiento local/cacheado de versiones anteriores.
-        cropId: flexibleId(json['crop']) ??
+        cropId:
+            flexibleId(json['crop']) ??
             flexibleId(json['crop_id']) ??
             flexibleId(json['_v3_crop_id']),
         plotId: flexibleId(json['_v3_plot_id'] ?? json['plot']),
@@ -135,47 +170,60 @@ class MonitoringHeader {
               json['data_central_id'],
         ),
         startDate: firstText(json, const [
-          '_v3_start_date',
           'estimated_start_date',
           'start_date',
+          '_v3_start_date',
         ]),
         endDate: firstText(json, const [
-          '_v3_end_date',
           'estimated_end_date',
           'estimated_finish_date',
           'est_finish_date',
           'finish_date',
+          '_v3_end_date',
         ]),
         raw: json,
       );
 
   String get fieldTaskId => flexibleId(raw['field_task']) ?? '';
-  String get programName => firstText(raw, const [
-        '_v3_program_name', 'program_name', 'title', 'name'
-      ]) ?? 'Monitoreo';
-  String get producerName => firstText(raw, const [
-        '_v3_producer_name', 'producer_name', 'agro_unit_name'
-      ]) ?? 'Productor sin nombre';
-  String get ranchName => firstText(raw, const [
-        '_v3_ranch_name', 'ranch_name'
-      ]) ?? 'Rancho sin nombre';
+  String get programName =>
+      firstText(raw, const [
+        '_v3_program_name',
+        'program_name',
+        'title',
+        'name',
+      ]) ??
+      'Monitoreo';
+  String get producerName =>
+      firstText(raw, const [
+        '_v3_producer_name',
+        'producer_name',
+        'agro_unit_name',
+      ]) ??
+      'Productor sin nombre';
+  String get ranchName =>
+      firstText(raw, const ['_v3_ranch_name', 'ranch_name']) ??
+      'Rancho sin nombre';
 
   /// Igual que la app Kotlin: para identificar una parcela se muestra primero
   /// su código. Si el backend no lo envía, se conserva el nombre como respaldo.
-  String get plotName => firstText(raw, const [
-        '_v3_plot_code', 'plot_code', '_v3_plot_name', 'plot_name'
-      ]) ?? 'Parcela sin nombre';
+  String get plotName =>
+      firstText(raw, const [
+        '_v3_plot_code',
+        'plot_code',
+        '_v3_plot_name',
+        'plot_name',
+      ]) ??
+      'Parcela sin nombre';
 
-  String? get plotCode => firstText(raw, const [
-        '_v3_plot_code', 'plot_code'
-      ]);
+  String? get plotCode => firstText(raw, const ['_v3_plot_code', 'plot_code']);
   String get cropName {
     final embedded = raw['crop'];
     if (embedded is Map) {
-      final nested = firstText(
-        Map<String, dynamic>.from(embedded),
-        const ['name', 'nombre', 'variety'],
-      );
+      final nested = firstText(Map<String, dynamic>.from(embedded), const [
+        'name',
+        'nombre',
+        'variety',
+      ]);
       if (nested != null) return nested;
     }
     // Si el backend expone crop_name, se prefiere sobre el valor enriquecido
@@ -194,11 +242,23 @@ class MonitoringHeader {
   String? get producerId => flexibleId(raw['_v3_producer_id']);
   String? get ranchId => flexibleId(raw['_v3_ranch_id']);
 
+  int get pestTolerance {
+    final rawValue =
+        raw['pest_tolerance'] ??
+        raw['pestTolerance'] ??
+        raw['_v3_pest_tolerance'];
+    final parsed = rawValue is int
+        ? rawValue
+        : int.tryParse(rawValue?.toString() ?? '');
+    return parsed == null || parsed < 0 ? 1 : parsed;
+  }
+
   String get title => programName;
 
   bool get isCompleted => status.toLowerCase().contains('complet');
   bool get isCancelled => status.toLowerCase().contains('cancel');
-  bool get isPaused => '${raw['additional_notes'] ?? ''}'.toUpperCase().contains('PAUSADO');
+  bool get isPaused =>
+      '${raw['additional_notes'] ?? ''}'.toUpperCase().contains('PAUSADO');
 
   /// Fecha real de actividad en campo.
   /// - completado/cancelado: finished_at
@@ -221,17 +281,17 @@ class MonitoringHeader {
   }
 
   Map<String, dynamic> toMap() => {
-        'remote_id': id,
-        'status': status,
-        'crop_id': cropId,
-        'plot_id': plotId,
-        'assigned_to': assignedTo,
-        'cia_id': dataCentralId,
-        'start_date': startDate,
-        'end_date': endDate,
-        'json': jsonEncode(raw),
-        'updated_at': DateTime.now().millisecondsSinceEpoch,
-      };
+    'remote_id': id,
+    'status': status,
+    'crop_id': cropId,
+    'plot_id': plotId,
+    'assigned_to': assignedTo,
+    'cia_id': dataCentralId,
+    'start_date': startDate,
+    'end_date': endDate,
+    'json': jsonEncode(raw),
+    'updated_at': DateTime.now().millisecondsSinceEpoch,
+  };
 
   factory MonitoringHeader.fromDb(Map<String, Object?> row) {
     final raw = Map<String, dynamic>.from(jsonDecode('${row['json']}') as Map);
@@ -292,8 +352,12 @@ class TargetPoint {
       latitude: lat,
       longitude: lon,
       radiusM: double.tryParse('${json['radius_m'] ?? 5}') ?? 5,
-      status: _text(json['status']).isEmpty ? 'En proceso' : _text(json['status']),
-      syncState: _text(json['_sync_state']).isEmpty ? 'synced' : _text(json['_sync_state']),
+      status: _text(json['status']).isEmpty
+          ? 'En proceso'
+          : _text(json['status']),
+      syncState: _text(json['_sync_state']).isEmpty
+          ? 'synced'
+          : _text(json['_sync_state']),
       lastError: json['_last_error']?.toString(),
       raw: json,
     );
@@ -347,42 +411,45 @@ class TargetPoint {
         value == 'captured' ||
         value.contains('capturad');
   }
+
   bool get needsSync => serverId == null || syncState != 'synced';
 
   Map<String, dynamic> get navigationRaw => {
-        ...raw,
-        'id': id,
-        '_local_id': id,
-        '_server_id': serverId,
-        '_sync_state': syncState,
-        '_last_error': lastError,
-        'header': headerId,
-        'label': label,
-        'radius_m': radiusM,
-        'status': status,
-        'geom': {
-          'type': 'Point',
-          'coordinates': [longitude, latitude],
-        },
-      };
+    ...raw,
+    'id': id,
+    '_local_id': id,
+    '_server_id': serverId,
+    '_sync_state': syncState,
+    '_last_error': lastError,
+    'header': headerId,
+    'label': label,
+    'radius_m': radiusM,
+    'status': status,
+    'geom': {
+      'type': 'Point',
+      'coordinates': [longitude, latitude],
+    },
+  };
 
   Map<String, dynamic> toMap() => {
-        'remote_id': id,
-        'server_id': serverId,
-        'header_id': headerId,
-        'label': label,
-        'lat': latitude,
-        'lon': longitude,
-        'radius_m': radiusM,
-        'status': status,
-        'sync_state': syncState,
-        'last_error': lastError,
-        'json': jsonEncode(navigationRaw),
-        'updated_at': DateTime.now().millisecondsSinceEpoch,
-      };
+    'remote_id': id,
+    'server_id': serverId,
+    'header_id': headerId,
+    'label': label,
+    'lat': latitude,
+    'lon': longitude,
+    'radius_m': radiusM,
+    'status': status,
+    'sync_state': syncState,
+    'last_error': lastError,
+    'json': jsonEncode(navigationRaw),
+    'updated_at': DateTime.now().millisecondsSinceEpoch,
+  };
 
   factory TargetPoint.fromDb(Map<String, Object?> row) {
-    final decoded = Map<String, dynamic>.from(jsonDecode('${row['json']}') as Map);
+    final decoded = Map<String, dynamic>.from(
+      jsonDecode('${row['json']}') as Map,
+    );
     final localId = '${row['remote_id']}';
     final serverId = row['server_id']?.toString();
     final lat = double.tryParse('${row['lat']}') ?? 0;
@@ -432,15 +499,27 @@ class PhytoCatalogItem {
   final List<PhytoStage> stages;
   final Map<String, dynamic> raw;
 
-  bool get isDisease => type.toLowerCase().contains('enfermedad') || type.toLowerCase().contains('disease');
-  bool get isNoPest => type.toLowerCase().contains('sin_plaga') || name.toLowerCase() == 'sin plaga';
+  bool get isDisease =>
+      type.toLowerCase().contains('enfermedad') ||
+      type.toLowerCase().contains('disease');
+  bool get isNoPest =>
+      type.toLowerCase().contains('sin_plaga') ||
+      name.toLowerCase() == 'sin plaga';
   bool get isPest => !isDisease && !isNoPest;
   int? get numericId => int.tryParse(id);
   bool get hasExplicitStageData {
     for (final key in const [
-      'stages', 'etapas', 'development_stages', 'phases', 'fases',
-      'stage_photos', 'photos', 'images', 'stage_images',
-      'development_photos', 'phase_photos',
+      'stages',
+      'etapas',
+      'development_stages',
+      'phases',
+      'fases',
+      'stage_photos',
+      'photos',
+      'images',
+      'stage_images',
+      'development_photos',
+      'phase_photos',
     ]) {
       final value = raw[key];
       if (value is List && value.isNotEmpty) return true;
@@ -453,15 +532,23 @@ class PhytoCatalogItem {
   /// las imágenes cargadas en producción.
   bool get hasStageMediaData {
     for (final key in const [
-      'stage_photos', 'photos', 'images', 'stage_images',
-      'development_photos', 'phase_photos',
+      'stage_photos',
+      'photos',
+      'images',
+      'stage_images',
+      'development_photos',
+      'phase_photos',
     ]) {
       final value = raw[key];
       if (value is List && value.isNotEmpty) return true;
     }
 
     for (final key in const [
-      'stages', 'etapas', 'development_stages', 'phases', 'fases',
+      'stages',
+      'etapas',
+      'development_stages',
+      'phases',
+      'fases',
     ]) {
       final value = raw[key];
       if (value is! List) continue;
@@ -473,16 +560,11 @@ class PhytoCatalogItem {
   }
 
   factory PhytoCatalogItem.fromJson(Map<String, dynamic> json) {
-    final name = firstText(
-          json,
-          const ['name', 'nombre', 'common_name', 'label'],
-        ) ??
+    final name =
+        firstText(json, const ['name', 'nombre', 'common_name', 'label']) ??
         'Sin nombre';
-    final typeRaw = firstText(
-          json,
-          const ['type', 'tipo', 'category', 'kind'],
-        ) ??
-        '';
+    final typeRaw =
+        firstText(json, const ['type', 'tipo', 'category', 'kind']) ?? '';
     final type = normalizePhytoType(typeRaw, name);
     final mainPhoto = _extractMainPhoto(json);
     final stages = _extractStages(
@@ -495,23 +577,33 @@ class PhytoCatalogItem {
       type: type,
       cropId: _extractCropId(json),
       photo: mainPhoto ?? _firstStagePhoto(stages),
-      description: firstText(json, const ['description', 'descripcion', 'comments', 'notes']),
+      description: firstText(json, const [
+        'description',
+        'descripcion',
+        'comments',
+        'notes',
+      ]),
       stages: stages,
       raw: json,
     );
   }
   static String? _firstStagePhoto(List<PhytoStage> stages) {
     for (final stage in stages) {
-      if (stage.photo != null && stage.photo!.trim().isNotEmpty) return stage.photo;
+      if (stage.photo != null && stage.photo!.trim().isNotEmpty)
+        return stage.photo;
     }
     return null;
   }
 
-
   static String? _extractCropId(Map<String, dynamic> json) {
     for (final key in const [
-      'default_crop', 'defaultCrop', 'default_crop_id', 'defaultCropId',
-      'crop', 'crop_id', 'cropId',
+      'default_crop',
+      'defaultCrop',
+      'default_crop_id',
+      'defaultCropId',
+      'crop',
+      'crop_id',
+      'cropId',
     ]) {
       final result = flexibleId(json[key]);
       if (result != null) return result;
@@ -521,18 +613,40 @@ class PhytoCatalogItem {
 
   static String? _extractMainPhoto(Map<String, dynamic> json) {
     const directKeys = [
-      'download_url', 'file_url', 'image_url', 'photo_url', 'absolute_url',
-      'content_url', 'original_url', 'source_url', 'thumbnail_url',
-      'attachment_url', 'download', 'photo', 'image', 'file', 'thumbnail',
-      'path', 'url', 'href', 'resource_url', 'detail_url', 'api_url',
+      'download_url',
+      'file_url',
+      'image_url',
+      'photo_url',
+      'absolute_url',
+      'content_url',
+      'original_url',
+      'source_url',
+      'thumbnail_url',
+      'attachment_url',
+      'download',
+      'photo',
+      'image',
+      'file',
+      'thumbnail',
+      'path',
+      'url',
+      'href',
+      'resource_url',
+      'detail_url',
+      'api_url',
     ];
     for (final key in directKeys) {
       final result = photoUrlFrom(json[key]);
       if (result != null) return result;
     }
     for (final key in const [
-      'attachments_url', 'attachment', 'attachments', 'media', 'photos',
-      'images', 'additional_params',
+      'attachments_url',
+      'attachment',
+      'attachments',
+      'media',
+      'photos',
+      'images',
+      'additional_params',
     ]) {
       final result = photoUrlFrom(json[key]);
       if (result != null) return result;
@@ -559,11 +673,19 @@ class PhytoCatalogItem {
     }
 
     final stagesRaw = firstList(const [
-      'stages', 'etapas', 'development_stages', 'phases', 'fases',
+      'stages',
+      'etapas',
+      'development_stages',
+      'phases',
+      'fases',
     ]);
     final photosRaw = firstList(const [
-      'stage_photos', 'photos', 'images', 'stage_images',
-      'development_photos', 'phase_photos',
+      'stage_photos',
+      'photos',
+      'images',
+      'stage_images',
+      'development_photos',
+      'phase_photos',
     ]);
 
     final photosByName = <String, String>{};
@@ -579,8 +701,15 @@ class PhytoCatalogItem {
         if (entry is Map) {
           final map = Map<String, dynamic>.from(entry);
           final name = firstText(map, const [
-            'stage', 'name', 'nombre', 'label', 'phase', 'fase',
-            'development_stage', 'etapa', 'title',
+            'stage',
+            'name',
+            'nombre',
+            'label',
+            'phase',
+            'fase',
+            'development_stage',
+            'etapa',
+            'title',
           ]);
           final photo = _extractMainPhoto(map);
           if (name != null && photo != null) {
@@ -603,7 +732,8 @@ class PhytoCatalogItem {
           stages.add(
             PhytoStage(
               name: name,
-              photo: photosByName[_stageKey(name)] ??
+              photo:
+                  photosByName[_stageKey(name)] ??
                   (index < photosByOrder.length ? photosByOrder[index] : null),
             ),
           );
@@ -612,14 +742,22 @@ class PhytoCatalogItem {
         if (entry is Map) {
           final map = Map<String, dynamic>.from(entry);
           final name = firstText(map, const [
-            'stage', 'name', 'nombre', 'label', 'phase', 'fase',
-            'development_stage', 'etapa', 'title',
+            'stage',
+            'name',
+            'nombre',
+            'label',
+            'phase',
+            'fase',
+            'development_stage',
+            'etapa',
+            'title',
           ]);
           if (name == null) continue;
           stages.add(
             PhytoStage(
               name: name,
-              photo: _extractMainPhoto(map) ??
+              photo:
+                  _extractMainPhoto(map) ??
                   photosByName[_stageKey(name)] ??
                   (index < photosByOrder.length ? photosByOrder[index] : null),
             ),
@@ -636,7 +774,8 @@ class PhytoCatalogItem {
         stages.add(
           PhytoStage(
             name: name,
-            photo: photosByName[_stageKey(name)] ??
+            photo:
+                photosByName[_stageKey(name)] ??
                 (i < photosByOrder.length ? photosByOrder[i] : null),
           ),
         );
@@ -656,9 +795,7 @@ class PhytoCatalogItem {
               'Adulto',
               'Adulto con alas',
             ];
-      stages.addAll(
-        defaults.map((name) => PhytoStage(name: name)),
-      );
+      stages.addAll(defaults.map((name) => PhytoStage(name: name)));
     }
 
     final unique = <String, PhytoStage>{};
@@ -725,40 +862,57 @@ class PhytoCatalogItem {
       if (v.contains('huev')) return 0;
       if (v.contains('larva') || v.contains('joven')) return 1;
       if (v.contains('pupa')) return 2;
-      if (v == 'adulto' || (v.contains('adulto') && !v.contains('alas'))) return 3;
+      if (v == 'adulto' || (v.contains('adulto') && !v.contains('alas')))
+        return 3;
       if (v.contains('adulto') && v.contains('alas')) return 4;
       return 99;
     }
+
     copy.sort((a, b) => order(a.name).compareTo(order(b.name)));
     if (isDisease) {
-      return copy.where((s) {
-        final v = s.name.toLowerCase();
-        return v.contains('inicio') || v.contains('desarrollo') || v.contains('avanz');
-      }).toList(growable: false);
+      return copy
+          .where((s) {
+            final v = s.name.toLowerCase();
+            return v.contains('inicio') ||
+                v.contains('desarrollo') ||
+                v.contains('avanz');
+          })
+          .toList(growable: false);
     }
     return copy;
   }
 
   Map<String, Object?> toDbMap() => {
-        'remote_id': id,
-        'name': name,
-        'type': type,
-        'crop_id': cropId,
-        'photo': photo,
-        'description': description,
-        'json': jsonEncode({...raw, '_v3_stages': stages.map((e) => {'name': e.name, 'photo': e.photo}).toList()}),
-        'updated_at': DateTime.now().millisecondsSinceEpoch,
-      };
+    'remote_id': id,
+    'name': name,
+    'type': type,
+    'crop_id': cropId,
+    'photo': photo,
+    'description': description,
+    'json': jsonEncode({
+      ...raw,
+      '_v3_stages': stages
+          .map((e) => {'name': e.name, 'photo': e.photo})
+          .toList(),
+    }),
+    'updated_at': DateTime.now().millisecondsSinceEpoch,
+  };
 
   factory PhytoCatalogItem.fromDb(Map<String, Object?> row) {
     final raw = Map<String, dynamic>.from(jsonDecode('${row['json']}') as Map);
     final encodedStages = raw.remove('_v3_stages');
     final base = PhytoCatalogItem.fromJson(raw);
     final stages = encodedStages is List
-        ? encodedStages.whereType<Map>().map((e) => PhytoStage(
-              name: '${e['name'] ?? ''}',
-              photo: e['photo']?.toString(),
-            )).where((e) => e.name.isNotEmpty).toList()
+        ? encodedStages
+              .whereType<Map>()
+              .map(
+                (e) => PhytoStage(
+                  name: '${e['name'] ?? ''}',
+                  photo: e['photo']?.toString(),
+                ),
+              )
+              .where((e) => e.name.isNotEmpty)
+              .toList()
         : base.stages;
     return PhytoCatalogItem(
       id: '${row['remote_id']}',
@@ -824,26 +978,27 @@ class PendingCheckpoint {
   bool get isNoPest => phytoIssueId == null;
 
   Map<String, Object?> toDbMap() => {
-        'local_id': localId,
-        'remote_id': remoteId,
-        'header_id': headerId,
-        'target_id': targetId,
-        'phyto_issue_id': phytoIssueId,
-        'phyto_name': phytoName,
-        'phyto_type': phytoType,
-        'stage': stage,
-        'presence_status': presenceStatus,
-        'qty': qty,
-        'lat': latitude,
-        'lon': longitude,
-        'notes': notes,
-        'photo_path': photoPath,
-        'captured_at': capturedAt.toUtc().toIso8601String(),
-        'sync_state': syncState,
-        'last_error': lastError,
-      };
+    'local_id': localId,
+    'remote_id': remoteId,
+    'header_id': headerId,
+    'target_id': targetId,
+    'phyto_issue_id': phytoIssueId,
+    'phyto_name': phytoName,
+    'phyto_type': phytoType,
+    'stage': stage,
+    'presence_status': presenceStatus,
+    'qty': qty,
+    'lat': latitude,
+    'lon': longitude,
+    'notes': notes,
+    'photo_path': photoPath,
+    'captured_at': capturedAt.toUtc().toIso8601String(),
+    'sync_state': syncState,
+    'last_error': lastError,
+  };
 
-  factory PendingCheckpoint.fromDb(Map<String, Object?> row) => PendingCheckpoint(
+  factory PendingCheckpoint.fromDb(Map<String, Object?> row) =>
+      PendingCheckpoint(
         localId: '${row['local_id']}',
         remoteId: row['remote_id']?.toString(),
         headerId: '${row['header_id']}',
@@ -858,7 +1013,8 @@ class PendingCheckpoint {
         longitude: double.tryParse('${row['lon']}') ?? 0,
         notes: row['notes']?.toString(),
         photoPath: row['photo_path']?.toString(),
-        capturedAt: DateTime.tryParse('${row['captured_at']}') ?? DateTime.now(),
+        capturedAt:
+            DateTime.tryParse('${row['captured_at']}') ?? DateTime.now(),
         syncState: '${row['sync_state'] ?? 'pending'}',
         lastError: row['last_error']?.toString(),
       );
@@ -866,7 +1022,8 @@ class PendingCheckpoint {
 
 String stageLabel(String raw) {
   final v = raw.trim().replaceAll('_', ' ');
-  if (v.toLowerCase().contains('adulto') && v.toLowerCase().contains('alas')) return 'Adulto con alas';
+  if (v.toLowerCase().contains('adulto') && v.toLowerCase().contains('alas'))
+    return 'Adulto con alas';
   if (v.isEmpty) return 'General';
   return '${v[0].toUpperCase()}${v.substring(1)}';
 }

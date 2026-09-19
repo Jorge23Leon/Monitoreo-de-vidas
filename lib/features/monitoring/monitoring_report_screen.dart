@@ -53,6 +53,7 @@ class _MonitoringReportScreenState extends State<MonitoringReportScreen> {
       local: await localFuture,
       targets: await targetsFuture,
       pendingCount: await pendingFuture,
+      pestTolerance: header.pestTolerance,
       catalog: await catalogFuture,
       polygon: polygonRaw
           .map((e) => MapPoint(e.lat, e.lon))
@@ -168,7 +169,7 @@ class _MonitoringReportScreenState extends State<MonitoringReportScreen> {
       barrierColor: Colors.black87,
       builder: (_) => _ZoomablePhotoDialog(
         image: image,
-        title: '${row.name} Â· Punto ${row.pointNumber}',
+        title: '${row.name} - Punto ${row.pointNumber}',
       ),
     );
   }
@@ -177,15 +178,57 @@ class _MonitoringReportScreenState extends State<MonitoringReportScreen> {
     if (row.notes.trim().isEmpty) return;
     showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('${row.name} · Punto ${row.pointNumber}'),
-        content: Text(row.notes),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(22, 18, 14, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Nota del hallazgo',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF202820),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Cerrar',
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      icon: const Icon(
+                        Icons.close,
+                        color: Colors.black45,
+                        size: 21,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: Text(
+                    row.notes,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      height: 1.35,
+                      color: Color(0xFF667066),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -243,6 +286,7 @@ class _MonitoringReportScreenState extends State<MonitoringReportScreen> {
                           local: [],
                           targets: [],
                           pendingCount: 0,
+                          pestTolerance: 1,
                           catalog: [],
                           polygon: [],
                         );
@@ -626,6 +670,7 @@ class _ReportData {
     required this.local,
     required this.targets,
     required this.pendingCount,
+    required this.pestTolerance,
     required this.catalog,
     required this.polygon,
   });
@@ -634,6 +679,7 @@ class _ReportData {
   final List<PendingCheckpoint> local;
   final List<TargetPoint> targets;
   final int pendingCount;
+  final int pestTolerance;
   final List<PhytoCatalogItem> catalog;
   final List<MapPoint> polygon;
 
@@ -660,7 +706,10 @@ class _ReportData {
     }
     final severityByLocalTarget = <String, String>{};
     for (final entry in localByTarget.entries) {
-      severityByLocalTarget[entry.key] = _pestSeverity(entry.value);
+      severityByLocalTarget[entry.key] = _pestSeverity(
+        entry.value,
+        pestTolerance,
+      );
     }
 
     final remoteByTarget = <String, List<Map<String, dynamic>>>{};
@@ -675,6 +724,7 @@ class _ReportData {
       severityByRemoteTarget[entry.key] = _remotePestSeverity(
         entry.value,
         catalogById,
+        pestTolerance,
       );
     }
 
@@ -703,9 +753,13 @@ class _ReportData {
         _remoteRow(
           item,
           point,
-          pointNumber: _numberForTarget(point, pointNumbers),
+          pointNumber: (() {
+            final pcpOid = int.tryParse('${item['pcp_oid'] ?? ''}');
+            if (pcpOid != null && pcpOid > 0) return pcpOid;
+            return _numberForTarget(point, pointNumbers);
+          })(),
           pestSeverity: targetId == null
-              ? _remotePestSeverity([item], catalogById)
+              ? _remotePestSeverity([item], catalogById, pestTolerance)
               : (severityByRemoteTarget[targetId] ?? 'Sin plaga'),
           catalogById: catalogById,
           localMirror: id.isEmpty ? null : localByRemoteId[id],
@@ -895,12 +949,16 @@ class _ReportData {
     final issueId = flexibleId(issueRaw);
     final catalogItem = issueId == null ? null : catalogById[issueId];
     final noPest = _remoteIsNoPest(item, catalogById);
+    final directIssueName = '${item['issue'] ?? ''}'.trim();
     final name = noPest
         ? 'Sin plaga'
+        : directIssueName.isNotEmpty
+        ? directIssueName
         : firstText(issue, const ['name', 'nombre', 'label']) ??
               catalogItem?.name ??
               'Fitosanitario sin nombre';
     final stage = item['stage']?.toString();
+    final stageDisplay = item['stage_display']?.toString();
     final presence = '${item['presence_status'] ?? ''}'.toLowerCase();
     final qty = int.tryParse('${item['qty'] ?? 0}') ?? 0;
     final disease = _remoteIsDisease(item, catalogById);
@@ -912,8 +970,12 @@ class _ReportData {
       stage: noPest
           ? '-'
           : disease
-          ? _diseasePhase(stage, qty == 0 ? 'low' : presence)
-          : (stage == null || stage.trim().isEmpty ? '-' : stageLabel(stage)),
+          ? _diseasePhase(stage, presence)
+          : (stageDisplay != null && stageDisplay.trim().isNotEmpty
+                ? stageDisplay
+                : (stage == null || stage.trim().isEmpty
+                      ? '-'
+                      : stageLabel(stage))),
       quantity: noPest
           ? '0'
           : disease
@@ -922,7 +984,7 @@ class _ReportData {
       severity: noPest
           ? 'Sin plaga'
           : disease
-          ? _diseaseSeverity(stage, qty == 0 ? 'low' : presence)
+          ? _diseaseSeverity(stage, presence)
           : pestSeverity,
       capturedAt: _formatDynamicDate(item['captured_at']),
       // No usamos photoUrlFrom(item) sobre todo el JSON: `photo_ref` puede ser
@@ -1339,14 +1401,14 @@ class _ReportMapCard extends StatelessWidget {
                   children: const [
                     Expanded(
                       child: _LegendBox(
-                        title: 'Índice P · Plagas',
+                        title: 'Indice P - Plagas',
                         disease: false,
                       ),
                     ),
                     SizedBox(width: 6),
                     Expanded(
                       child: _LegendBox(
-                        title: 'Índice E · Enfermedades',
+                        title: 'Indice E - Enfermedades',
                         disease: true,
                       ),
                     ),
@@ -1379,14 +1441,25 @@ class _ReportMapCard extends StatelessWidget {
   );
 }
 
-class _FullReportMapScreen extends StatelessWidget {
+class _FullReportMapScreen extends StatefulWidget {
   const _FullReportMapScreen({required this.data});
 
   final _ReportData data;
 
+  @override
+  State<_FullReportMapScreen> createState() => _FullReportMapScreenState();
+}
+
+class _FullReportMapScreenState extends State<_FullReportMapScreen> {
+  String visualization = 'heat';
+  bool presenceExpanded = true;
+
+  _ReportData get data => widget.data;
+
   Future<void> _openPoint(BuildContext context, String id) async {
     final number = int.tryParse(id);
     if (number == null) return;
+
     _PointReportView? point;
     for (final item in data.pointViews) {
       if (item.number == number) {
@@ -1394,6 +1467,7 @@ class _FullReportMapScreen extends StatelessWidget {
         break;
       }
     }
+
     if (point == null) return;
     await _showPointDetailSheet(context, point);
   }
@@ -1407,7 +1481,7 @@ class _FullReportMapScreen extends StatelessWidget {
           children: [
             Container(
               color: Colors.white,
-              padding: const EdgeInsets.fromLTRB(12, 10, 14, 10),
+              padding: const EdgeInsets.fromLTRB(12, 8, 14, 8),
               child: Row(
                 children: [
                   IconButton(
@@ -1448,7 +1522,7 @@ class _FullReportMapScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(22),
                     ),
                     child: Text(
-                      '${data.polygon.length} vértices',
+                      '${data.polygon.length} vertices',
                       style: const TextStyle(
                         color: AppTheme.primary,
                         fontWeight: FontWeight.w900,
@@ -1459,44 +1533,63 @@ class _FullReportMapScreen extends StatelessWidget {
               ),
             ),
             Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return Stack(
-                    children: [
-                      Positioned.fill(
-                        child: LeafletMap(
-                          points: data.mapPoints,
-                          polygon: data.polygon,
-                          height: constraints.maxHeight,
-                          onPointTap: (id) => _openPoint(context, id),
-                        ),
-                      ),
-                      Positioned(
-                        left: 12,
-                        right: 12,
-                        bottom: 14,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: const [
-                            Expanded(
-                              child: _LegendBox(
-                                title: 'Índice P · Plagas',
-                                disease: false,
-                              ),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: LeafletMap(
+                      points: data.mapPoints,
+                      polygon: data.polygon,
+                      height: MediaQuery.sizeOf(context).height,
+                      phytoVisualization: visualization,
+                      onPointTap: (id) => _openPoint(context, id),
+                    ),
+                  ),
+
+                  // Presencia siempre queda flotando sobre el mapa y se puede
+                  // contraer para liberar espacio.
+                  Positioned(
+                    top: 12,
+                    left: 96,
+                    right: 12,
+                    child: _PresenceMapControl(
+                      expanded: presenceExpanded,
+                      visualization: visualization,
+                      onToggleExpanded: () {
+                        setState(() => presenceExpanded = !presenceExpanded);
+                      },
+                      onVisualizationChanged: (value) {
+                        setState(() => visualization = value);
+                      },
+                    ),
+                  ),
+
+                  // Las leyendas P/E SOLO tienen sentido en modo Discos.
+                  // Se mantienen dentro del mapa, pegadas abajo.
+                  if (visualization == 'discs')
+                    const Positioned(
+                      left: 12,
+                      right: 12,
+                      bottom: 12,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: _LegendBox(
+                              title: 'Indice P - Plagas',
+                              disease: false,
                             ),
-                            SizedBox(width: 8),
-                            Expanded(
-                              child: _LegendBox(
-                                title: 'Índice E · Enfermedades',
-                                disease: true,
-                              ),
+                          ),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: _LegendBox(
+                              title: 'Indice E - Enfermedades',
+                              disease: true,
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    ],
-                  );
-                },
+                    ),
+                ],
               ),
             ),
           ],
@@ -1506,30 +1599,227 @@ class _FullReportMapScreen extends StatelessWidget {
   }
 }
 
+class _PresenceMapControl extends StatelessWidget {
+  const _PresenceMapControl({
+    required this.expanded,
+    required this.visualization,
+    required this.onToggleExpanded,
+    required this.onVisualizationChanged,
+  });
+
+  final bool expanded;
+  final String visualization;
+  final VoidCallback onToggleExpanded;
+  final ValueChanged<String> onVisualizationChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white.withValues(alpha: .94),
+      elevation: 3,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onToggleExpanded,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            12,
+            expanded ? 11 : 8,
+            10,
+            expanded ? 10 : 8,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 22,
+                    height: 22,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          Color(0xFFD82424),
+                          Color(0xFFFF7A00),
+                          Color(0xFFFFC107),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Presencia',
+                    style: TextStyle(
+                      color: AppTheme.darkGreen,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    visualization == 'heat' ? '- Calor' : '- Discos',
+                    style: const TextStyle(
+                      color: Colors.black54,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    expanded ? Icons.expand_less : Icons.expand_more,
+                    color: Colors.black54,
+                  ),
+                ],
+              ),
+              if (expanded) ...[
+                const SizedBox(height: 9),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _PresenceModeButton(
+                        label: 'Calor',
+                        selected: visualization == 'heat',
+                        onTap: () => onVisualizationChanged('heat'),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: _PresenceModeButton(
+                        label: 'Discos',
+                        selected: visualization == 'discs',
+                        onTap: () => onVisualizationChanged('discs'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 9),
+                const Divider(height: 1),
+                const SizedBox(height: 7),
+                const _PresenceLegendLine(
+                  color: Color(0xFFD82424),
+                  text: 'Critica',
+                ),
+                const _PresenceLegendLine(
+                  color: Color(0xFFFF7A00),
+                  text: 'Advertencia',
+                ),
+                const _PresenceLegendLine(
+                  color: Color(0xFFFFC107),
+                  text: 'Baja',
+                ),
+                const _PresenceLegendLine(
+                  color: Color(0xFF18864B),
+                  text: 'Sin monitorear',
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PresenceModeButton extends StatelessWidget {
+  const _PresenceModeButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? AppTheme.primary : const Color(0xFFF6F7F4),
+      borderRadius: BorderRadius.circular(9),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(9),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: selected ? Colors.white : Colors.black87,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PresenceLegendLine extends StatelessWidget {
+  const _PresenceLegendLine({required this.color, required this.text});
+
+  final Color color;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 3),
+    child: Row(
+      children: [
+        Container(
+          width: 9,
+          height: 9,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          text,
+          style: const TextStyle(fontSize: 10.5, color: Colors.black54),
+        ),
+      ],
+    ),
+  );
+}
+
 class _LegendBox extends StatelessWidget {
   const _LegendBox({required this.title, required this.disease});
+
   final String title;
   final bool disease;
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(10),
+    padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
     decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: .90),
-      borderRadius: BorderRadius.circular(13),
+      color: Colors.white.withValues(alpha: .96),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: const Color(0xFFE3E9E1)),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x12000000),
+          blurRadius: 7,
+          offset: Offset(0, 2),
+        ),
+      ],
     ),
     child: Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: AppTheme.darkGreen,
-            fontSize: 11,
+            fontSize: 12,
             fontWeight: FontWeight.w900,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         _legendLine(
           const Color(0xFF1BA64B),
           disease ? 'Sin presencia' : 'Sin plaga',
@@ -1551,16 +1841,27 @@ class _LegendBox extends StatelessWidget {
   );
 
   Widget _legendLine(Color color, String text) => Padding(
-    padding: const EdgeInsets.only(top: 2),
+    padding: const EdgeInsets.only(top: 3),
     child: Row(
       children: [
         Container(
-          width: 8,
-          height: 8,
+          width: 9,
+          height: 9,
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
-        const SizedBox(width: 5),
-        Expanded(child: Text(text, style: const TextStyle(fontSize: 8.5))),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 9.5,
+              height: 1.15,
+              color: Color(0xFF3F493F),
+            ),
+          ),
+        ),
       ],
     ),
   );
@@ -1719,27 +2020,26 @@ String _diseaseIndexForRows(
   required bool captured,
 }) {
   if (!captured) return 'Sin evaluar';
+
   final diseases = rows
-      .where((row) => row.type == 'Enfermedad')
+      .where((row) => row.type.trim().toLowerCase() == 'enfermedad')
       .toList(growable: false);
+
   if (diseases.isEmpty) return 'Sin presencia';
+
   var rank = 0;
   for (final row in diseases) {
-    final text = '${row.severity} ${row.stage}'.toLowerCase();
-    final current =
-        text.contains('avanz') ||
-            text.contains('terminal') ||
-            text.contains('alta')
+    final value = row.severity.toLowerCase();
+    final current = value.contains('alta')
         ? 3
-        : text.contains('desarrollo') || text.contains('media')
+        : value.contains('media')
         ? 2
-        : text.contains('inicio') ||
-              text.contains('presente') ||
-              text.contains('baja')
+        : value.contains('baja')
         ? 1
         : 0;
     if (current > rank) rank = current;
   }
+
   return switch (rank) {
     3 => 'Alta',
     2 => 'Media',
@@ -1995,7 +2295,7 @@ class _PointCaptureCard extends StatelessWidget {
       barrierColor: Colors.black87,
       builder: (_) => _ZoomablePhotoDialog(
         image: image,
-        title: '${row.name} Â· Punto ${row.pointNumber}',
+        title: '${row.name} - Punto ${row.pointNumber}',
       ),
     );
   }
@@ -2004,12 +2304,12 @@ class _PointCaptureCard extends StatelessWidget {
     if (row.notes.trim().isEmpty) return;
     showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(row.name),
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Nota del hallazgo'),
         content: Text(row.notes),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cerrar'),
           ),
         ],
@@ -2198,34 +2498,62 @@ class _DisplayRecord {
   final double? longitude;
 }
 
-String _pestSeverity(List<PendingCheckpoint> checkpoints) {
-  final pests = checkpoints.where((e) => !e.isDisease && !e.isNoPest).toList();
+String _pestSeverity(List<PendingCheckpoint> checkpoints, int pestTolerance) {
+  final pests = checkpoints
+      .where((e) => !e.isDisease && !e.isNoPest)
+      .toList(growable: false);
+
   final total = pests.fold<int>(0, (sum, e) => sum + (e.qty > 0 ? e.qty : 0));
+
+  return _pestSeverityFromTotal(total, pestTolerance);
+}
+
+String _pestSeverityFromTotal(int total, int tolerance) {
   if (total <= 0) return 'Sin plaga';
-  var major = 5;
-  final regex = RegExp(r'\[SEV_PUNTO:(?:m=\d+;)?M=(\d+)\]');
-  for (final cp in pests) {
-    final match = regex.firstMatch(cp.notes ?? '');
-    final parsed = int.tryParse(match?.group(1) ?? '');
-    if (parsed != null && parsed > 0) {
-      major = parsed;
-      break;
-    }
+
+  final threshold = tolerance < 0 ? 0 : tolerance;
+
+  if (threshold == 0) {
+    return total == 1 ? 'Severidad mayor' : 'Severidad alta';
   }
-  final minor = (major ~/ 2).clamp(1, major);
-  if (total <= minor) return 'Severidad menor';
-  if (total <= major) return 'Severidad mayor';
-  return 'Supera severidad mayor';
+
+  if (total <= threshold) return 'Severidad menor';
+  if (total == threshold + 1) return 'Severidad mayor';
+  return 'Severidad alta';
 }
 
 String _diseaseSeverity(String? stage, String presence) {
-  final p = presence.toLowerCase();
-  if (p == 'low' || p == '0') return 'No presente';
-  final value = (stage ?? '').toLowerCase();
-  if (value.contains('avanz') || value.contains('terminal')) return 'Avanzado';
-  if (value.contains('desarrollo')) return 'Desarrollo';
-  if (value.contains('inicio')) return 'Inicio';
-  return 'Presente';
+  final p = presence.trim().toLowerCase();
+
+  if (p == 'critical' || p == 'critica' || p == 'crÃ­tica') {
+    return 'Alta';
+  }
+  if (p == 'warning' || p == 'advertencia') {
+    return 'Media';
+  }
+  if (p == 'absent' ||
+      p == 'ausente' ||
+      p == 'none' ||
+      p == 'sin presencia' ||
+      p == '0') {
+    return 'Sin presencia';
+  }
+  if (p == 'low' || p == 'baja') {
+    return 'Baja';
+  }
+
+  final value = (stage ?? '').trim().toLowerCase();
+  if (value.contains('avanz') ||
+      value.contains('terminal') ||
+      value.contains('alta')) {
+    return 'Alta';
+  }
+  if (value.contains('desarrollo') || value.contains('media')) {
+    return 'Media';
+  }
+
+  // Si existe un hallazgo de tipo Enfermedad, el nivel base del web es Baja.
+  return 'Baja';
 }
 
 Map<String, int> _pointNumberMap(List<TargetPoint> targets) {
@@ -2284,38 +2612,108 @@ bool _remoteIsNoPest(
   Map<String, dynamic> item,
   Map<String, PhytoCatalogItem> catalogById,
 ) {
+  final directType = '${item['issue_type'] ?? item['phyto_issue_type'] ?? ''}'
+      .trim()
+      .toLowerCase();
+
+  // Si el backend ya declara el tipo, no es un registro "Sin plaga".
+  if (directType == 'plaga' ||
+      directType == 'pest' ||
+      directType == 'enfermedad' ||
+      directType == 'disease') {
+    return false;
+  }
+
+  final directIssue = '${item['issue'] ?? ''}'.trim();
+  final directIssueLower = directIssue.toLowerCase();
+
+  if (directIssueLower.contains('sin plaga') ||
+      directIssueLower.contains('sin_plaga') ||
+      directIssueLower.contains('no plaga') ||
+      directIssueLower == 'ausente') {
+    return true;
+  }
+
   final issueRaw =
       item['phyto_issue'] ?? item['phyto_issue_id'] ?? item['phytosanitary'];
-  if (issueRaw == null) return true;
+
   if (issueRaw is Map) {
     final issue = Map<String, dynamic>.from(issueRaw);
     final text = [
       firstText(issue, const ['name', 'nombre', 'label']) ?? '',
-      firstText(issue, const ['type', 'tipo']) ?? '',
+      firstText(issue, const ['type', 'tipo', 'issue_type']) ?? '',
       firstText(issue, const ['description', 'descripcion']) ?? '',
     ].join(' ').toLowerCase();
-    return text.contains('sin plaga') ||
+
+    if (text.contains('sin plaga') ||
         text.contains('sin_plaga') ||
-        text.contains('no plaga') ||
-        text.contains('ausente');
+        text.contains('no plaga')) {
+      return true;
+    }
+
+    if (text.contains('plaga') ||
+        text.contains('pest') ||
+        text.contains('enfermedad') ||
+        text.contains('disease')) {
+      return false;
+    }
   }
+
   final issueId = flexibleId(issueRaw);
-  return issueId != null && catalogById[issueId]?.isNoPest == true;
+  if (issueId != null) {
+    final catalogItem = catalogById[issueId];
+    if (catalogItem != null) return catalogItem.isNoPest;
+  }
+
+  // En el GeoJSON oficial un punto "Sin plaga" no trae issue/issue_type.
+  return directIssue.isEmpty && issueRaw == null;
 }
 
 bool _remoteIsDisease(
   Map<String, dynamic> item,
   Map<String, PhytoCatalogItem> catalogById,
 ) {
+  final directType =
+      '${item['issue_type'] ?? item['phyto_issue_type'] ?? item['type'] ?? item['tipo'] ?? ''}'
+          .trim()
+          .toLowerCase();
+
+  if (directType == 'enfermedad' ||
+      directType == 'disease' ||
+      directType.contains('enfermedad') ||
+      directType.contains('disease')) {
+    return true;
+  }
+
+  if (directType == 'plaga' || directType == 'pest') {
+    return false;
+  }
+
   final issueRaw =
       item['phyto_issue'] ?? item['phyto_issue_id'] ?? item['phytosanitary'];
+
   if (issueRaw is Map) {
     final issue = Map<String, dynamic>.from(issueRaw);
-    final type = '${issue['type'] ?? issue['tipo'] ?? ''}'.toLowerCase();
-    if (type.contains('enfermedad') || type.contains('disease')) return true;
+    final nestedType =
+        '${issue['issue_type'] ?? issue['type'] ?? issue['tipo'] ?? ''}'
+            .trim()
+            .toLowerCase();
+
+    if (nestedType.contains('enfermedad') || nestedType.contains('disease')) {
+      return true;
+    }
+
+    if (nestedType == 'plaga' || nestedType == 'pest') {
+      return false;
+    }
   }
+
   final issueId = flexibleId(issueRaw);
-  if (issueId != null && catalogById[issueId]?.isDisease == true) return true;
+  if (issueId != null && catalogById[issueId]?.isDisease == true) {
+    return true;
+  }
+
+  // Fallback solo para registros historicos sin issue_type.
   final stage = '${item['stage'] ?? ''}'.toLowerCase();
   return stage.contains('inicio') ||
       stage.contains('desarrollo') ||
@@ -2326,6 +2724,7 @@ bool _remoteIsDisease(
 String _remotePestSeverity(
   List<Map<String, dynamic>> checkpoints,
   Map<String, PhytoCatalogItem> catalogById,
+  int pestTolerance,
 ) {
   final pests = checkpoints
       .where(
@@ -2334,37 +2733,31 @@ String _remotePestSeverity(
             !_remoteIsDisease(item, catalogById),
       )
       .toList(growable: false);
+
   final total = pests.fold<int>(0, (sum, item) {
     final qty = int.tryParse('${item['qty'] ?? 0}') ?? 0;
     return sum + (qty > 0 ? qty : 0);
   });
-  if (total <= 0) return 'Sin plaga';
 
-  var major = 5;
-  final regex = RegExp(r'\[SEV_PUNTO:(?:m=\d+;)?M=(\d+)\]');
-  for (final item in pests) {
-    final parsed = int.tryParse(
-      regex.firstMatch('${item['notes'] ?? ''}')?.group(1) ?? '',
-    );
-    if (parsed != null && parsed > 0) {
-      major = parsed;
-      break;
-    }
-  }
-  final minor = (major ~/ 2).clamp(1, major);
-  if (total <= minor) return 'Severidad menor';
-  if (total <= major) return 'Severidad mayor';
-  return 'Supera severidad mayor';
+  return _pestSeverityFromTotal(total, pestTolerance);
 }
 
 String _diseasePhase(String? stage, String presence) {
   final p = presence.trim().toLowerCase();
-  if (p == 'low' || p == '0' || p == 'absent' || p == 'ausente') {
+
+  if (p == 'absent' ||
+      p == 'ausente' ||
+      p == 'none' ||
+      p == 'sin presencia' ||
+      p == '0') {
     return 'No presente';
   }
+
   final clean = stage?.trim();
   if (clean == null || clean.isEmpty) return 'Presente';
-  return 'Presente / ${stageLabel(clean)}';
+
+  final display = stageLabel(clean);
+  return 'Presente / $display';
 }
 
 String _cleanSeverityMetadata(String? notes) => (notes ?? '')

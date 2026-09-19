@@ -35,6 +35,42 @@
       color:#fff;font-size:9px;font-weight:900;text-shadow:0 1px 2px #000,0 0 2px #000;
       pointer-events:none;
     }
+    .ciagro-heat-wrapper{background:transparent!important;border:0!important}
+    .ciagro-heat-dot{
+      width:64px;height:64px;border-radius:50%;
+      transform-origin:center;
+      pointer-events:none;
+    }
+    .ciagro-heat-0{
+      background:radial-gradient(circle,
+        rgba(27,166,75,.58) 0 12%,
+        rgba(27,166,75,.28) 28%,
+        rgba(27,166,75,.08) 48%,
+        rgba(27,166,75,0) 72%);
+    }
+    .ciagro-heat-1{
+      background:radial-gradient(circle,
+        rgba(255,193,7,.95) 0 13%,
+        rgba(255,193,7,.72) 25%,
+        rgba(255,193,7,.28) 45%,
+        rgba(255,193,7,0) 72%);
+    }
+    .ciagro-heat-2{
+      background:radial-gradient(circle,
+        rgba(216,36,36,.96) 0 11%,
+        rgba(255,122,0,.90) 22%,
+        rgba(255,193,7,.62) 39%,
+        rgba(255,193,7,.18) 55%,
+        rgba(255,193,7,0) 73%);
+    }
+    .ciagro-heat-3{
+      background:radial-gradient(circle,
+        rgba(216,36,36,1) 0 14%,
+        rgba(255,82,20,.96) 22%,
+        rgba(255,193,7,.72) 40%,
+        rgba(255,193,7,.20) 56%,
+        rgba(255,193,7,0) 74%);
+    }
   </style>
 </head>
 <body>
@@ -65,6 +101,27 @@ function phytoIcon(p){
     '</div></div>';
   return L.divIcon({className:'ciagro-pe-wrapper',html:html,iconSize:[34,39],iconAnchor:[17,27],tooltipAnchor:[0,-18]});
 }
+function phytoColorRank(c){
+  const value=String(c||'').toLowerCase();
+  if(value==='#d82424'||value==='#dc2626'||value==='#ef4444')return 3;
+  if(value==='#ff7a00'||value==='#f97316'||value==='#fb923c')return 2;
+  if(value==='#ffc107'||value==='#facc15'||value==='#fbbf24')return 1;
+  return 0;
+}
+function phytoRank(p){
+  return Math.max(phytoColorRank(p.pestColor),phytoColorRank(p.diseaseColor));
+}
+function heatIcon(p){
+  const rank=phytoRank(p);
+  const html='<div class="ciagro-heat-dot ciagro-heat-'+rank+'"></div>';
+  return L.divIcon({
+    className:'ciagro-heat-wrapper',
+    html:html,
+    iconSize:[64,64],
+    iconAnchor:[32,32],
+    tooltipAnchor:[0,-28]
+  });
+}
 map.on('click',()=>{
   if(interactive && window.CiagroMapTap && window.CiagroMapTap.postMessage){
     window.CiagroMapTap.postMessage('capture');
@@ -76,6 +133,8 @@ window.setCiagroData=function(d){
     let m;
     if(d.ndvi){
       m=L.circleMarker([p.lat,p.lon],{radius:5,color:color(p.value),fillColor:color(p.value),fillOpacity:.9});
+    } else if(p.splitPhyto && d.phytoVisualization==='heat'){
+      m=L.marker([p.lat,p.lon],{icon:heatIcon(p)});
     } else if(p.splitPhyto){
       m=L.marker([p.lat,p.lon],{icon:phytoIcon(p)});
     } else {

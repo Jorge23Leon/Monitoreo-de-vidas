@@ -38,15 +38,18 @@ class _MonitoringMapScreenState extends State<MonitoringMapScreen> {
   @override
   void initState() {
     super.initState();
-    final raw = AppScope.read(context).selectedMonitoring ?? const <String, dynamic>{};
+    final raw =
+        AppScope.read(context).selectedMonitoring ?? const <String, dynamic>{};
     header = MonitoringHeader.fromJson(raw);
     paused = header.isPaused;
     completed = header.isCompleted;
     pointsFuture = repo.targetPoints(header.id);
     _bootstrap();
-    _expiryTimer = Timer.periodic(const Duration(seconds: 1), (_) => _checkExpiry());
+    _expiryTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _checkExpiry(),
+    );
   }
-
 
   @override
   void dispose() {
@@ -75,7 +78,9 @@ class _MonitoringMapScreenState extends State<MonitoringMapScreen> {
       completed = true;
       paused = false;
     });
-    _snack('El tiempo del monitoreo terminó. Se cerró localmente y se sincronizará cuando no queden capturas pendientes.');
+    _snack(
+      'El tiempo del monitoreo terminó. Se cerró localmente y se sincronizará cuando no queden capturas pendientes.',
+    );
   }
 
   Future<void> _bootstrap() async {
@@ -170,7 +175,9 @@ class _MonitoringMapScreenState extends State<MonitoringMapScreen> {
   Future<void> _newPoint() async {
     if (creatingPoint || completed) return;
     if (paused) {
-      _snack('El monitoreo está pausado. Toca Continuar antes de registrar otro punto.');
+      _snack(
+        'El monitoreo está pausado. Toca Continuar antes de registrar otro punto.',
+      );
       return;
     }
     setState(() => creatingPoint = true);
@@ -192,13 +199,16 @@ class _MonitoringMapScreenState extends State<MonitoringMapScreen> {
           '${unfinishedLocal.label} todavía no se ha guardado. Debes terminar ese punto antes de crear uno nuevo. ¿Continuar ahora?',
         );
         if (resume && mounted) {
-          AppScope.read(context).selectTargetPoint(unfinishedLocal.navigationRaw);
+          AppScope.read(
+            context,
+          ).selectTargetPoint(unfinishedLocal.navigationRaw);
         }
         return;
       }
 
       final position = await MonitoringLocationService.capturePosition();
-      final insideParcel = polygon.isEmpty ||
+      final insideParcel =
+          polygon.isEmpty ||
           MonitoringLocationService.pointInsidePolygon(
             position.latitude,
             position.longitude,
@@ -259,7 +269,9 @@ class _MonitoringMapScreenState extends State<MonitoringMapScreen> {
       await repo.pauseHeader(header.id);
       if (!mounted) return;
       setState(() => paused = true);
-      _snack('Monitoreo pausado. Si no hay internet, el cambio queda pendiente.');
+      _snack(
+        'Monitoreo pausado. Si no hay internet, el cambio queda pendiente.',
+      );
       AppScope.read(context).go(AppPage.monitoringList);
     } finally {
       if (mounted) setState(() => changingStatus = false);
@@ -583,10 +595,7 @@ class _MonitoringMapScreenState extends State<MonitoringMapScreen> {
         backgroundColor: const Color(0xFFFBFCF8),
         body: Column(
           children: [
-            AppHeader(
-              title: 'Mapa del monitoreo',
-              onBack: _handleBack,
-            ),
+            AppHeader(title: 'Mapa del monitoreo', onBack: _handleBack),
             Expanded(
               child: RefreshIndicator(
                 onRefresh: _refresh,
@@ -594,7 +603,9 @@ class _MonitoringMapScreenState extends State<MonitoringMapScreen> {
                   future: pointsFuture,
                   builder: (context, snapshot) {
                     if (snapshot.connectionState != ConnectionState.done) {
-                      return const Center(child: GpaLoadingIndicator(text: 'Cargando mapa...'));
+                      return const Center(
+                        child: GpaLoadingIndicator(text: 'Cargando mapa...'),
+                      );
                     }
                     final points = snapshot.data ?? const <TargetPoint>[];
                     if (snapshot.hasError && points.isEmpty) {
@@ -602,9 +613,16 @@ class _MonitoringMapScreenState extends State<MonitoringMapScreen> {
                         padding: const EdgeInsets.all(24),
                         children: [
                           const SizedBox(height: 100),
-                          const Icon(Icons.map_outlined, size: 70, color: Colors.black26),
+                          const Icon(
+                            Icons.map_outlined,
+                            size: 70,
+                            color: Colors.black26,
+                          ),
                           const SizedBox(height: 18),
-                          Text('${snapshot.error}', textAlign: TextAlign.center),
+                          Text(
+                            '${snapshot.error}',
+                            textAlign: TextAlign.center,
+                          ),
                         ],
                       );
                     }
@@ -619,7 +637,8 @@ class _MonitoringMapScreenState extends State<MonitoringMapScreen> {
                           validPoints[index].longitude,
                           label:
                               '${validPoints[index].label} · ${validPoints[index].completed ? 'Capturado' : 'Pendiente'}',
-                          markerText: '${validPoints[index].visibleNumber > 0 ? validPoints[index].visibleNumber : index + 1}',
+                          markerText:
+                              '${validPoints[index].visibleNumber > 0 ? validPoints[index].visibleNumber : index + 1}',
                           markerColor: validPoints[index].completed
                               ? '#1BA64B'
                               : '#F59E0B',
@@ -628,7 +647,9 @@ class _MonitoringMapScreenState extends State<MonitoringMapScreen> {
                     final polygonPoints = polygon
                         .map((e) => MapPoint(e.lat, e.lon))
                         .toList(growable: false);
-                    final completedPoints = points.where((e) => e.completed).length;
+                    final completedPoints = points
+                        .where((e) => e.completed)
+                        .length;
 
                     return ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
@@ -637,7 +658,6 @@ class _MonitoringMapScreenState extends State<MonitoringMapScreen> {
                         _MonitoringSummary(
                           header: header,
                           total: points.length,
-                          completed: completedPoints,
                           pendingSync: pending,
                           syncing: syncing,
                           paused: paused,
@@ -657,7 +677,9 @@ class _MonitoringMapScreenState extends State<MonitoringMapScreen> {
                           elevation: 2,
                           color: Colors.white,
                           surfaceTintColor: Colors.transparent,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
                           child: Padding(
                             padding: const EdgeInsets.all(10),
                             child: Column(
@@ -676,14 +698,20 @@ class _MonitoringMapScreenState extends State<MonitoringMapScreen> {
                                       ),
                                     ),
                                     Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 7,
+                                      ),
                                       decoration: BoxDecoration(
                                         color: const Color(0xFFE9F7E7),
                                         borderRadius: BorderRadius.circular(20),
                                       ),
                                       child: Text(
                                         '${polygon.length} vértices',
-                                        style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w900),
+                                        style: const TextStyle(
+                                          color: AppTheme.primary,
+                                          fontWeight: FontWeight.w900,
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -693,7 +721,10 @@ class _MonitoringMapScreenState extends State<MonitoringMapScreen> {
                                   currentAccuracy == null
                                       ? 'Toca el mapa para registrar con tu GPS real. Buscando precisión...'
                                       : 'Toca el mapa para registrar con tu GPS real · precisión ${currentAccuracy!.toStringAsFixed(0)} m.',
-                                  style: const TextStyle(color: Colors.black54, fontSize: 12),
+                                  style: const TextStyle(
+                                    color: Colors.black54,
+                                    fontSize: 12,
+                                  ),
                                 ),
                                 const SizedBox(height: 10),
                                 Stack(
@@ -703,7 +734,9 @@ class _MonitoringMapScreenState extends State<MonitoringMapScreen> {
                                       polygon: polygonPoints,
                                       currentLocation: currentLocation,
                                       currentAccuracy: currentAccuracy,
-                                      onMapTap: completed || paused ? null : _newPoint,
+                                      onMapTap: completed || paused
+                                          ? null
+                                          : _newPoint,
                                       height: 390,
                                     ),
                                     Positioned(
@@ -717,10 +750,12 @@ class _MonitoringMapScreenState extends State<MonitoringMapScreen> {
                                             shape: const CircleBorder(),
                                             child: IconButton(
                                               tooltip: 'Abrir mapa completo',
-                                              onPressed: () => _openFullscreenMap(
-                                                points: mapPoints,
-                                                polygonPoints: polygonPoints,
-                                              ),
+                                              onPressed: () =>
+                                                  _openFullscreenMap(
+                                                    points: mapPoints,
+                                                    polygonPoints:
+                                                        polygonPoints,
+                                                  ),
                                               icon: const Icon(
                                                 Icons.fullscreen,
                                                 color: AppTheme.darkGreen,
@@ -734,7 +769,8 @@ class _MonitoringMapScreenState extends State<MonitoringMapScreen> {
                                             shape: const CircleBorder(),
                                             child: IconButton(
                                               tooltip: 'Actualizar GPS',
-                                              onPressed: () => _updateCurrentLocation(),
+                                              onPressed: () =>
+                                                  _updateCurrentLocation(),
                                               icon: const Icon(
                                                 Icons.my_location,
                                                 color: AppTheme.primary,
@@ -751,20 +787,30 @@ class _MonitoringMapScreenState extends State<MonitoringMapScreen> {
                                   width: double.infinity,
                                   height: 52,
                                   child: FilledButton.icon(
-                                    onPressed: completed || paused || creatingPoint ? null : _newPoint,
+                                    onPressed:
+                                        completed || paused || creatingPoint
+                                        ? null
+                                        : _newPoint,
                                     icon: creatingPoint
-                                        ? const GpaLoadingIndicator(size: 24, showText: false)
-                                        : const Icon(Icons.add_location_alt_outlined),
+                                        ? const GpaLoadingIndicator(
+                                            size: 24,
+                                            showText: false,
+                                          )
+                                        : const Icon(
+                                            Icons.add_location_alt_outlined,
+                                          ),
                                     label: Text(
                                       creatingPoint
                                           ? 'Obteniendo GPS...'
                                           : completedPoints == 0
-                                              ? 'Iniciar monitoreo con primer punto'
-                                              : 'Registrar nuevo punto',
+                                          ? 'Iniciar monitoreo con primer punto'
+                                          : 'Registrar nuevo punto',
                                     ),
                                     style: FilledButton.styleFrom(
                                       backgroundColor: const Color(0xFF176E35),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -806,7 +852,9 @@ class _MonitoringMapScreenState extends State<MonitoringMapScreen> {
                               point: point,
                               onTap: point.completed
                                   ? null
-                                  : () => app.selectTargetPoint(point.navigationRaw),
+                                  : () => app.selectTargetPoint(
+                                      point.navigationRaw,
+                                    ),
                             ),
                           ),
                         ),
@@ -833,7 +881,6 @@ class _MonitoringSummary extends StatelessWidget {
   const _MonitoringSummary({
     required this.header,
     required this.total,
-    required this.completed,
     required this.pendingSync,
     required this.syncing,
     required this.paused,
@@ -850,7 +897,6 @@ class _MonitoringSummary extends StatelessWidget {
 
   final MonitoringHeader header;
   final int total;
-  final int completed;
   final int pendingSync;
   final bool syncing;
   final bool paused;
@@ -866,12 +912,18 @@ class _MonitoringSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = finished ? 'Completado' : paused ? 'Pausado' : total == 0 ? 'Pendiente' : 'En progreso';
+    final label = finished
+        ? 'Completado'
+        : paused
+        ? 'Pausado'
+        : total == 0
+        ? 'Pendiente'
+        : 'En progreso';
     final accent = finished
         ? const Color(0xFF2E7D32)
         : paused
-            ? const Color(0xFFD66B00)
-            : const Color(0xFF176E35);
+        ? const Color(0xFFD66B00)
+        : const Color(0xFF176E35);
     return Card(
       margin: EdgeInsets.zero,
       elevation: 2,
@@ -898,19 +950,32 @@ class _MonitoringSummary extends StatelessWidget {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 11,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: accent.withValues(alpha: .11),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Text(label, style: TextStyle(color: accent, fontWeight: FontWeight.w900, fontSize: 11)),
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: accent,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 11,
+                    ),
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 6),
             Text(
               '${header.programName} · ${header.cropName}',
-              style: const TextStyle(color: Colors.black54, fontWeight: FontWeight.w700),
+              style: const TextStyle(
+                color: Colors.black54,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
@@ -922,8 +987,14 @@ class _MonitoringSummary extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                _SmallStatus(icon: Icons.my_location, text: '$completed punto(s)'),
-                _SmallStatus(icon: Icons.cloud_upload_outlined, text: '$pendingSync pendiente(s)'),
+                _SmallStatus(
+                  icon: pendingSync > 0
+                      ? Icons.cloud_upload_outlined
+                      : Icons.cloud_done_outlined,
+                  text: pendingSync > 0
+                      ? 'Pendiente de sincronizar'
+                      : 'Sincronizado',
+                ),
               ],
             ),
             if (!finished) ...[
@@ -932,7 +1003,9 @@ class _MonitoringSummary extends StatelessWidget {
                 children: [
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: changingStatus ? null : (paused ? onResume : onPause),
+                      onPressed: changingStatus
+                          ? null
+                          : (paused ? onResume : onPause),
                       icon: Icon(paused ? Icons.play_arrow : Icons.pause),
                       label: Text(paused ? 'Continuar' : 'Pausar'),
                       style: FilledButton.styleFrom(
@@ -949,7 +1022,9 @@ class _MonitoringSummary extends StatelessWidget {
                       onPressed: changingStatus ? null : onFinish,
                       icon: const Icon(Icons.check),
                       label: const Text('Terminar'),
-                      style: FilledButton.styleFrom(backgroundColor: const Color(0xFF176E35)),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF176E35),
+                      ),
                     ),
                   ),
                 ],
@@ -984,10 +1059,23 @@ class _SmallStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(color: const Color(0xFFF2F7EE), borderRadius: BorderRadius.circular(12)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 16, color: AppTheme.primary), const SizedBox(width: 6), Text(text, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800))]),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    decoration: BoxDecoration(
+      color: const Color(0xFFF2F7EE),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: AppTheme.primary),
+        const SizedBox(width: 6),
+        Text(
+          text,
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+        ),
+      ],
+    ),
+  );
 }
 
 class _TargetCard extends StatelessWidget {
@@ -1007,17 +1095,30 @@ class _TargetCard extends StatelessWidget {
       child: ListTile(
         onTap: onTap,
         leading: CircleAvatar(
-          backgroundColor: done ? const Color(0xFFE1F2DE) : const Color(0xFFFFF0D9),
-          child: Icon(done ? Icons.check : Icons.location_on, color: done ? AppTheme.primary : const Color(0xFFD66B00)),
+          backgroundColor: done
+              ? const Color(0xFFE1F2DE)
+              : const Color(0xFFFFF0D9),
+          child: Icon(
+            done ? Icons.check : Icons.location_on,
+            color: done ? AppTheme.primary : const Color(0xFFD66B00),
+          ),
         ),
-        title: Text(point.label, style: const TextStyle(fontWeight: FontWeight.w900)),
+        title: Text(
+          point.label,
+          style: const TextStyle(fontWeight: FontWeight.w900),
+        ),
         subtitle: Text(
           done
               ? 'Capturado · ${point.serverId == null ? 'Pendiente de sincronizar' : 'Sincronizado'}'
               : 'Pendiente de captura · toca para continuar',
           style: const TextStyle(fontSize: 12),
         ),
-        trailing: Icon(point.needsSync ? Icons.cloud_upload_outlined : Icons.cloud_done_outlined, color: done ? AppTheme.primary : Colors.black45),
+        trailing: Icon(
+          point.needsSync
+              ? Icons.cloud_upload_outlined
+              : Icons.cloud_done_outlined,
+          color: done ? AppTheme.primary : Colors.black45,
+        ),
       ),
     );
   }
@@ -1025,19 +1126,32 @@ class _TargetCard extends StatelessWidget {
 
 String _statusKey(String raw) {
   final value = raw.toLowerCase().trim().replaceAll(' ', '_');
-  if (value.contains('complet') || value.contains('finaliz')) return 'completed';
-  if (value.contains('progress') || value.contains('progreso')) return 'in_progress';
+  if (value.contains('complet') || value.contains('finaliz'))
+    return 'completed';
+  if (value.contains('progress') || value.contains('progreso'))
+    return 'in_progress';
   return 'pending';
 }
 
 String _remainingText(String? raw) {
-  if (raw == null || raw.trim().isEmpty) return 'Sin fecha de término del programa';
-  final parsed = DateTime.tryParse(raw);
-  if (parsed == null) return 'Fin del programa: $raw';
+  if (raw == null || raw.trim().isEmpty) {
+    return 'Sin fecha estimada de fin';
+  }
+
+  final parsed = DateTime.tryParse(raw)?.toLocal();
+  if (parsed == null) return 'Fin estimado: $raw';
+
   final end = DateTime(parsed.year, parsed.month, parsed.day, 23, 59, 59);
+
   final diff = end.difference(DateTime.now());
-  if (diff.isNegative) return 'El programa ya alcanzó su fecha de cierre';
+  final formatted =
+      '${parsed.day.toString().padLeft(2, '0')}/${parsed.month.toString().padLeft(2, '0')}/${parsed.year}';
+
+  if (diff.isNegative) {
+    return 'Sesion vencida Â· fin $formatted';
+  }
+
   final days = diff.inDays;
   final hours = diff.inHours.remainder(24);
-  return 'Tiempo restante: ${days}d ${hours}h · fin ${parsed.day.toString().padLeft(2, '0')}/${parsed.month.toString().padLeft(2, '0')}/${parsed.year}';
+  return 'Tiempo restante: ${days}d ${hours}h Â· fin $formatted';
 }

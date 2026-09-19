@@ -26,7 +26,6 @@ class _MonitoringCheckpointScreenState
     extends State<MonitoringCheckpointScreen> {
   final repo = MonitoringRepository();
   final notesController = TextEditingController();
-  final severityMajorController = TextEditingController(text: '5');
 
   late MonitoringHeader header;
   late TargetPoint target;
@@ -60,7 +59,6 @@ class _MonitoringCheckpointScreenState
   @override
   void dispose() {
     notesController.dispose();
-    severityMajorController.dispose();
     super.dispose();
   }
 
@@ -107,9 +105,6 @@ class _MonitoringCheckpointScreenState
     });
   }
 
-  int get totalPestQuantity => quantities.values.fold(0, (a, b) => a + b) +
-      generalPests.length;
-
   int get pendingRecords =>
       quantities.values.where((value) => value > 0).length +
       generalPests.length +
@@ -141,12 +136,6 @@ class _MonitoringCheckpointScreenState
         );
         return;
       }
-    }
-
-    final major = int.tryParse(severityMajorController.text.trim());
-    if (totalPestQuantity > 0 && (major == null || major <= 0)) {
-      _snack('La severidad mayor debe ser un número mayor a 0.');
-      return;
     }
 
     final confirmed = await _confirm(
@@ -259,7 +248,9 @@ class _MonitoringCheckpointScreenState
       );
 
       if (!mounted) return;
-      _snack('Punto guardado localmente. Usa Sincronizar cuando tengas conexión.');
+      _snack(
+        'Punto guardado localmente. Usa Sincronizar cuando tengas conexión.',
+      );
       AppScope.read(context).go(AppPage.monitoringMap);
     } catch (error) {
       if (mounted) _snack(error.toString().replaceFirst('Exception: ', ''));
@@ -340,7 +331,9 @@ class _MonitoringCheckpointScreenState
   }
 
   void _snack(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _showBackWarning() async {
@@ -387,7 +380,9 @@ class _MonitoringCheckpointScreenState
                 builder: (context, snapshot) {
                   if (snapshot.connectionState != ConnectionState.done &&
                       catalog.isEmpty) {
-                    return const Center(child: GpaLoadingIndicator(text: 'Cargando catálogo...'));
+                    return const Center(
+                      child: GpaLoadingIndicator(text: 'Cargando catálogo...'),
+                    );
                   }
                   if (snapshot.hasError && catalog.isEmpty) {
                     return Center(
@@ -404,10 +399,7 @@ class _MonitoringCheckpointScreenState
                   return ListView(
                     padding: const EdgeInsets.fromLTRB(14, 14, 14, 28),
                     children: [
-                      _PointSummary(
-                        header: header,
-                        target: target,
-                      ),
+                      _PointSummary(header: header, target: target),
                       const SizedBox(height: 14),
                       _CatalogTabs(
                         value: tab,
@@ -424,8 +416,7 @@ class _MonitoringCheckpointScreenState
                         selected: selected,
                         registered: previouslyRegistered,
                         dirtyIds: _dirtyIds(),
-                        onSelected: (value) =>
-                            setState(() => selected = value),
+                        onSelected: (value) => setState(() => selected = value),
                       ),
                       const SizedBox(height: 14),
                       if (selected != null)
@@ -440,8 +431,9 @@ class _MonitoringCheckpointScreenState
                             : _PestEditor(
                                 item: selected!,
                                 quantities: quantities,
-                                generalSelected:
-                                    generalPests.contains(selected!.id),
+                                generalSelected: generalPests.contains(
+                                  selected!.id,
+                                ),
                                 onGeneralChanged: (value) => setState(() {
                                   if (value) {
                                     generalPests.add(selected!.id);
@@ -451,15 +443,8 @@ class _MonitoringCheckpointScreenState
                                 }),
                                 onQuantity: _setQuantity,
                               ),
-                      if (selected == null)
-                        const _SelectHint(),
+                      if (selected == null) const _SelectHint(),
                       const SizedBox(height: 14),
-                      if (totalPestQuantity > 0)
-                        _SeverityCard(
-                          controller: severityMajorController,
-                          total: totalPestQuantity,
-                        ),
-                      if (totalPestQuantity > 0) const SizedBox(height: 14),
                       _PhotoCard(
                         photo: photo,
                         onCamera: _takePhoto,
@@ -479,7 +464,8 @@ class _MonitoringCheckpointScreenState
                             maxLines: 6,
                             decoration: const InputDecoration(
                               labelText: 'Observaciones',
-                              hintText: 'Agrega notas del punto si son necesarias...',
+                              hintText:
+                                  'Agrega notas del punto si son necesarias...',
                               prefixIcon: Icon(Icons.notes),
                             ),
                           ),
@@ -506,10 +492,7 @@ class _MonitoringCheckpointScreenState
 }
 
 class _PointSummary extends StatelessWidget {
-  const _PointSummary({
-    required this.header,
-    required this.target,
-  });
+  const _PointSummary({required this.header, required this.target});
 
   final MonitoringHeader header;
   final TargetPoint target;
@@ -559,13 +542,19 @@ class _PointSummary extends StatelessWidget {
                     '▧  Parcela: ${header.plotName}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Color(0xFF4F5663), fontSize: 13),
+                    style: const TextStyle(
+                      color: Color(0xFF4F5663),
+                      fontSize: 13,
+                    ),
                   ),
                   Text(
                     '⌁  Cultivo: ${header.cropName}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Color(0xFF4F5663), fontSize: 13),
+                    style: const TextStyle(
+                      color: Color(0xFF4F5663),
+                      fontSize: 13,
+                    ),
                   ),
                 ],
               ),
@@ -646,7 +635,12 @@ class _CatalogTabs extends StatelessWidget {
 }
 
 class _CatalogTabButton extends StatelessWidget {
-  const _CatalogTabButton({required this.selected, required this.icon, required this.label, required this.onTap});
+  const _CatalogTabButton({
+    required this.selected,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
   final bool selected;
   final IconData icon;
   final String label;
@@ -654,35 +648,39 @@ class _CatalogTabButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-        color: selected ? const Color(0xFF176E35) : Colors.transparent,
-        borderRadius: BorderRadius.circular(13),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(13),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(icon, size: 19, color: selected ? Colors.white : AppTheme.darkGreen),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: selected ? Colors.white : AppTheme.darkGreen,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-              ],
+    color: selected ? const Color(0xFF176E35) : Colors.transparent,
+    borderRadius: BorderRadius.circular(13),
+    child: InkWell(
+      borderRadius: BorderRadius.circular(13),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 19,
+              color: selected ? Colors.white : AppTheme.darkGreen,
             ),
-          ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected ? Colors.white : AppTheme.darkGreen,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
         ),
-      );
+      ),
+    ),
+  );
 }
 
 class _CatalogStrip extends StatelessWidget {
@@ -722,15 +720,16 @@ class _CatalogStrip extends StatelessWidget {
         itemBuilder: (context, index) {
           final item = items[index];
           final active = selected?.id == item.id;
-          final marked = registered.contains(item.id) || dirtyIds.contains(item.id);
+          final marked =
+              registered.contains(item.id) || dirtyIds.contains(item.id);
           return SizedBox(
             width: 150,
             child: Material(
               color: active
                   ? const Color(0xFFF0F6FF)
                   : marked
-                      ? const Color(0xFFF0F0F0)
-                      : Colors.white,
+                  ? const Color(0xFFF0F0F0)
+                  : Colors.white,
               elevation: active ? 4 : 1,
               borderRadius: BorderRadius.circular(18),
               child: InkWell(
@@ -742,8 +741,8 @@ class _CatalogStrip extends StatelessWidget {
                       color: active
                           ? const Color(0xFF0D47C5)
                           : marked
-                              ? Colors.grey
-                              : const Color(0xFFE0E3E8),
+                          ? Colors.grey
+                          : const Color(0xFFE0E3E8),
                       width: active ? 2 : 1,
                     ),
                     borderRadius: BorderRadius.circular(18),
@@ -1044,21 +1043,23 @@ class _DiseaseEditor extends StatelessWidget {
                     return Wrap(
                       spacing: gap,
                       runSpacing: gap,
-                      children: stages.map((stage) {
-                        return SizedBox(
-                          width: width,
-                          child: _DiseaseStageOption(
-                            stage: stage,
-                            selected: evaluation?.stage == stage.name,
-                            onTap: () => onChanged(
-                              DiseaseEvaluation(
-                                DiseasePresence.present,
-                                stage: stage.name,
+                      children: stages
+                          .map((stage) {
+                            return SizedBox(
+                              width: width,
+                              child: _DiseaseStageOption(
+                                stage: stage,
+                                selected: evaluation?.stage == stage.name,
+                                onTap: () => onChanged(
+                                  DiseaseEvaluation(
+                                    DiseasePresence.present,
+                                    stage: stage.name,
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                        );
-                      }).toList(growable: false),
+                            );
+                          })
+                          .toList(growable: false),
                     );
                   },
                 ),
@@ -1171,49 +1172,6 @@ class _ChoiceButton extends StatelessWidget {
         backgroundColor: selected ? color : Colors.white,
         side: BorderSide(color: color),
         padding: const EdgeInsets.symmetric(vertical: 14),
-      ),
-    );
-  }
-}
-
-class _SeverityCard extends StatelessWidget {
-  const _SeverityCard({required this.controller, required this.total});
-  final TextEditingController controller;
-  final int total;
-
-  @override
-  Widget build(BuildContext context) {
-    final major = int.tryParse(controller.text) ?? 5;
-    final ranges = SeverityRanges(major: major <= 0 ? 5 : major);
-    return Card(
-      color: const Color(0xFFFFFBEE),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Severidad del punto',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: controller,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Severidad mayor (M)',
-                prefixIcon: Icon(Icons.speed),
-              ),
-            ),
-            const SizedBox(height: 9),
-            Text('Cantidad actual: $total'),
-            Text(
-              ranges.summary,
-              style: const TextStyle(fontSize: 12, color: Colors.black54),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -1401,7 +1359,9 @@ class _BottomActions extends StatelessWidget {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFF1D2430),
                     padding: const EdgeInsets.symmetric(vertical: 17),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
                 ),
               ),
@@ -1421,7 +1381,9 @@ class _BottomActions extends StatelessWidget {
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFF176E35),
                     padding: const EdgeInsets.symmetric(vertical: 17),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
                 ),
               ),
