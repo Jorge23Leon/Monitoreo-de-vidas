@@ -48,12 +48,26 @@ class _MonitoringReportScreenState extends State<MonitoringReportScreen> {
     final catalogFuture = repo.catalogForCropCachedFirst(header.cropId);
     final polygonFuture = repo.plotPolygon(header);
     final polygonRaw = await polygonFuture;
+    final remote = await remoteFuture;
+
+    int? geoPestTolerance;
+    for (final item in remote) {
+      final rawTolerance = item['_geo_pest_tolerance'];
+      final parsed = rawTolerance is int
+          ? rawTolerance
+          : int.tryParse('${rawTolerance ?? ''}');
+      if (parsed != null && parsed >= 0) {
+        geoPestTolerance = parsed;
+        break;
+      }
+    }
+
     return _ReportData(
-      remote: await remoteFuture,
+      remote: remote,
       local: await localFuture,
       targets: await targetsFuture,
       pendingCount: await pendingFuture,
-      pestTolerance: header.pestTolerance,
+      pestTolerance: geoPestTolerance ?? header.pestTolerance,
       catalog: await catalogFuture,
       polygon: polygonRaw
           .map((e) => MapPoint(e.lat, e.lon))
@@ -844,6 +858,32 @@ class _ReportData {
   List<_PointReportView> get pointViews {
     final rows = displayRows;
     final numbers = _pointNumberMap(targets);
+
+    final pointByServer = <String, TargetPoint>{};
+    for (final point in targets) {
+      final serverId = point.serverId;
+      if (serverId != null && serverId.isNotEmpty) {
+        pointByServer[serverId] = point;
+      }
+    }
+
+    final remoteNumberByTarget = <String, int>{};
+    for (final item in remote) {
+      final pcpOid = int.tryParse('${item['pcp_oid'] ?? ''}');
+      if (pcpOid == null || pcpOid <= 0) continue;
+
+      final targetId = _remoteTargetId(item);
+      final point = _findTargetForRemote(
+        item,
+        targetId,
+        pointByServer,
+        targets,
+      );
+      if (point != null) {
+        remoteNumberByTarget[point.id] = pcpOid;
+      }
+    }
+
     final rowsByNumber = <int, List<_DisplayRecord>>{};
     for (final row in rows) {
       if (row.pointNumber <= 0) continue;
@@ -855,7 +895,8 @@ class _ReportData {
     for (var index = 0; index < targets.length; index++) {
       final target = targets[index];
       final mapped = _numberForTarget(target, numbers);
-      final number = mapped > 0 ? mapped : index + 1;
+      final number =
+          remoteNumberByTarget[target.id] ?? (mapped > 0 ? mapped : index + 1);
       final captures = rowsByNumber[number] ?? const <_DisplayRecord>[];
       final captured = target.completed || captures.isNotEmpty;
       result.add(
@@ -2789,7 +2830,8 @@ String _remotePestSeverity(
       .toList(growable: false);
 
   final total = pests.fold<int>(0, (sum, item) {
-    final qty = int.tryParse('${item['qty'] ?? 0}') ?? 0;
+    final rawQty = item['qty'];
+    final qty = rawQty == null ? 1 : (int.tryParse('$rawQty') ?? 0);
     return sum + (qty > 0 ? qty : 0);
   });
 

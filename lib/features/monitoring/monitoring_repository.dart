@@ -439,6 +439,7 @@ class MonitoringRepository {
 
       if (data is Map && data['features'] is List) {
         final result = <Map<String, dynamic>>[];
+        final geoPestTolerance = data['pest_tolerance'];
 
         for (final rawFeature in data['features'] as List) {
           if (rawFeature is! Map) continue;
@@ -449,6 +450,10 @@ class MonitoringRepository {
 
           final properties = Map<String, dynamic>.from(rawProperties);
           final geometry = feature['geometry'];
+
+          if (geoPestTolerance != null) {
+            properties['_geo_pest_tolerance'] = geoPestTolerance;
+          }
 
           if (geometry is Map) {
             properties['geom'] = Map<String, dynamic>.from(geometry);
