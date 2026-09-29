@@ -124,8 +124,9 @@ window.setCiagroData=function(d){
     let m;
     if(d.ndvi){
       m=L.circleMarker([p.lat,p.lon],{radius:5,color:'#1a9850',fillColor:'#1a9850',fillOpacity:.9});
-    }else if(p.splitPhyto&&visualization==='heat'){
-      m=L.circleMarker([p.lat,p.lon],{radius:3.5,color:'#fff',weight:1.2,fillColor:'#101010',fillOpacity:1});
+        }else if(p.splitPhyto&&visualization==='heat'){
+      // En mapa de calor no se dibuja marcador sobre la superficie.
+      return;
     }else if(p.splitPhyto){
       m=L.marker([p.lat,p.lon],{icon:phytoIcon(p)});
     }else{
