@@ -47,6 +47,7 @@ class LeafletMap extends StatefulWidget {
     this.height = 420,
     this.ndvi = false,
     this.phytoVisualization = 'discs',
+    this.phytoHeatIndex = 'pest',
   });
 
   final List<MapPoint> points;
@@ -58,8 +59,11 @@ class LeafletMap extends StatefulWidget {
   final double height;
   final bool ndvi;
 
-  /// "discs" muestra los marcadores P/E y "heat" muestra presencia tipo calor.
+  /// "discs" muestra los marcadores P/E y "heat" muestra la superficie.
   final String phytoVisualization;
+
+  /// Índice usado por la superficie fitosanitaria: "pest" o "disease".
+  final String phytoHeatIndex;
 
   @override
   State<LeafletMap> createState() => _LeafletMapState();
@@ -134,6 +138,7 @@ class _LeafletMapState extends State<LeafletMap> {
             },
       'ndvi': widget.ndvi,
       'phytoVisualization': widget.phytoVisualization,
+      'phytoHeatIndex': widget.phytoHeatIndex,
       'interactive': widget.onMapTap != null,
       'pointInteractive': widget.onPointTap != null,
     };

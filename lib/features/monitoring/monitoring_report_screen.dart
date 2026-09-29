@@ -1496,6 +1496,7 @@ class _FullReportMapScreen extends StatefulWidget {
 
 class _FullReportMapScreenState extends State<_FullReportMapScreen> {
   String visualization = 'heat';
+  String heatIndex = 'pest';
   bool presenceExpanded = true;
 
   _ReportData get data => widget.data;
@@ -1585,6 +1586,7 @@ class _FullReportMapScreenState extends State<_FullReportMapScreen> {
                       polygon: data.polygon,
                       height: MediaQuery.sizeOf(context).height,
                       phytoVisualization: visualization,
+                      phytoHeatIndex: heatIndex,
                       onPointTap: (id) => _openPoint(context, id),
                     ),
                   ),
@@ -1598,16 +1600,23 @@ class _FullReportMapScreenState extends State<_FullReportMapScreen> {
                     child: _PresenceMapControl(
                       expanded: presenceExpanded,
                       visualization: visualization,
+                      heatIndex: heatIndex,
                       onToggleExpanded: () {
                         setState(() => presenceExpanded = !presenceExpanded);
                       },
                       onVisualizationChanged: (value) {
-                        setState(() => visualization = value);
+                        setState(() {
+                          visualization = value;
+                          if (value == 'heat') heatIndex = 'pest';
+                        });
+                      },
+                      onHeatIndexChanged: (value) {
+                        setState(() => heatIndex = value);
                       },
                     ),
                   ),
 
-                  // Las leyendas P/E SOLO tienen sentido en modo Discos.
+                  // Las leyendas P/E SOLO tienen sentido en modo Punto.
                   // Se mantienen dentro del mapa, pegadas abajo.
                   if (visualization == 'discs')
                     const Positioned(
@@ -1647,14 +1656,18 @@ class _PresenceMapControl extends StatelessWidget {
   const _PresenceMapControl({
     required this.expanded,
     required this.visualization,
+    required this.heatIndex,
     required this.onToggleExpanded,
     required this.onVisualizationChanged,
+    required this.onHeatIndexChanged,
   });
 
   final bool expanded;
   final String visualization;
+  final String heatIndex;
   final VoidCallback onToggleExpanded;
   final ValueChanged<String> onVisualizationChanged;
+  final ValueChanged<String> onHeatIndexChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -1703,7 +1716,7 @@ class _PresenceMapControl extends StatelessWidget {
                   ),
                   const SizedBox(width: 5),
                   Text(
-                    visualization == 'heat' ? '- Calor' : '- Discos',
+                    visualization == 'heat' ? '- Calor' : '- Punto',
                     style: const TextStyle(
                       color: Colors.black54,
                       fontSize: 13,
@@ -1731,13 +1744,35 @@ class _PresenceMapControl extends StatelessWidget {
                     const SizedBox(width: 4),
                     Expanded(
                       child: _PresenceModeButton(
-                        label: 'Discos',
+                        label: 'Punto',
                         selected: visualization == 'discs',
                         onTap: () => onVisualizationChanged('discs'),
                       ),
                     ),
                   ],
                 ),
+                if (visualization == 'heat') ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _PresenceModeButton(
+                          label: 'Plagas',
+                          selected: heatIndex == 'pest',
+                          onTap: () => onHeatIndexChanged('pest'),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: _PresenceModeButton(
+                          label: 'Enfermedades',
+                          selected: heatIndex == 'disease',
+                          onTap: () => onHeatIndexChanged('disease'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 9),
                 const Divider(height: 1),
                 const SizedBox(height: 7),
