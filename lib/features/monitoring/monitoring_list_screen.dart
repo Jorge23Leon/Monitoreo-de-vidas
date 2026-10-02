@@ -25,7 +25,7 @@ class _MonitoringListScreenState extends State<MonitoringListScreen> {
   String? status;
   DateTime? startDate;
   DateTime? endDate;
-  bool filtersExpanded = true;
+  bool filtersExpanded = false;
   DateTime lastRefresh = DateTime.now();
 
   @override

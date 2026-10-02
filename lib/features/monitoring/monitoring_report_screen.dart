@@ -1790,7 +1790,7 @@ class _PresenceMapControl extends StatelessWidget {
                 ),
                 const _PresenceLegendLine(
                   color: Color(0xFF18864B),
-                  text: 'Sin monitorear',
+                  text: 'Sin plagas',
                 ),
               ],
             ],

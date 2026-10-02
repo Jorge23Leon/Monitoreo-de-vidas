@@ -11,6 +11,7 @@ import '../../core/widgets/gpa_loading_indicator.dart';
 import 'monitoring_models.dart';
 import 'monitoring_repository.dart';
 import 'monitoring_services.dart';
+import 'rear_camera_screen.dart';
 
 class MonitoringCheckpointScreen extends StatefulWidget {
   const MonitoringCheckpointScreen({super.key});
@@ -141,7 +142,9 @@ class _MonitoringCheckpointScreenState
           .length;
 
   Future<void> _takePhoto() async {
-    final result = await MonitoringPhotoService.takePhoto();
+    final result = await Navigator.of(context).push<XFile>(
+      MaterialPageRoute<XFile>(builder: (_) => const RearCameraScreen()),
+    );
     if (result != null && mounted) setState(() => photo = result);
   }
 
